@@ -13,7 +13,7 @@ PORT         ?= 5000
 BASE_URL     ?= http://localhost:$(PORT)
 
 .PHONY: help doctor install install-dev run test lint coverage build-image \
-        compose-up compose-down compose-logs smoke-test docs-check lock verify clean
+        compose-up compose-down compose-logs smoke-test docs-check docs-pdf lock verify clean
 
 help: ## Список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -61,8 +61,12 @@ compose-logs: ## Логи
 smoke-test: ## Проверить живой инстанс
 	@./scripts/smoke-test.sh $(BASE_URL)
 
-docs-check: ## Проверить документацию и спецификации модулей
+docs-pdf: ## Собрать PDF документации (оба языка)
+	$(PYTHON) tools/docs_pdf.py
+
+docs-check: ## Проверить документацию, переводы и PDF
 	@./scripts/docs-check.sh
+	$(PYTHON) tools/docs_pdf.py --check
 
 verify: lint test docs-check ## Локальная матрица
 	@echo "verify: ok (образ и compose проверяются в CI)"
