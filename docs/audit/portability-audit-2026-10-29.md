@@ -46,3 +46,28 @@
 | Job «Tests, lint» падал на линте (324 замечания) | не было конфигурации ruff: результат зависел от версии, а блокирующим был весь строгий набор | `ruff.toml` с явным блокирующим набором (`E9`, `F`), 14 реальных замечаний исправлены; долг по стилю описан в `docs/development/code-style.md` |
 | Контейнер не проходил health-check (`ADMIN_SECRET_KEY must be at least 12 characters`) | CI передавал короткий ключ, который валидатор конфигурации отвергает — то есть проверка работала правильно, а тестовые данные были неверны | в CI передаётся ключ нужной длины; проверка валидатора осталась |
 | Проверки ставили «последние» pytest/ruff из PyPI | невоспроизводимость: набор правил и поведение меняются без изменения кода | `requirements-dev.txt` с точными пинами; CI ставит по нему |
+
+## Дополнение: очистка истории от секретов (2026-10-29)
+
+Полное сканирование всей истории (`gitleaks git`, все 7 репозиториев) нашло
+секреты в трёх:
+
+| Репозиторий | Что найдено | Где |
+| --- | --- | --- |
+| ForgeBrainStorm | `.env` с ключом GigaChat (`client_id:client_secret`) | 8 коммитов, файл `.env` |
+| ForgeInterio | токен Telegram-бота и base64-ключ | `bot/main.py`, `DEPLOY_RENDER.md` |
+| ForgeAezaAnalizer | `.env.before-telegram-*` с `JWT_SECRET`/`POSTGRES_PASSWORD`/`ADMIN_PASSWORD` (значения демонстрационные), дамп `db/auth.sqlite3` | 2 коммита |
+
+ForgeCRM, ForgeRTKCRM, ForgeMadrigalProtocolLab — чисто.
+ForgePresentationHappy — единственное срабатывание ложное (названия анимаций
+в `pptx_animation_presets.json`).
+
+Очистка: `git filter-repo` — удаление путей (`.env`, `.env.bak`,
+`.env.before-telegram-*`, `db/auth.sqlite3`) и замена секретных литералов на
+`REMOVED_SECRET`; все ветки переписаны и отправлены force-push. После
+перезаписи прогнаны тесты (BrainStorm 190 passed, Interio 15 passed, Aeza —
+набор в CI).
+
+Оговорка про pull request'ы зафиксирована в `docs/security/secrets.md`:
+`refs/pull/*` — скрытые ссылки, force-push в них запрещён, поэтому ключи
+обязательно перевыпускаются, а остатки удаляются только через GitHub Support.
