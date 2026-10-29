@@ -1,21 +1,20 @@
 # -*- coding: utf-8 -*-
-import os, time, logging
+import time, logging
 from flask import Blueprint, render_template, jsonify, request, session
 from .game_logic import (
     get_leaderboard_top, get_player_rank, rooms,
     ban_user, unban_user, get_all_bans,
-    get_room_history, get_all_users, reset_user_stats, reset_server_stats,
-    _sid_room
+    get_room_history, get_all_users, reset_user_stats, reset_server_stats
 )
 from .ai_client import active_backend
 from .user_db import (
-    register_user, login_user, get_user, update_user_stats, add_coins,
+    register_user, login_user, get_user, add_coins,
     spend_coins, get_level_from_xp,
     create_ugc_question, get_ugc_questions, get_user_ugc,
     vote_ugc, report_ugc, admin_moderate_ugc, get_ugc_pending,
     get_campaign_progress, save_campaign_result, CAMPAIGN_LEVELS,
     get_achievements, check_and_unlock_achievements, unlock_achievement,
-    ACHIEVEMENTS, _db_conn
+    _db_conn
 )
 from .learn_mode import generate_learn_questions, extract_text_from_url
 
@@ -567,7 +566,7 @@ def api_admin_impersonate():
         return jsonify({"error": "User not found"}), 404
     
     # Сохраняем оригинальную сессию админа
-    original_admin = session.get("is_admin")
+    session.get("is_admin")
     
     # Добавляем метку имперсонации
     session["impersonating"] = True
@@ -686,7 +685,7 @@ def api_public_profile(username):
     
     user["level"] = get_level_from_xp(user.get("xp", 0))
     achievements = get_achievements(username)
-    campaign = get_campaign_progress(username)
+    get_campaign_progress(username)
     
     # Не показываем чувствительные данные
     public_profile = {
@@ -710,7 +709,7 @@ def api_update_profile():
     if not u:
         return jsonify({"error": "Не авторизован"}), 401
     
-    body = request.get_json(silent=True) or {}
+    request.get_json(silent=True) or {}
     
     # Пока ничего не меняем - таблица users не имеет этих полей
     # Можно добавить в будущем через миграцию БД

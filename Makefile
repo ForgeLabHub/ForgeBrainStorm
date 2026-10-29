@@ -26,7 +26,7 @@ install: ## Установить закреплённые зависимости
 	$(PYTHON) -m pip install -r requirements.lock.txt
 
 install-dev: ## Установить зависимости для разработки (pytest, ruff)
-	$(PYTHON) -m pip install -r requirements.lock.txt pytest pytest-cov ruff
+	$(PYTHON) -m pip install -r requirements-dev.txt
 
 lock: ## Пересобрать requirements.lock.txt из requirements.txt (осознанно!)
 	@$(PYTHON) -m pip install --dry-run --ignore-installed --quiet \

@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 """BrainStorm — socket_events.py v5"""
-import time, logging, random, eventlet, json
+import time, logging, random, eventlet
 from flask import request, session as flask_session
 from flask_socketio import emit, join_room, leave_room
-from . import socketio, CHEAT_TESTER_CODE
+from . import socketio
 from .game_logic import (
     rooms, Room, gen_code, get_room_by_sid, index_add, index_remove,
     cache_get, cache_set,
     update_leaderboard, JOKER_COST, HINT_COST, BONUS_CHANCE,
-    ban_user, is_banned, save_room_history, reset_user_stats, Team,
-    cleanup_stale_rooms
+    is_banned, save_room_history, cleanup_stale_rooms
 )
 from .ai_client import generate_questions, generate_hint
 
@@ -154,7 +153,7 @@ def _resolve_question(room: Room):
 def _player_left(sid):
     room = get_room_by_sid(sid)
     if not room: return
-    pname = room.players[sid].name if sid in room.players else ""
+    room.players[sid].name if sid in room.players else ""
     room.remove_player(sid)
     index_remove(sid)
     leave_room(room.code)
@@ -332,7 +331,7 @@ def on_draft_pick(data):
 def on_start_game(_):
     room = get_room_by_sid(request.sid)
     if not room: return
-    player = room.players.get(request.sid)
+    room.players.get(request.sid)
     if not _is_host_or_cheater(request.sid, room): return
     if room.state != "waiting": return
     if len(room.human_players) < 1:

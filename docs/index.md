@@ -24,3 +24,7 @@
 3. Секреты — только через окружение; проверяется `gitleaks` и `make doctor`.
 4. Версии зависимостей фиксируются `requirements.lock.txt`; `make lock` — осознанное
    действие, а не автоматика.
+
+## Разработка
+
+- [development/code-style.md](development/code-style.md) — линт, версии инструментов, долг по стилю.
