@@ -347,3 +347,23 @@ MIT — см. [LICENSE](LICENSE). © 2026 geff1778.
 [Кодекс поведения](CODE_OF_CONDUCT.md). Об уязвимостях сообщайте по [SECURITY.md](SECURITY.md),
 а не через публичный issue. Планы развития — в [ROADMAP.md](ROADMAP.md), заметные изменения —
 в [CHANGELOG.md](CHANGELOG.md).
+
+## Команды разработки
+
+| Команда | Что делает |
+| --- | --- |
+| `make doctor` | проверка инструментов, версий, зависимостей и того, что `.env` не в git |
+| `make install-dev` | закреплённые зависимости + pytest/ruff |
+| `make test` | 190 тестов на изолированном `DATA_DIR` |
+| `make lint` | ruff |
+| `make compose-up` / `make compose-down` | контейнер (данные в томе сохраняются) |
+| `make smoke-test` | `/health` и главная страница |
+| `make docs-check` | полнота документации и спецификаций модулей |
+| `make verify` | lint + тесты + документация |
+
+Документация: точка входа — [docs/index.md](docs/index.md); сборка — [BUILD.md](BUILD.md);
+матрица проверок — [docs/verification/matrix.md](docs/verification/matrix.md).
+
+> **Важно.** Ранее в репозитории лежал `.env` с рабочим ключом GigaChat. Файл убран
+> из индекса, добавлено сканирование секретов в CI. **Ключи нужно перевыпустить** —
+> см. [docs/security/secrets.md](docs/security/secrets.md).
