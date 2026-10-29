@@ -1,0 +1,24 @@
+# Конфигурация сканирования секретов.
+#
+# Причина появления файла: в репозитории был закоммичен .env с реальным ключом
+# GigaChat, хотя .gitignore запрещал это. Инструкция «не коммитить» не работает —
+# работает проверка, которая падает на pull request.
+
+title = "BrainStorm secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Примеры и тесты, где секретоподобные строки ожидаемы"
+paths = [
+  '''.env\.example''',
+  '''tests/''',
+  '''docs/''',
+]
+regexes = [
+  '''YOUR_BASE64_CREDENTIALS_HERE''',
+  '''change-me''',
+  '''test-secret-key''',
+  '''ci-secret''',
+]
