@@ -29,3 +29,6 @@ Thumbs.db
 
 # Render
 .render/
+
+# Состояние forge.sh/forge.bat: PID-файлы и логи запусков
+.run/
