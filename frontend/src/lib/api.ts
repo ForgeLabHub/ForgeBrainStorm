@@ -104,3 +104,6 @@ export const api = {
 	clearAiCache: () =>
 		request<void>('/api/ai/cache/clear', { method: 'POST' }),
 };
+
+// Re-export WebSocket client
+export { ws } from './ws';
