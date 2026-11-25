@@ -35,16 +35,7 @@
 		error = '';
 
 		try {
-			const response = await api.createRoom({
-				topic: topic.trim(),
-				difficulty,
-				mode,
-				question_count: questionCount,
-				num_options: numOptions,
-				timer_seconds: timerSeconds,
-				ai_provider: selectedProvider,
-			});
-
+			const response = await api.createRoom(topic.trim(), mode);
 			if (response.ok && response.room) {
 				goto(`/room/${response.room.code}`);
 			} else {
@@ -56,6 +47,11 @@
 		} finally {
 			creating = false;
 		}
+	}
+
+	// Helper: returns conditional class string based on selection.
+	function cls(selected: boolean): string {
+		return selected ? 'border-blue-500 bg-blue-500/10' : '';
 	}
 </script>
 
@@ -86,21 +82,21 @@
 			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
 				<span class="mb-3 block text-sm font-medium text-white">Сложность</span>
 				<div class="space-y-2">
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={difficulty === 'easy'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(difficulty === 'easy')}" class:border-blue-500={difficulty === 'easy'}>
 						<input type="radio" bind:group={difficulty} value="easy" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">Легкая</div>
 							<div class="text-xs text-slate-400">Для начинающих</div>
 						</div>
 					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={difficulty === 'medium'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(difficulty === 'medium')}" class:border-blue-500={difficulty === 'medium'}>
 						<input type="radio" bind:group={difficulty} value="medium" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">Средняя</div>
 							<div class="text-xs text-slate-400">Для всех</div>
 						</div>
 					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={difficulty === 'hard'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(difficulty === 'hard')}" class:border-blue-500={difficulty === 'hard'}>
 						<input type="radio" bind:group={difficulty} value="hard" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">Сложная</div>
@@ -113,28 +109,28 @@
 			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
 				<span class="mb-3 block text-sm font-medium text-white">Режим игры</span>
 				<div class="space-y-2">
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={mode === 'classic'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(mode === 'classic')}" class:border-blue-500={mode === 'classic'}>
 						<input type="radio" bind:group={mode} value="classic" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">Классический</div>
 							<div class="text-xs text-slate-400">Все отвечают одновременно</div>
 						</div>
 					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={mode === 'ffa'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(mode === 'ffa')}" class:border-blue-500={mode === 'ffa'}>
 						<input type="radio" bind:group={mode} value="ffa" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">Каждый за себя</div>
 							<div class="text-xs text-slate-400">Кто первый ответит</div>
 						</div>
 					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={mode === 'team'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(mode === 'team')}" class:border-blue-500={mode === 'team'}>
 						<input type="radio" bind:group={mode} value="team" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">Командный</div>
 							<div class="text-xs text-slate-400">Игра командами</div>
 						</div>
 					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500" class: border-blue-500 bg-blue-500/10={mode === 'lives'}>
+					<label class="flex cursor-pointer items-center rounded-lg border p-3 transition hover:border-blue-500 {cls(mode === 'lives')}" class:border-blue-500={mode === 'lives'}>
 						<input type="radio" bind:group={mode} value="lives" class="mr-3" />
 						<div>
 							<div class="font-medium text-white">На выживание</div>

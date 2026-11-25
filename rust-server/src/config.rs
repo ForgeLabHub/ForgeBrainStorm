@@ -146,14 +146,8 @@ impl Settings {
     /// Load configuration from defaults, optional TOML file, and environment.
     pub fn load() -> Result<Self, ConfigError> {
         let figment = Figment::new()
-            .merge(Toml::file("config/default.toml").nested())
-            .merge(Env::prefixed("BRAINSTORM_").split("__"))
-            // Also accept the bare names used in the legacy Python config.
-            .merge(Env::raw().only(&[
-                "SECRET_KEY", "ADMIN_SECRET_KEY", "DATABASE_URL",
-                "GIGACHAT_CREDENTIALS", "GIGACHAT_SCOPE", "GIGACHAT_MODEL",
-                "REDIS_URL", "PORT", "ENV",
-            ]));
+            .merge(Toml::file("config/default.toml"))
+            .merge(Env::prefixed("BRAINSTORM_").split("__"));
 
         let mut settings: Self = figment.extract()?;
 

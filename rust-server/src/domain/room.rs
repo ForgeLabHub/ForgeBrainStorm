@@ -227,6 +227,7 @@ impl RoomRegistry {
 #[derive(Debug, Serialize)]
 pub struct RoomSnapshot {
     pub code: String,
+    #[serde(rename = "host")]
     pub host_name: String,
     pub state: RoomState,
     pub mode: String,

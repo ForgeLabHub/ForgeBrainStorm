@@ -1,8 +1,8 @@
 # Multi-stage build for BrainStorm Rust server.
-# Final image is ~15-20 MB (distroless-like).
+# Final image is ~20-40 MB.
 
 # ── Builder ───────────────────────────────────────────────────
-FROM rust:1.80-slim AS builder
+FROM rust:1.85-slim AS builder
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
@@ -21,6 +21,7 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash appuser
@@ -30,7 +31,7 @@ COPY --from=builder /build/target/release/brainstorm /app/brainstorm
 COPY --from=builder /build/migrations /app/migrations
 COPY config/ /app/config/
 
-RUN chown -R appuser:appuser /app
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
 USER appuser
 
 ENV RUST_LOG=brainstorm=info,tower_http=info

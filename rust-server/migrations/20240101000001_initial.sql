@@ -5,6 +5,11 @@
 --   * sessions use HMAC tokens, not plaintext cookies
 --   * scores are tied to authenticated user_id, never display-name
 
+-- ── Extensions ──────────────────────────────────────────────
+-- citext is required for case-insensitive username columns.
+-- On managed Postgres (Supabase, RDS) this is usually available by default.
+CREATE EXTENSION IF NOT EXISTS citext;
+
 -- ── Users ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
     id           BIGSERIAL PRIMARY KEY,
