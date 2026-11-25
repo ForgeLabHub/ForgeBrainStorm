@@ -186,6 +186,11 @@ impl RoomRegistry {
         self.rooms.read().get(code).cloned()
     }
 
+    /// Insert a room Arc directly (used by WebSocket room manager).
+    pub fn insert_arc(&self, code: String, room: Arc<RwLock<Room>>) {
+        self.rooms.write().insert(code, room);
+    }
+
     pub fn list_public(&self) -> Vec<RoomSnapshot> {
         self.rooms
             .read()

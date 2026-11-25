@@ -1,37 +1,37 @@
 //! Room manager for WebSocket gameplay.
 //!
 //! Manages room lifecycle, player connections, game state, and broadcasts.
+//! Uses the shared `RoomRegistry` from AppState so rooms are visible across
+//! all WebSocket connections.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 use rand::seq::SliceRandom;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
-use crate::domain::room::{Room, RoomSettings, RoomState};
 use crate::domain::player::Player;
+use crate::domain::room::{generate_room_code, Room, RoomSettings, RoomState};
 use crate::error::AppError;
 use crate::services::ai::{AiCapability, GenerationRequest};
 use crate::AppState;
 
-use super::protocol::{PlayerAnswer, PlayerInfo, PlayerScore, QuestionData, ServerMessage};
 use super::game_loop::GameLoop;
+use super::protocol::{PlayerAnswer, PlayerInfo, PlayerScore, QuestionData, ServerMessage};
 
 /// Manages all active game rooms.
+///
+/// Uses the shared `RoomRegistry` from `AppState` so rooms are visible
+/// across all WebSocket connections.
 pub struct RoomManager {
     state: AppState,
-    rooms: Arc<RwLock<HashMap<String, Arc<RwLock<Room>>>>>,
 }
 
 impl RoomManager {
     pub fn new(state: AppState) -> Self {
-        Self {
-            state,
-            rooms: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self { state }
     }
 
     /// Create a new room. Returns the Arc<RwLock<Room>> so the caller can
@@ -69,7 +69,7 @@ impl RoomManager {
 
         settings.clamp();
 
-        let code = crate::domain::room::generate_room_code();
+        let code = generate_room_code();
         let (tx, _) = broadcast::channel(256);
 
         let room = Room {
@@ -78,7 +78,7 @@ impl RoomManager {
             host_name: username.to_string(),
             state: RoomState::Waiting,
             settings,
-            players: HashMap::new(),
+            players: std::collections::HashMap::new(),
             questions: Vec::new(),
             current_question: None,
             question_start_time: None,
@@ -88,7 +88,11 @@ impl RoomManager {
         };
 
         let room_arc = Arc::new(RwLock::new(room));
-        self.rooms.write().insert(code.clone(), room_arc.clone());
+
+        // Insert into the SHARED registry (from AppState)
+        // We need to access the inner map. Since RoomRegistry wraps it in
+        // Arc<RwLock<HashMap>>, we'll add a helper method.
+        self.state.rooms.insert_arc(code.clone(), room_arc.clone());
 
         info!(code, user_id, username, "Room created");
 
@@ -104,12 +108,11 @@ impl RoomManager {
         username: &str,
         display_name: &str,
     ) -> Result<Arc<RwLock<Room>>, AppError> {
-        let rooms = self.rooms.read();
-        let room_arc = rooms
-            .get(code)
-            .ok_or(AppError::NotFound("Room not found"))?
-            .clone();
-        drop(rooms);
+        let room_arc = self
+            .state
+            .rooms
+            .get_arc(code)
+            .ok_or(AppError::NotFound("Room not found"))?;
 
         let mut room = room_arc.write();
 
@@ -135,19 +138,27 @@ impl RoomManager {
             user_id,
             username.to_string(),
             display_name.to_string(),
-            if room.settings.mode == "lives" { Some(3) } else { None },
+            if room.settings.mode == "lives" {
+                Some(3)
+            } else {
+                None
+            },
         );
 
         room.players.insert(user_id, player);
         room.last_activity = Instant::now();
 
-        // Broadcast player joined (AFTER inserting)
+        // Broadcast player joined
         let player_info = PlayerInfo {
             user_id,
             username: username.to_string(),
             display_name: display_name.to_string(),
             score: 0,
-            lives: if room.settings.mode == "lives" { Some(3) } else { None },
+            lives: if room.settings.mode == "lives" {
+                Some(3)
+            } else {
+                None
+            },
             is_ready: false,
             is_host,
         };
@@ -168,7 +179,9 @@ impl RoomManager {
                 is_host: p.user_id == room.host_user_id,
             })
             .collect();
-        let _ = room.tx.send(ServerMessage::PlayersUpdated { players: all_players });
+        let _ = room.tx.send(ServerMessage::PlayersUpdated {
+            players: all_players,
+        });
 
         info!(code, user_id, username, "Player joined room");
 
@@ -177,75 +190,70 @@ impl RoomManager {
 
     /// Leave a room.
     pub async fn leave_room(&self, code: &str, user_id: i64) {
-        let rooms = self.rooms.read();
-        if let Some(room_arc) = rooms.get(code) {
-            let mut room = room_arc.write();
+        let room_arc = match self.state.rooms.get_arc(code) {
+            Some(r) => r,
+            None => return,
+        };
 
-            // Get player info BEFORE removing
-            let player_info = room.players.get(&user_id).map(|p| {
-                (p.username.clone(), p.display_name.clone())
+        let mut room = room_arc.write();
+
+        // Get player info BEFORE removing
+        let player_info = room.players.get(&user_id).map(|p| p.username.clone());
+
+        // Broadcast player left (BEFORE removing)
+        if let Some(username) = player_info {
+            let _ = room.tx.send(ServerMessage::PlayerLeft { user_id, username });
+        }
+
+        // Now remove the player
+        room.players.remove(&user_id);
+
+        // If room is empty, remove it from shared registry
+        if room.players.is_empty() {
+            let code = room.code.clone();
+            drop(room);
+            self.state.rooms.remove(&code);
+            info!(code, "Room removed (empty)");
+        } else {
+            // Send updated player list
+            let all_players: Vec<PlayerInfo> = room
+                .players
+                .values()
+                .map(|p| PlayerInfo {
+                    user_id: p.user_id,
+                    username: p.username.clone(),
+                    display_name: p.display_name.clone(),
+                    score: p.score,
+                    lives: p.lives,
+                    is_ready: p.is_ready,
+                    is_host: p.user_id == room.host_user_id,
+                })
+                .collect();
+            let _ = room.tx.send(ServerMessage::PlayersUpdated {
+                players: all_players,
             });
 
-            // Broadcast player left (BEFORE removing)
-            if let Some((username, _)) = player_info {
-                let _ = room.tx.send(ServerMessage::PlayerLeft {
-                    user_id,
-                    username,
-                });
-            }
-
-            // Now remove the player
-            room.players.remove(&user_id);
-
-            // Send updated player list
-            if !room.players.is_empty() {
-                let all_players: Vec<PlayerInfo> = room
-                    .players
-                    .values()
-                    .map(|p| PlayerInfo {
-                        user_id: p.user_id,
-                        username: p.username.clone(),
-                        display_name: p.display_name.clone(),
-                        score: p.score,
-                        lives: p.lives,
-                        is_ready: p.is_ready,
-                        is_host: p.user_id == room.host_user_id,
-                    })
-                    .collect();
-                let _ = room.tx.send(ServerMessage::PlayersUpdated { players: all_players });
-            }
-
-            // If room is empty, remove it
-            if room.players.is_empty() {
-                let code = room.code.clone();
-                drop(room);
-                drop(rooms);
-                self.rooms.write().remove(&code);
-                info!(code, "Room removed (empty)");
-            } else {
-                // Transfer host if needed
-                if room.host_user_id == user_id {
-                    if let Some(new_host_id) = room.players.keys().next().copied() {
-                        room.host_user_id = new_host_id;
-                        if let Some(new_host) = room.players.get(&new_host_id) {
-                            room.host_name = new_host.username.clone();
-                        }
+            // Transfer host if needed
+            if room.host_user_id == user_id {
+                if let Some(new_host_id) = room.players.keys().next().copied() {
+                    room.host_user_id = new_host_id;
+                    if let Some(new_host) = room.players.get(&new_host_id) {
+                        room.host_name = new_host.username.clone();
                     }
                 }
             }
-
-            info!(code, user_id, "Player left room");
         }
+
+        info!(code, user_id, "Player left room");
     }
 
     /// Start the game (host only).
     pub async fn start_game(&self, code: &str, user_id: i64) -> Result<(), AppError> {
-        let rooms = self.rooms.read();
-        let room_arc = rooms
-            .get(code)
-            .ok_or(AppError::NotFound("Room not found"))?
-            .clone();
-        drop(rooms);
+        let room_arc = self
+            .state
+            .rooms
+            .get_arc(code)
+            .ok_or(AppError::NotFound("Room not found"))?;
 
         let mut room = room_arc.write();
 
@@ -340,12 +348,10 @@ impl RoomManager {
         question_index: usize,
         answer_index: usize,
     ) {
-        let rooms = self.rooms.read();
-        let room_arc = match rooms.get(code) {
-            Some(r) => r.clone(),
+        let room_arc = match self.state.rooms.get_arc(code) {
+            Some(r) => r,
             None => return,
         };
-        drop(rooms);
 
         let mut room = room_arc.write();
 
@@ -368,13 +374,18 @@ impl RoomManager {
         };
 
         // Check if already answered this question
-        if player.answers.iter().any(|a| a.question_index == question_index) {
+        if player
+            .answers
+            .iter()
+            .any(|a| a.question_index == question_index)
+        {
             return;
         }
 
         // Get correct answer from question JSON
         let question = &room.questions[current_q];
-        let correct_index = question["correct_index"].as_u64()
+        let correct_index = question["correct_index"]
+            .as_u64()
             .or_else(|| question["correct"].as_u64())
             .unwrap_or(0) as usize;
         let is_correct = answer_index == correct_index;
@@ -427,15 +438,17 @@ impl RoomManager {
         player.last_activity = Instant::now();
 
         // Check if all players answered
-        let all_answered = room.players.values().all(|p| {
-            p.answers.iter().any(|a| a.question_index == current_q)
-        });
+        let all_answered = room
+            .players
+            .values()
+            .all(|p| p.answers.iter().any(|a| a.question_index == current_q));
 
         if all_answered {
             // Broadcast question result
             let leaderboard = Self::build_leaderboard(&room);
             let question = &room.questions[current_q];
-            let correct_index = question["correct_index"].as_u64()
+            let correct_index = question["correct_index"]
+                .as_u64()
                 .or_else(|| question["correct"].as_u64())
                 .unwrap_or(0) as usize;
             let explanation = question["explanation"].as_str().unwrap_or("").to_string();
@@ -468,30 +481,26 @@ impl RoomManager {
 
     /// Send a chat message.
     pub async fn send_chat(&self, code: &str, user_id: i64, username: &str, text: &str) {
-        let rooms = self.rooms.read();
-        if let Some(room_arc) = rooms.get(code) {
-            let room = room_arc.read();
-            let _ = room.tx.send(ServerMessage::ChatMessage {
-                user_id,
-                username: username.to_string(),
-                text: text.to_string(),
-                timestamp: chrono::Utc::now().timestamp(),
-            });
-        }
+        let room_arc = match self.state.rooms.get_arc(code) {
+            Some(r) => r,
+            None => return,
+        };
+        let room = room_arc.read();
+        let _ = room.tx.send(ServerMessage::ChatMessage {
+            user_id,
+            username: username.to_string(),
+            text: text.to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+        });
     }
 
     /// Use a joker. Returns the indices of removed wrong answers.
-    pub async fn use_joker(
-        &self,
-        code: &str,
-        user_id: i64,
-    ) -> Result<Vec<usize>, AppError> {
-        let rooms = self.rooms.read();
-        let room_arc = rooms
-            .get(code)
-            .ok_or(AppError::NotFound("Room not found"))?
-            .clone();
-        drop(rooms);
+    pub async fn use_joker(&self, code: &str, user_id: i64) -> Result<Vec<usize>, AppError> {
+        let room_arc = self
+            .state
+            .rooms
+            .get_arc(code)
+            .ok_or(AppError::NotFound("Room not found"))?;
 
         let mut room = room_arc.write();
 
@@ -511,7 +520,8 @@ impl RoomManager {
         let current_q = room.current_question.ok_or(AppError::InvalidState)?;
 
         let question = &room.questions[current_q];
-        let correct_index = question["correct_index"].as_u64()
+        let correct_index = question["correct_index"]
+            .as_u64()
             .or_else(|| question["correct"].as_u64())
             .unwrap_or(0) as usize;
         let num_options = question["options"]
@@ -520,7 +530,9 @@ impl RoomManager {
             .unwrap_or(4);
 
         // Remove 2 wrong answers
-        let mut wrong_indices: Vec<usize> = (0..num_options).filter(|&i| i != correct_index).collect();
+        let mut wrong_indices: Vec<usize> = (0..num_options)
+            .filter(|&i| i != correct_index)
+            .collect();
         wrong_indices.shuffle(&mut rand::thread_rng());
 
         let removed: Vec<usize> = wrong_indices.into_iter().take(2).collect();
@@ -532,12 +544,11 @@ impl RoomManager {
 
     /// Get a hint.
     pub async fn get_hint(&self, code: &str, user_id: i64) -> Result<String, AppError> {
-        let rooms = self.rooms.read();
-        let room_arc = rooms
-            .get(code)
-            .ok_or(AppError::NotFound("Room not found"))?
-            .clone();
-        drop(rooms);
+        let room_arc = self
+            .state
+            .rooms
+            .get_arc(code)
+            .ok_or(AppError::NotFound("Room not found"))?;
 
         let room = room_arc.write();
 
@@ -550,10 +561,12 @@ impl RoomManager {
         let question = &room.questions[current_q];
         let question_text = question["question"].as_str().unwrap_or("").to_string();
 
-        // Generate hint using AI
         match self.state.ai_router.generate_hint(&question_text).await {
             Ok(hint) => Ok(hint),
-            Err(e) => Err(AppError::AiUnavailable(format!("Failed to generate hint: {}", e))),
+            Err(e) => Err(AppError::AiUnavailable(format!(
+                "Failed to generate hint: {}",
+                e
+            ))),
         }
     }
 
@@ -581,25 +594,6 @@ impl RoomManager {
 
     /// Get room Arc by code.
     pub fn get_room(&self, code: &str) -> Option<Arc<RwLock<Room>>> {
-        self.rooms.read().get(code).cloned()
-    }
-
-    /// List all rooms (basic info).
-    pub fn list_rooms(&self) -> Vec<crate::domain::room::RoomSnapshot> {
-        self.rooms
-            .read()
-            .values()
-            .map(|r| {
-                let room = r.read();
-                crate::domain::room::RoomSnapshot {
-                    code: room.code.clone(),
-                    host_name: room.host_name.clone(),
-                    state: room.state,
-                    mode: room.settings.mode.clone(),
-                    topic: room.settings.topic.clone(),
-                    player_count: room.players.len(),
-                }
-            })
-            .collect()
+        self.state.rooms.get_arc(code)
     }
 }
