@@ -7,16 +7,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
+use rand::seq::SliceRandom;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
 use crate::domain::room::{Room, RoomSettings, RoomState};
 use crate::domain::player::Player;
 use crate::error::AppError;
-use crate::services::ai::{AiRouter, GenerationRequest};
+use crate::services::ai::{AiCapability, GenerationRequest};
 use crate::AppState;
 
-use super::protocol::{PlayerInfo, PlayerScore, QuestionData, ServerMessage};
+use super::protocol::{PlayerAnswer, PlayerInfo, PlayerScore, QuestionData, ServerMessage};
 use super::game_loop::GameLoop;
 
 /// Manages all active game rooms.
@@ -33,7 +34,8 @@ impl RoomManager {
         }
     }
 
-    /// Create a new room.
+    /// Create a new room. Returns the Arc<RwLock<Room>> so the caller can
+    /// subscribe to the broadcast channel.
     pub async fn create_room(
         &self,
         user_id: i64,
@@ -41,7 +43,7 @@ impl RoomManager {
         topic: Option<String>,
         mode: Option<String>,
         settings_input: Option<super::protocol::RoomSettingsInput>,
-    ) -> Result<RoomSnapshot, AppError> {
+    ) -> Result<Arc<RwLock<Room>>, AppError> {
         let mut settings = RoomSettings {
             topic: topic.unwrap_or_else(|| "Общие знания".into()),
             mode: mode.unwrap_or_else(|| "classic".into()),
@@ -67,7 +69,7 @@ impl RoomManager {
 
         settings.clamp();
 
-        let code = generate_room_code();
+        let code = crate::domain::room::generate_room_code();
         let (tx, _) = broadcast::channel(256);
 
         let room = Room {
@@ -86,30 +88,26 @@ impl RoomManager {
         };
 
         let room_arc = Arc::new(RwLock::new(room));
-        self.rooms.write().insert(code.clone(), room_arc);
+        self.rooms.write().insert(code.clone(), room_arc.clone());
 
         info!(code, user_id, username, "Room created");
 
-        Ok(RoomSnapshot {
-            code,
-            host_name: username.to_string(),
-            topic: room.settings.topic.clone(),
-            mode: room.settings.mode.clone(),
-        })
+        Ok(room_arc)
     }
 
-    /// Join an existing room.
+    /// Join an existing room. Returns the Arc<RwLock<Room>> so the caller
+    /// can subscribe to the broadcast channel.
     pub async fn join_room(
         &self,
         code: &str,
         user_id: i64,
         username: &str,
         display_name: &str,
-    ) -> Result<RoomSnapshot, AppError> {
+    ) -> Result<Arc<RwLock<Room>>, AppError> {
         let rooms = self.rooms.read();
         let room_arc = rooms
             .get(code)
-            .ok_or_else(|| AppError::NotFound("Room not found".into()))?
+            .ok_or(AppError::NotFound("Room not found"))?
             .clone();
         drop(rooms);
 
@@ -125,25 +123,25 @@ impl RoomManager {
             return Err(AppError::Conflict("Game already started".into()));
         }
 
+        // Check if already in room
+        if room.players.contains_key(&user_id) {
+            return Err(AppError::Conflict("Already in this room".into()));
+        }
+
+        let is_host = room.host_user_id == user_id;
+
         // Add player
-        let player = Player {
+        let player = Player::new(
             user_id,
-            username: username.to_string(),
-            display_name: display_name.to_string(),
-            score: 0,
-            lives: if room.settings.mode == "lives" { Some(3) } else { None },
-            jokers_used: 0,
-            current_streak: 0,
-            answers: Vec::new(),
-            is_ready: false,
-            connected_at: Instant::now(),
-            last_activity: Instant::now(),
-        };
+            username.to_string(),
+            display_name.to_string(),
+            if room.settings.mode == "lives" { Some(3) } else { None },
+        );
 
         room.players.insert(user_id, player);
         room.last_activity = Instant::now();
 
-        // Broadcast player joined
+        // Broadcast player joined (AFTER inserting)
         let player_info = PlayerInfo {
             user_id,
             username: username.to_string(),
@@ -151,19 +149,14 @@ impl RoomManager {
             score: 0,
             lives: if room.settings.mode == "lives" { Some(3) } else { None },
             is_ready: false,
-            is_host: room.host_user_id == user_id,
+            is_host,
         };
 
-        let _ = room.tx.send(ServerMessage::PlayerJoined { player: player_info.clone() });
+        let _ = room.tx.send(ServerMessage::PlayerJoined { player: player_info });
 
         info!(code, user_id, username, "Player joined room");
 
-        Ok(RoomSnapshot {
-            code: code.to_string(),
-            host_name: room.host_name.clone(),
-            topic: room.settings.topic.clone(),
-            mode: room.settings.mode.clone(),
-        })
+        Ok(room_arc)
     }
 
     /// Leave a room.
@@ -171,20 +164,29 @@ impl RoomManager {
         let rooms = self.rooms.read();
         if let Some(room_arc) = rooms.get(code) {
             let mut room = room_arc.write();
-            room.players.remove(&user_id);
 
-            if let Some(player) = room.players.get(&user_id) {
+            // Get player info BEFORE removing
+            let player_info = room.players.get(&user_id).map(|p| {
+                (p.username.clone(), p.display_name.clone())
+            });
+
+            // Broadcast player left (BEFORE removing)
+            if let Some((username, _)) = player_info {
                 let _ = room.tx.send(ServerMessage::PlayerLeft {
                     user_id,
-                    username: player.username.clone(),
+                    username,
                 });
             }
 
+            // Now remove the player
+            room.players.remove(&user_id);
+
             // If room is empty, remove it
             if room.players.is_empty() {
+                let code = room.code.clone();
                 drop(room);
                 drop(rooms);
-                self.rooms.write().remove(code);
+                self.rooms.write().remove(&code);
                 info!(code, "Room removed (empty)");
             } else {
                 // Transfer host if needed
@@ -207,7 +209,7 @@ impl RoomManager {
         let rooms = self.rooms.read();
         let room_arc = rooms
             .get(code)
-            .ok_or_else(|| AppError::NotFound("Room not found".into()))?
+            .ok_or(AppError::NotFound("Room not found"))?
             .clone();
         drop(rooms);
 
@@ -215,7 +217,7 @@ impl RoomManager {
 
         // Check if user is host
         if room.host_user_id != user_id {
-            return Err(AppError::Forbidden("Only host can start the game".into()));
+            return Err(AppError::Forbidden("Only host can start the game"));
         }
 
         // Check if game already started
@@ -224,7 +226,7 @@ impl RoomManager {
         }
 
         // Check if enough players
-        if room.players.len() < 1 {
+        if room.players.is_empty() {
             return Err(AppError::Conflict("Need at least 1 player".into()));
         }
 
@@ -235,6 +237,7 @@ impl RoomManager {
             count: room.settings.question_count,
             difficulty: room.settings.difficulty.clone(),
             num_options: room.settings.num_options,
+            capabilities: vec![AiCapability::QuestionGeneration],
             exclude_hashes: Vec::new(),
         };
 
@@ -249,7 +252,30 @@ impl RoomManager {
                 room.current_question = Some(0);
                 room.question_start_time = Some(Instant::now());
 
-                let _ = room.tx.send(ServerMessage::GameStarted {});
+                // Send first question to all players
+                if let Some(question) = room.questions.first() {
+                    let question_data = QuestionData {
+                        question: question["question"].as_str().unwrap_or("").to_string(),
+                        options: question["options"]
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                        category: question["category"].as_str().map(|s| s.to_string()),
+                    };
+
+                    let _ = room.tx.send(ServerMessage::GameStarted {});
+                    let _ = room.tx.send(ServerMessage::QuestionEmitted {
+                        question_index: 0,
+                        question: question_data,
+                        time_limit: room.settings.timer_secs,
+                    });
+                } else {
+                    let _ = room.tx.send(ServerMessage::GameStarted {});
+                }
 
                 info!(code, questions = room.questions.len(), "Game started");
 
@@ -281,113 +307,128 @@ impl RoomManager {
         answer_index: usize,
     ) {
         let rooms = self.rooms.read();
-        if let Some(room_arc) = rooms.get(code) {
-            let mut room = room_arc.write();
+        let room_arc = match rooms.get(code) {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        drop(rooms);
 
-            if room.state != RoomState::Playing {
-                return;
+        let mut room = room_arc.write();
+
+        if room.state != RoomState::Playing {
+            return;
+        }
+
+        let current_q = match room.current_question {
+            Some(q) => q,
+            None => return,
+        };
+
+        if current_q != question_index {
+            return; // Wrong question index
+        }
+
+        let player = match room.players.get_mut(&user_id) {
+            Some(p) => p,
+            None => return,
+        };
+
+        // Check if already answered this question
+        if player.answers.iter().any(|a| a.question_index == question_index) {
+            return;
+        }
+
+        // Get correct answer from question JSON
+        let question = &room.questions[current_q];
+        let correct_index = question["correct_index"].as_u64()
+            .or_else(|| question["correct"].as_u64())
+            .unwrap_or(0) as usize;
+        let is_correct = answer_index == correct_index;
+
+        // Calculate points
+        let base_points: i64 = 100;
+        let time_bonus = if let Some(start) = room.question_start_time {
+            let elapsed = start.elapsed().as_secs();
+            let time_limit = room.settings.timer_secs;
+            if elapsed < time_limit && time_limit > 0 {
+                ((time_limit - elapsed) as i64 * 50) / time_limit as i64
+            } else {
+                0
             }
+        } else {
+            0
+        };
 
-            if let Some(current_q) = room.current_question {
-                if current_q != question_index {
-                    return; // Wrong question
-                }
+        let points = if is_correct {
+            player.current_streak += 1;
+            let streak_bonus = (player.current_streak as i64 - 1) * 25;
+            base_points + time_bonus + streak_bonus.max(0)
+        } else {
+            player.current_streak = 0;
+            0
+        };
 
-                if let Some(player) = room.players.get_mut(&user_id) {
-                    // Check if already answered
-                    if player.answers.iter().any(|a| a.question_index == question_index) {
-                        return;
-                    }
+        player.score += points;
 
-                    // Get correct answer
-                    let question = &room.questions[current_q];
-                    let correct_index = question["correct"].as_u64().unwrap_or(0) as usize;
-                    let is_correct = answer_index == correct_index;
-
-                    // Calculate points
-                    let base_points = 100;
-                    let time_bonus = if let Some(start) = room.question_start_time {
-                        let elapsed = start.elapsed().as_secs();
-                        let time_limit = room.settings.timer_secs;
-                        if elapsed < time_limit {
-                            ((time_limit - elapsed) as i64 * 50) / time_limit as i64
-                        } else {
-                            0
-                        }
-                    } else {
-                        0
-                    };
-
-                    let points = if is_correct {
-                        player.current_streak += 1;
-                        let streak_bonus = (player.current_streak as i64 - 1) * 25;
-                        base_points + time_bonus + streak_bonus
-                    } else {
-                        player.current_streak = 0;
-                        0
-                    };
-
-                    player.score += points;
-
-                    // Handle lives mode
-                    if room.settings.mode == "lives" && !is_correct {
-                        if let Some(ref mut lives) = player.lives {
-                            *lives = lives.saturating_sub(1);
-                        }
-                    }
-
-                    player.answers.push(super::protocol::PlayerAnswer {
-                        user_id,
-                        username: player.username.clone(),
-                        answer_index,
-                        is_correct,
-                        time_ms: room
-                            .question_start_time
-                            .map(|s| s.elapsed().as_millis() as u64)
-                            .unwrap_or(0),
-                        points_earned: points,
-                    });
-
-                    player.last_activity = Instant::now();
-
-                    // Check if all players answered
-                    let all_answered = room.players.values().all(|p| {
-                        p.answers.iter().any(|a| a.question_index == current_q)
-                    });
-
-                    if all_answered {
-                        // Broadcast question result
-                        let leaderboard = self.build_leaderboard(&room);
-                        let question = &room.questions[current_q];
-                        let correct_index = question["correct"].as_u64().unwrap_or(0) as usize;
-                        let explanation = question["explanation"].as_str().unwrap_or("").to_string();
-
-                        let player_answers: Vec<_> = room
-                            .players
-                            .values()
-                            .flat_map(|p| p.answers.iter())
-                            .filter(|a| a.question_index == current_q)
-                            .cloned()
-                            .collect();
-
-                        let _ = room.tx.send(ServerMessage::QuestionResult {
-                            question_index: current_q,
-                            correct_index,
-                            explanation,
-                            player_answers,
-                            leaderboard: leaderboard.clone(),
-                        });
-
-                        // Move to next question after delay
-                        let room_clone = room_arc.clone();
-                        drop(room);
-                        tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_secs(3)).await;
-                            GameLoop::advance_question(room_clone).await;
-                        });
-                    }
-                }
+        // Handle lives mode
+        if room.settings.mode == "lives" && !is_correct {
+            if let Some(ref mut lives) = player.lives {
+                *lives = lives.saturating_sub(1);
             }
+        }
+
+        player.answers.push(PlayerAnswer {
+            user_id,
+            username: player.username.clone(),
+            question_index,
+            answer_index,
+            is_correct,
+            time_ms: room
+                .question_start_time
+                .map(|s| s.elapsed().as_millis() as u64)
+                .unwrap_or(0),
+            points_earned: points,
+        });
+
+        player.last_activity = Instant::now();
+
+        // Check if all players answered
+        let all_answered = room.players.values().all(|p| {
+            p.answers.iter().any(|a| a.question_index == current_q)
+        });
+
+        if all_answered {
+            // Broadcast question result
+            let leaderboard = Self::build_leaderboard(&room);
+            let question = &room.questions[current_q];
+            let correct_index = question["correct_index"].as_u64()
+                .or_else(|| question["correct"].as_u64())
+                .unwrap_or(0) as usize;
+            let explanation = question["explanation"].as_str().unwrap_or("").to_string();
+
+            let player_answers: Vec<_> = room
+                .players
+                .values()
+                .flat_map(|p| p.answers.iter())
+                .filter(|a| a.question_index == current_q)
+                .cloned()
+                .collect();
+
+            let _ = room.tx.send(ServerMessage::QuestionResult {
+                question_index: current_q,
+                correct_index,
+                explanation,
+                player_answers,
+                leaderboard,
+            });
+
+            // Move to next question after delay
+            let room_clone = room_arc.clone();
+            drop(room);
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                GameLoop::advance_question(room_clone).await;
+            });
         }
     }
 
@@ -405,16 +446,16 @@ impl RoomManager {
         }
     }
 
-    /// Use a joker.
+    /// Use a joker. Returns the indices of removed wrong answers.
     pub async fn use_joker(
         &self,
         code: &str,
         user_id: i64,
-    ) -> Result<JokerResult, AppError> {
+    ) -> Result<Vec<usize>, AppError> {
         let rooms = self.rooms.read();
         let room_arc = rooms
             .get(code)
-            .ok_or_else(|| AppError::NotFound("Room not found".into()))?
+            .ok_or(AppError::NotFound("Room not found"))?
             .clone();
         drop(rooms);
 
@@ -427,34 +468,32 @@ impl RoomManager {
         let player = room
             .players
             .get_mut(&user_id)
-            .ok_or_else(|| AppError::NotFound("Player not found".into()))?;
+            .ok_or(AppError::NotFound("Player not found"))?;
 
         if player.jokers_used >= 1 {
             return Err(AppError::Conflict("No jokers remaining".into()));
         }
 
-        let current_q = room
-            .current_question
-            .ok_or_else(|| AppError::InvalidState)?;
+        let current_q = room.current_question.ok_or(AppError::InvalidState)?;
 
         let question = &room.questions[current_q];
-        let correct_index = question["correct"].as_u64().unwrap_or(0) as usize;
-        let num_options = question["options"].as_array().map(|a| a.len()).unwrap_or(4);
+        let correct_index = question["correct_index"].as_u64()
+            .or_else(|| question["correct"].as_u64())
+            .unwrap_or(0) as usize;
+        let num_options = question["options"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(4);
 
         // Remove 2 wrong answers
-        let mut removed = Vec::new();
         let mut wrong_indices: Vec<usize> = (0..num_options).filter(|&i| i != correct_index).collect();
         wrong_indices.shuffle(&mut rand::thread_rng());
 
-        for &idx in wrong_indices.iter().take(2) {
-            removed.push(idx);
-        }
+        let removed: Vec<usize> = wrong_indices.into_iter().take(2).collect();
 
         player.jokers_used += 1;
 
-        Ok(JokerResult {
-            removed_indices: removed,
-        })
+        Ok(removed)
     }
 
     /// Get a hint.
@@ -462,7 +501,7 @@ impl RoomManager {
         let rooms = self.rooms.read();
         let room_arc = rooms
             .get(code)
-            .ok_or_else(|| AppError::NotFound("Room not found".into()))?
+            .ok_or(AppError::NotFound("Room not found"))?
             .clone();
         drop(rooms);
 
@@ -472,9 +511,7 @@ impl RoomManager {
             return Err(AppError::InvalidState);
         }
 
-        let current_q = room
-            .current_question
-            .ok_or_else(|| AppError::InvalidState)?;
+        let current_q = room.current_question.ok_or(AppError::InvalidState)?;
 
         let question = &room.questions[current_q];
         let question_text = question["question"].as_str().unwrap_or("").to_string();
@@ -487,7 +524,7 @@ impl RoomManager {
     }
 
     /// Build leaderboard from room state.
-    fn build_leaderboard(&self, room: &Room) -> Vec<PlayerScore> {
+    fn build_leaderboard(room: &Room) -> Vec<PlayerScore> {
         let mut scores: Vec<PlayerScore> = room
             .players
             .values()
@@ -508,52 +545,27 @@ impl RoomManager {
         scores
     }
 
-    /// Get room by code.
+    /// Get room Arc by code.
     pub fn get_room(&self, code: &str) -> Option<Arc<RwLock<Room>>> {
         self.rooms.read().get(code).cloned()
     }
 
-    /// List all rooms.
-    pub fn list_rooms(&self) -> Vec<RoomSnapshot> {
+    /// List all rooms (basic info).
+    pub fn list_rooms(&self) -> Vec<crate::domain::room::RoomSnapshot> {
         self.rooms
             .read()
             .values()
             .map(|r| {
                 let room = r.read();
-                RoomSnapshot {
+                crate::domain::room::RoomSnapshot {
                     code: room.code.clone(),
                     host_name: room.host_name.clone(),
-                    topic: room.settings.topic.clone(),
+                    state: room.state,
                     mode: room.settings.mode.clone(),
+                    topic: room.settings.topic.clone(),
+                    player_count: room.players.len(),
                 }
             })
             .collect()
     }
-}
-
-/// Room snapshot for API responses.
-#[derive(Debug, Clone)]
-pub struct RoomSnapshot {
-    pub code: String,
-    pub host_name: String,
-    pub topic: String,
-    pub mode: String,
-}
-
-/// Result of using a joker.
-#[derive(Debug)]
-pub struct JokerResult {
-    pub removed_indices: Vec<usize>,
-}
-
-/// Generate a random 6-character room code.
-fn generate_room_code() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    (0..6)
-        .map(|_| {
-            let idx = rng.gen_range(0..26);
-            (b'A' + idx) as char
-        })
-        .collect()
 }

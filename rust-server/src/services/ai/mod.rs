@@ -65,7 +65,7 @@ pub struct AiQuestion {
 }
 
 /// AI generation request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerationRequest {
     pub topic: String,
     pub count: usize,

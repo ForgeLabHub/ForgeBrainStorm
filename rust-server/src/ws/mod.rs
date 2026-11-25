@@ -8,15 +8,12 @@ pub mod game_loop;
 pub mod room_manager;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures::{SinkExt, StreamExt};
-use serde_json::json;
 use tokio::sync::broadcast;
-use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
 use crate::error::AppResult;
@@ -40,15 +37,15 @@ pub async fn ws_handler(
 async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
     let user_id = auth.user_id;
     let username = auth.username.clone();
-    
+
     info!(user_id, username = %username, "WebSocket connected");
-    
+
     let (mut writer, mut reader) = socket.split();
     let room_manager = Arc::new(RoomManager::new(state.clone()));
-    
+
     // Create a channel for sending messages to this client
     let (tx, mut rx) = tokio::sync::mpsc::channel::<ServerMessage>(100);
-    
+
     // Spawn task to forward messages from rx to WebSocket writer
     let writer_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -59,19 +56,20 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
             }
         }
     });
-    
-    // Track current room for cleanup
+
+    // Track current room for cleanup and broadcast subscription
     let mut current_room_code: Option<String> = None;
-    
+    let mut broadcast_task: Option<tokio::task::JoinHandle<()>> = None;
+
     // Main message loop
     while let Some(msg) = reader.next().await {
         match msg {
             Ok(Message::Text(text)) => {
                 debug!(user_id, "Received: {}", text);
-                
+
                 match serde_json::from_str::<ClientMessage>(&text) {
                     Ok(client_msg) => {
-                        handle_client_message(
+                        let result = handle_client_message(
                             client_msg,
                             &state,
                             &room_manager,
@@ -79,14 +77,21 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             user_id,
                             &username,
                             &mut current_room_code,
+                            &mut broadcast_task,
                         )
                         .await;
+
+                        if let Err(e) = result {
+                            warn!(user_id, error = %e, "Error handling message");
+                        }
                     }
                     Err(e) => {
                         warn!(user_id, error = %e, "Failed to parse client message");
-                        let _ = tx.send(ServerMessage::Error {
-                            message: format!("Invalid message format: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(ServerMessage::Error {
+                                message: format!("Invalid message format: {}", e),
+                            })
+                            .await;
                     }
                 }
             }
@@ -101,15 +106,20 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
             _ => {}
         }
     }
-    
+
     // Cleanup: leave room if in one
     if let Some(room_code) = current_room_code {
         room_manager.leave_room(&room_code, user_id).await;
     }
-    
+
+    // Abort broadcast forwarding task
+    if let Some(task) = broadcast_task {
+        task.abort();
+    }
+
     // Abort writer task
     writer_task.abort();
-    
+
     info!(user_id, username = %username, "WebSocket disconnected");
 }
 
@@ -122,123 +132,229 @@ async fn handle_client_message(
     user_id: i64,
     username: &str,
     current_room_code: &mut Option<String>,
-) {
+    broadcast_task: &mut Option<tokio::task::JoinHandle<()>>,
+) -> Result<(), String> {
     match msg {
-        ClientMessage::CreateRoom { topic, mode, settings } => {
-            match room_manager.create_room(user_id, username, topic, mode, settings).await {
-                Ok(room) => {
-                    *current_room_code = Some(room.code.clone());
-                    let _ = tx.send(ServerMessage::RoomCreated {
-                        code: room.code,
-                        host: room.host_name,
-                        topic: room.topic,
-                        mode: room.mode,
-                    }).await;
-                }
-                Err(e) => {
-                    let _ = tx.send(ServerMessage::Error {
-                        message: format!("Failed to create room: {}", e),
-                    }).await;
-                }
-            }
-        }
-        
-        ClientMessage::JoinRoom { code, name } => {
-            match room_manager.join_room(&code, user_id, username, &name).await {
-                Ok(room) => {
+        ClientMessage::CreateRoom {
+            topic,
+            mode,
+            settings,
+        } => {
+            match room_manager
+                .create_room(user_id, username, topic, mode, settings)
+                .await
+            {
+                Ok(room_arc) => {
+                    let room = room_arc.read();
+                    let code = room.code.clone();
+                    let host_name = room.host_name.clone();
+                    let topic = room.settings.topic.clone();
+                    let mode = room.settings.mode.clone();
+                    drop(room);
+
                     *current_room_code = Some(code.clone());
-                    
-                    // Subscribe to room broadcast channel
-                    let mut broadcast_rx = room.tx.subscribe();
-                    let tx_clone = tx.clone();
-                    
-                    // Spawn task to forward broadcast messages
-                    tokio::spawn(async move {
-                        while let Ok(event) = broadcast_rx.recv().await {
-                            let _ = tx_clone.send(event).await;
-                        }
-                    });
-                    
-                    let _ = tx.send(ServerMessage::RoomJoined {
-                        code: room.code,
-                        is_host: room.host_user_id == user_id,
-                        topic: room.topic,
-                        mode: room.mode,
-                        players: room.players_list(),
-                    }).await;
+
+                    // Subscribe to broadcast
+                    subscribe_to_broadcast(room_arc, tx.clone(), broadcast_task);
+
+                    let _ = tx
+                        .send(ServerMessage::RoomCreated {
+                            code,
+                            host: host_name,
+                            topic,
+                            mode,
+                        })
+                        .await;
                 }
                 Err(e) => {
-                    let _ = tx.send(ServerMessage::Error {
-                        message: format!("Failed to join room: {}", e),
-                    }).await;
+                    let _ = tx
+                        .send(ServerMessage::Error {
+                            message: format!("Failed to create room: {}", e),
+                        })
+                        .await;
                 }
             }
         }
-        
+
+        ClientMessage::JoinRoom { code, name } => {
+            let display_name = if name.is_empty() {
+                username.to_string()
+            } else {
+                name
+            };
+
+            match room_manager
+                .join_room(&code, user_id, username, &display_name)
+                .await
+            {
+                Ok(room_arc) => {
+                    *current_room_code = Some(code.clone());
+
+                    // Subscribe to broadcast
+                    subscribe_to_broadcast(room_arc.clone(), tx.clone(), broadcast_task);
+
+                    let room = room_arc.read();
+                    let is_host = room.host_user_id == user_id;
+                    let topic = room.settings.topic.clone();
+                    let mode = room.settings.mode.clone();
+
+                    // Build current player list
+                    let players: Vec<super::protocol::PlayerInfo> = room
+                        .players
+                        .values()
+                        .map(|p| super::protocol::PlayerInfo {
+                            user_id: p.user_id,
+                            username: p.username.clone(),
+                            display_name: p.display_name.clone(),
+                            score: p.score,
+                            lives: p.lives,
+                            is_ready: p.is_ready,
+                            is_host: p.user_id == room.host_user_id,
+                        })
+                        .collect();
+
+                    drop(room);
+
+                    let _ = tx
+                        .send(ServerMessage::RoomJoined {
+                            code,
+                            is_host,
+                            topic,
+                            mode,
+                            players,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(ServerMessage::Error {
+                            message: format!("Failed to join room: {}", e),
+                        })
+                        .await;
+                }
+            }
+        }
+
         ClientMessage::LeaveRoom => {
             if let Some(room_code) = current_room_code.take() {
+                // Stop broadcast subscription
+                if let Some(task) = broadcast_task.take() {
+                    task.abort();
+                }
+
                 room_manager.leave_room(&room_code, user_id).await;
                 let _ = tx.send(ServerMessage::RoomLeft {}).await;
             }
         }
-        
+
         ClientMessage::StartGame => {
-            if let Some(room_code) = current_room_code {
+            if let Some(room_code) = current_room_code.as_ref() {
                 match room_manager.start_game(room_code, user_id).await {
                     Ok(_) => {
-                        let _ = tx.send(ServerMessage::GameStarted {}).await;
+                        // GameStarted is broadcast via the room channel,
+                        // which is already forwarded to the client.
                     }
                     Err(e) => {
-                        let _ = tx.send(ServerMessage::Error {
-                            message: format!("Failed to start game: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(ServerMessage::Error {
+                                message: format!("Failed to start game: {}", e),
+                            })
+                            .await;
                     }
                 }
             }
         }
-        
-        ClientMessage::SubmitAnswer { question_index, answer_index } => {
-            if let Some(room_code) = current_room_code {
-                room_manager.submit_answer(room_code, user_id, question_index, answer_index).await;
+
+        ClientMessage::SubmitAnswer {
+            question_index,
+            answer_index,
+        } => {
+            if let Some(room_code) = current_room_code.as_ref() {
+                room_manager
+                    .submit_answer(room_code, user_id, question_index, answer_index)
+                    .await;
             }
         }
-        
+
         ClientMessage::ChatMessage { text } => {
-            if let Some(room_code) = current_room_code {
-                room_manager.send_chat(room_code, user_id, username, &text).await;
+            if let Some(room_code) = current_room_code.as_ref() {
+                room_manager
+                    .send_chat(room_code, user_id, username, &text)
+                    .await;
             }
         }
-        
+
         ClientMessage::UseJoker => {
-            if let Some(room_code) = current_room_code {
+            if let Some(room_code) = current_room_code.as_ref() {
                 match room_manager.use_joker(room_code, user_id).await {
-                    Ok(joker_result) => {
-                        let _ = tx.send(ServerMessage::JokerUsed {
-                            removed_indices: joker_result.removed_indices,
-                        }).await;
+                    Ok(removed_indices) => {
+                        let _ = tx
+                            .send(ServerMessage::JokerUsed { removed_indices })
+                            .await;
                     }
                     Err(e) => {
-                        let _ = tx.send(ServerMessage::Error {
-                            message: format!("Failed to use joker: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(ServerMessage::Error {
+                                message: format!("Failed to use joker: {}", e),
+                            })
+                            .await;
                     }
                 }
             }
         }
-        
+
         ClientMessage::GetHint => {
-            if let Some(room_code) = current_room_code {
+            if let Some(room_code) = current_room_code.as_ref() {
                 match room_manager.get_hint(room_code, user_id).await {
                     Ok(hint) => {
                         let _ = tx.send(ServerMessage::HintReceived { hint }).await;
                     }
                     Err(e) => {
-                        let _ = tx.send(ServerMessage::Error {
-                            message: format!("Failed to get hint: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(ServerMessage::Error {
+                                message: format!("Failed to get hint: {}", e),
+                            })
+                            .await;
                     }
                 }
             }
         }
     }
+
+    Ok(())
+}
+
+/// Subscribe to a room's broadcast channel and forward events to the client.
+fn subscribe_to_broadcast(
+    room_arc: Arc<parking_lot::RwLock<crate::domain::room::Room>>,
+    tx: tokio::sync::mpsc::Sender<ServerMessage>,
+    broadcast_task: &mut Option<tokio::task::JoinHandle<()>>,
+) {
+    // Abort existing broadcast task if any
+    if let Some(task) = broadcast_task.take() {
+        task.abort();
+    }
+
+    let mut broadcast_rx = room_arc.read().tx.subscribe();
+
+    let task = tokio::spawn(async move {
+        loop {
+            match broadcast_rx.recv().await {
+                Ok(event) => {
+                    if tx.send(event).await.is_err() {
+                        break; // Client disconnected
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warn!(lagged = n, "Broadcast receiver lagged, skipping messages");
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    break; // Channel closed
+                }
+            }
+        }
+    });
+
+    *broadcast_task = Some(task);
 }

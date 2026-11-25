@@ -2,9 +2,19 @@
 
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::ws::protocol::PlayerAnswer;
+/// A player's answer to a single question.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerAnswer {
+    pub user_id: i64,
+    pub username: String,
+    pub question_index: usize,
+    pub answer_index: usize,
+    pub is_correct: bool,
+    pub time_ms: u64,
+    pub points_earned: i64,
+}
 
 /// A player within a room (WebSocket gameplay version).
 #[derive(Debug, Clone)]
@@ -13,7 +23,7 @@ pub struct Player {
     pub username: String,
     pub display_name: String,
     pub score: i64,
-    pub lives: Option<u8>,  // None if not lives mode
+    pub lives: Option<u8>, // None if not lives mode
     pub jokers_used: u32,
     pub current_streak: u32,
     pub answers: Vec<PlayerAnswer>,
@@ -45,7 +55,7 @@ impl Player {
     }
 }
 
-/// Legacy player model (for backward compatibility).
+/// Legacy player model (for backward compatibility with old room system).
 #[derive(Debug, Clone)]
 pub struct LegacyPlayer {
     pub sid: String,
@@ -70,7 +80,12 @@ pub struct LegacyPlayer {
 }
 
 impl LegacyPlayer {
-    pub fn new(sid: String, display_name: String, user_id: Option<i64>, username: Option<String>) -> Self {
+    pub fn new(
+        sid: String,
+        display_name: String,
+        user_id: Option<i64>,
+        username: Option<String>,
+    ) -> Self {
         Self {
             sid,
             user_id,

@@ -7,12 +7,12 @@ use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::domain::room::{Room, RoomState};
 use crate::services::ai::AiRouter;
 
-use super::protocol::{PlayerAnswer, PlayerScore, ServerMessage};
+use super::protocol::{PlayerAnswer, PlayerScore, QuestionData, ServerMessage};
 
 /// Manages the game loop for a room.
 pub struct GameLoop;
@@ -25,22 +25,26 @@ impl GameLoop {
     /// - Broadcasting timer updates
     /// - Advancing to next question
     /// - Game over detection
-    pub async fn run(room: Arc<RwLock<Room>>, ai_router: Arc<AiRouter>) {
+    pub async fn run(room: Arc<RwLock<Room>>, _ai_router: Arc<AiRouter>) {
         info!("Game loop started");
 
         loop {
-            let should_continue = {
+            // Check if game should continue
+            let (should_continue, timer_secs, question_index) = {
                 let room = room.read();
-                
-                // Check if game is still playing
+
                 if room.state != RoomState::Playing {
                     info!("Game no longer in Playing state, exiting loop");
-                    false
+                    (false, 0, 0)
                 } else if room.current_question.is_none() {
                     info!("No current question, exiting loop");
-                    false
+                    (false, 0, 0)
                 } else {
-                    true
+                    (
+                        true,
+                        room.settings.timer_secs,
+                        room.current_question.unwrap_or(0),
+                    )
                 }
             };
 
@@ -48,20 +52,19 @@ impl GameLoop {
                 break;
             }
 
-            // Get timer settings
-            let (timer_secs, question_index) = {
-                let room = room.read();
-                (
-                    room.settings.timer_secs,
-                    room.current_question.unwrap_or(0),
-                )
-            };
-
             // Run timer
             Self::run_timer(room.clone(), timer_secs, question_index).await;
 
-            // After timer expires, broadcast question result
-            Self::broadcast_question_result(room.clone()).await;
+            // Check if game is still playing after timer
+            {
+                let room = room.read();
+                if room.state != RoomState::Playing {
+                    break;
+                }
+            }
+
+            // After timer expires, broadcast question result (if not already done)
+            Self::broadcast_question_result(room.clone(), question_index).await;
 
             // Wait before advancing
             sleep(Duration::from_secs(3)).await;
@@ -76,7 +79,6 @@ impl GameLoop {
     /// Run the question timer.
     async fn run_timer(room: Arc<RwLock<Room>>, duration_secs: u64, question_index: usize) {
         let start = Instant::now();
-        let duration = Duration::from_secs(duration_secs);
 
         // Update room start time
         {
@@ -89,7 +91,7 @@ impl GameLoop {
             sleep(Duration::from_secs(1)).await;
 
             let room = room.read();
-            
+
             // Check if game still playing and on same question
             if room.state != RoomState::Playing || room.current_question != Some(question_index) {
                 break;
@@ -102,20 +104,30 @@ impl GameLoop {
     }
 
     /// Broadcast question result after timeout.
-    async fn broadcast_question_result(room: Arc<RwLock<Room>>) {
+    async fn broadcast_question_result(room: Arc<RwLock<Room>>, question_index: usize) {
         let room_guard = room.read();
-        
+
         if room_guard.state != RoomState::Playing {
             return;
         }
 
-        let current_q = match room_guard.current_question {
-            Some(q) => q,
-            None => return,
-        };
+        // Check if result was already broadcast (all players answered)
+        let all_answered = room_guard.players.values().all(|p| {
+            p.answers
+                .iter()
+                .any(|a| a.question_index == question_index)
+        });
 
-        let question = &room_guard.questions[current_q];
-        let correct_index = question["correct"].as_u64().unwrap_or(0) as usize;
+        if all_answered {
+            // Result was already sent by submit_answer, skip
+            return;
+        }
+
+        let question = &room_guard.questions[question_index];
+        let correct_index = question["correct_index"]
+            .as_u64()
+            .or_else(|| question["correct"].as_u64())
+            .unwrap_or(0) as usize;
         let explanation = question["explanation"].as_str().unwrap_or("").to_string();
 
         // Collect all answers for this question
@@ -123,7 +135,7 @@ impl GameLoop {
             .players
             .values()
             .flat_map(|p| p.answers.iter())
-            .filter(|a| a.question_index == current_q)
+            .filter(|a| a.question_index == question_index)
             .cloned()
             .collect();
 
@@ -147,7 +159,7 @@ impl GameLoop {
         leaderboard.sort_by(|a, b| b.score.cmp(&a.score));
 
         let _ = room_guard.tx.send(ServerMessage::QuestionResult {
-            question_index: current_q,
+            question_index,
             correct_index,
             explanation,
             player_answers,
@@ -170,7 +182,7 @@ impl GameLoop {
 
         let next_q = current_q + 1;
 
-        // Check if game over
+        // Check if game over (no more questions)
         if next_q >= room_guard.questions.len() {
             Self::end_game(&mut room_guard);
             return;
@@ -194,14 +206,9 @@ impl GameLoop {
         room_guard.current_question = Some(next_q);
         room_guard.question_start_time = None;
 
-        // Reset player answers for new question
-        for player in room_guard.players.values_mut() {
-            // Keep history, but mark as not answered for current question
-        }
-
         // Broadcast new question
         let question = &room_guard.questions[next_q];
-        let question_data = super::protocol::QuestionData {
+        let question_data = QuestionData {
             question: question["question"].as_str().unwrap_or("").to_string(),
             options: question["options"]
                 .as_array()
