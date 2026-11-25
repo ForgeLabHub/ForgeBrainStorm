@@ -3,11 +3,13 @@
 //! All client → server and server → client messages are defined here.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+
+// Re-export PlayerAnswer from domain to avoid duplication.
+pub use crate::domain::player::PlayerAnswer;
 
 /// Client → Server messages.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Create a new game room.
     CreateRoom {
@@ -15,33 +17,33 @@ pub enum ClientMessage {
         mode: Option<String>,
         settings: Option<RoomSettingsInput>,
     },
-    
+
     /// Join an existing room by code.
+    /// `name` is optional — server uses the authenticated username if omitted.
     JoinRoom {
         code: String,
-        name: String,
+        name: Option<String>,
     },
-    
+
     /// Leave the current room.
     LeaveRoom,
-    
+
     /// Start the game (host only).
     StartGame,
-    
+
     /// Submit an answer to the current question.
+    /// `question_index` is optional — if omitted, the server uses the current question.
     SubmitAnswer {
-        question_index: usize,
+        question_index: Option<usize>,
         answer_index: usize,
     },
-    
+
     /// Send a chat message.
-    ChatMessage {
-        text: String,
-    },
-    
+    ChatMessage { text: String },
+
     /// Use a joker to remove wrong answers.
     UseJoker,
-    
+
     /// Request a hint for the current question.
     GetHint,
 }
@@ -57,7 +59,7 @@ pub struct RoomSettingsInput {
 
 /// Server → Client messages.
 #[derive(Debug, Serialize, Clone)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Room created successfully.
     RoomCreated {
@@ -66,7 +68,7 @@ pub enum ServerMessage {
         topic: String,
         mode: String,
     },
-    
+
     /// Joined a room successfully.
     RoomJoined {
         code: String,
@@ -75,20 +77,20 @@ pub enum ServerMessage {
         mode: String,
         players: Vec<PlayerInfo>,
     },
-    
+
     /// Left the room.
     RoomLeft {},
-    
+
     /// Game started.
     GameStarted {},
-    
+
     /// New question emitted.
     QuestionEmitted {
         question_index: usize,
         question: QuestionData,
         time_limit: u64,
     },
-    
+
     /// Question result after timeout or all answers.
     QuestionResult {
         question_index: usize,
@@ -97,13 +99,13 @@ pub enum ServerMessage {
         player_answers: Vec<PlayerAnswer>,
         leaderboard: Vec<PlayerScore>,
     },
-    
+
     /// All questions finished, game over.
     GameOver {
         final_leaderboard: Vec<PlayerScore>,
         winner: Option<String>,
     },
-    
+
     /// Chat message from a player.
     ChatMessage {
         user_id: i64,
@@ -111,37 +113,32 @@ pub enum ServerMessage {
         text: String,
         timestamp: i64,
     },
-    
+
     /// Joker used successfully.
     JokerUsed {
         removed_indices: Vec<usize>,
     },
-    
+
     /// Hint received.
-    HintReceived {
-        hint: String,
-    },
-    
+    HintReceived { hint: String },
+
     /// Player joined the room.
-    PlayerJoined {
-        player: PlayerInfo,
-    },
-    
+    PlayerJoined { player: PlayerInfo },
+
     /// Player left the room.
     PlayerLeft {
         user_id: i64,
         username: String,
     },
-    
+
     /// Error message.
-    Error {
-        message: String,
-    },
-    
+    Error { message: String },
+
     /// Timer update (sent every second).
-    TimerUpdate {
-        seconds_remaining: u64,
-    },
+    TimerUpdate { seconds_remaining: u64 },
+
+    /// Full player list update (sent on join/leave).
+    PlayersUpdated { players: Vec<PlayerInfo> },
 }
 
 /// Player information.
@@ -162,17 +159,6 @@ pub struct QuestionData {
     pub question: String,
     pub options: Vec<String>,
     pub category: Option<String>,
-}
-
-/// Player's answer to a question.
-#[derive(Debug, Serialize, Clone)]
-pub struct PlayerAnswer {
-    pub user_id: i64,
-    pub username: String,
-    pub answer_index: usize,
-    pub is_correct: bool,
-    pub time_ms: u64,
-    pub points_earned: i64,
 }
 
 /// Player score in leaderboard.

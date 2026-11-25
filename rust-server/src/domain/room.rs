@@ -13,7 +13,7 @@ use rand::Rng;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::domain::player::{Player, LegacyPlayer};
+use crate::domain::player::{LegacyPlayer, Player};
 use crate::error::{AppError, AppResult};
 use crate::ws::protocol::ServerMessage;
 
@@ -72,7 +72,9 @@ impl RoomSettings {
         if !["easy", "medium", "hard"].contains(&self.difficulty.as_str()) {
             self.difficulty = "medium".into();
         }
-        if !["classic", "ffa", "team", "lives", "coop", "svoyaigra", "sandbox"].contains(&self.mode.as_str()) {
+        if !["classic", "ffa", "team", "lives", "coop", "svoyaigra", "sandbox"]
+            .contains(&self.mode.as_str())
+        {
             self.mode = "classic".into();
         }
     }
@@ -93,24 +95,6 @@ pub struct Room {
     pub created_at: Instant,
     pub last_activity: Instant,
     pub tx: broadcast::Sender<ServerMessage>,
-}
-
-impl Room {
-    /// Get list of players for API responses.
-    pub fn players_list(&self) -> Vec<super::protocol::PlayerInfo> {
-        self.players
-            .values()
-            .map(|p| super::protocol::PlayerInfo {
-                user_id: p.user_id,
-                username: p.username.clone(),
-                display_name: p.display_name.clone(),
-                score: p.score,
-                lives: p.lives,
-                is_ready: p.is_ready,
-                is_host: p.user_id == self.host_user_id,
-            })
-            .collect()
-    }
 }
 
 /// Legacy room for HTTP API (keyed by session ID).
@@ -164,7 +148,7 @@ impl RoomRegistry {
     ) -> AppResult<RoomSnapshot> {
         settings.clamp();
         let mut rooms = self.rooms.write();
-        
+
         if rooms.len() >= self.max_rooms {
             return Err(AppError::Conflict("Room limit reached".into()));
         }
@@ -200,6 +184,11 @@ impl RoomRegistry {
 
     pub fn get_arc(&self, code: &str) -> Option<Arc<RwLock<Room>>> {
         self.rooms.read().get(code).cloned()
+    }
+
+    /// Insert a room Arc directly (used by WebSocket room manager).
+    pub fn insert_arc(&self, code: String, room: Arc<RwLock<Room>>) {
+        self.rooms.write().insert(code, room);
     }
 
     pub fn list_public(&self) -> Vec<RoomSnapshot> {
@@ -256,8 +245,7 @@ impl RoomSnapshot {
 }
 
 /// Generate a random 6-character room code.
-fn generate_room_code() -> String {
-    use rand::Rng;
+pub fn generate_room_code() -> String {
     let mut rng = rand::thread_rng();
     (0..6)
         .map(|_| {
