@@ -10,6 +10,9 @@
 pub mod providers;
 pub mod router;
 pub mod cache;
+pub mod mock;
+
+pub use mock::{MockProvider, MockAiRouter};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

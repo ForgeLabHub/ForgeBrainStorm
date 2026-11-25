@@ -1,4 +1,8 @@
 //! Room model and in-memory registry.
+//!
+//! Two room types:
+//! - `Room`: WebSocket gameplay version (keyed by user_id)
+//! - `LegacyRoom`: HTTP API version (keyed by session ID)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,10 +13,11 @@ use rand::Rng;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::domain::player::Player;
+use crate::domain::player::{Player, LegacyPlayer};
 use crate::error::{AppError, AppResult};
+use crate::ws::protocol::ServerMessage;
 
-/// Room lifecycle states. Transitions are CAS-protected.
+/// Room lifecycle states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RoomState {
@@ -23,7 +28,7 @@ pub enum RoomState {
     Error,
 }
 
-/// Settings applied to a room (mutable by the host before start).
+/// Settings applied to a room.
 #[derive(Debug, Clone, Serialize)]
 pub struct RoomSettings {
     pub topic: String,
@@ -58,7 +63,7 @@ impl Default for RoomSettings {
 }
 
 impl RoomSettings {
-    /// Clamp values to safe ranges — applies to sandbox rooms too.
+    /// Clamp values to safe ranges.
     pub fn clamp(&mut self) {
         self.question_count = self.question_count.clamp(5, 30);
         self.num_options = self.num_options.clamp(2, 6);
@@ -73,7 +78,7 @@ impl RoomSettings {
     }
 }
 
-/// A live room.
+/// WebSocket gameplay room (keyed by user_id).
 #[derive(Debug)]
 pub struct Room {
     pub code: String,
@@ -81,20 +86,53 @@ pub struct Room {
     pub host_name: String,
     pub state: RoomState,
     pub settings: RoomSettings,
-    pub players: HashMap<String, Player>, // keyed by sid
+    pub players: HashMap<i64, Player>,
+    pub questions: Vec<serde_json::Value>,
+    pub current_question: Option<usize>,
+    pub question_start_time: Option<Instant>,
+    pub created_at: Instant,
+    pub last_activity: Instant,
+    pub tx: broadcast::Sender<ServerMessage>,
+}
+
+impl Room {
+    /// Get list of players for API responses.
+    pub fn players_list(&self) -> Vec<super::protocol::PlayerInfo> {
+        self.players
+            .values()
+            .map(|p| super::protocol::PlayerInfo {
+                user_id: p.user_id,
+                username: p.username.clone(),
+                display_name: p.display_name.clone(),
+                score: p.score,
+                lives: p.lives,
+                is_ready: p.is_ready,
+                is_host: p.user_id == self.host_user_id,
+            })
+            .collect()
+    }
+}
+
+/// Legacy room for HTTP API (keyed by session ID).
+#[derive(Debug)]
+pub struct LegacyRoom {
+    pub code: String,
+    pub host_sid: String,
+    pub state: RoomState,
+    pub settings: RoomSettings,
+    pub players: HashMap<String, LegacyPlayer>,
     pub questions: Vec<serde_json::Value>,
     pub current_q: usize,
     pub deadline: Option<Instant>,
     pub created_at: Instant,
     pub last_activity: Instant,
-    /// Broadcast channel for fan-out to all players in this room.
-    pub tx: broadcast::Sender<WsEvent>,
+    pub tx: broadcast::Sender<LegacyWsEvent>,
 }
 
-/// Events broadcast to all players in a room.
+/// Legacy WebSocket events.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
-pub enum WsEvent {
+pub enum LegacyWsEvent {
     PlayersUpdated,
     QuestionEmitted { index: usize },
     QuestionResult { correct_index: usize },
@@ -103,60 +141,7 @@ pub enum WsEvent {
     Custom(String, serde_json::Value),
 }
 
-impl Room {
-    pub fn new(code: String, host_user_id: i64, host_name: String, settings: RoomSettings) -> Self {
-        let (tx, _) = broadcast::channel(256);
-        Self {
-            code,
-            host_user_id,
-            host_name,
-            state: RoomState::Waiting,
-            settings,
-            players: HashMap::new(),
-            questions: Vec::new(),
-            current_q: 0,
-            deadline: None,
-            created_at: Instant::now(),
-            last_activity: Instant::now(),
-            tx,
-        }
-    }
-
-    pub fn touch(&mut self) {
-        self.last_activity = Instant::now();
-    }
-
-    /// CAS transition: Waiting → Starting. Returns false if already taken.
-    pub fn try_start(&mut self) -> bool {
-        if self.state == RoomState::Waiting {
-            self.state = RoomState::Starting;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn all_answered(&self) -> bool {
-        self.players.values()
-            .filter(|p| !p.is_spectator && !p.is_disconnected() && !p.instant_answer)
-            .all(|p| p.answered)
-    }
-
-    pub fn reset_answers(&mut self) {
-        for p in self.players.values_mut() {
-            p.answered = false;
-            p.answer_index = None;
-            p.answer_time = None;
-        }
-    }
-
-    pub fn advance_question(&mut self) -> bool {
-        self.current_q += 1;
-        self.current_q < self.questions.len()
-    }
-}
-
-/// In-memory room registry.
+/// In-memory room registry (WebSocket version).
 #[derive(Clone)]
 pub struct RoomRegistry {
     rooms: Arc<RwLock<HashMap<String, Arc<RwLock<Room>>>>>,
@@ -171,23 +156,40 @@ impl RoomRegistry {
         }
     }
 
-    pub fn create(&self, host_user_id: i64, host_name: &str, mut settings: RoomSettings) -> AppResult<RoomSnapshot> {
+    pub fn create(
+        &self,
+        host_user_id: i64,
+        host_name: &str,
+        mut settings: RoomSettings,
+    ) -> AppResult<RoomSnapshot> {
         settings.clamp();
         let mut rooms = self.rooms.write();
+        
         if rooms.len() >= self.max_rooms {
-            return Err(AppError::Conflict("Достигнут лимит комнат".into()));
+            return Err(AppError::Conflict("Room limit reached".into()));
         }
-        let code = gen_code();
-        if rooms.contains_key(&code) {
-            // Extremely unlikely (26^6), but retry once.
-            let code = gen_code();
-            if rooms.contains_key(&code) {
-                return Err(AppError::Internal(anyhow::anyhow!("code collision")));
-            }
-        }
-        let room = Room::new(code.clone(), host_user_id, host_name.to_string(), settings);
+
+        let code = generate_room_code();
+        let (tx, _) = broadcast::channel(256);
+
+        let room = Room {
+            code: code.clone(),
+            host_user_id,
+            host_name: host_name.to_string(),
+            state: RoomState::Waiting,
+            settings,
+            players: HashMap::new(),
+            questions: Vec::new(),
+            current_question: None,
+            question_start_time: None,
+            created_at: Instant::now(),
+            last_activity: Instant::now(),
+            tx,
+        };
+
         let snapshot = RoomSnapshot::from_room(&room);
         rooms.insert(code, Arc::new(RwLock::new(room)));
+
         Ok(snapshot)
     }
 
@@ -201,29 +203,34 @@ impl RoomRegistry {
     }
 
     pub fn list_public(&self) -> Vec<RoomSnapshot> {
-        self.rooms.read().values().map(|r| RoomSnapshot::from_room(&r.read())).collect()
+        self.rooms
+            .read()
+            .values()
+            .map(|r| RoomSnapshot::from_room(&r.read()))
+            .collect()
     }
 
     pub fn remove(&self, code: &str) {
         self.rooms.write().remove(code);
     }
 
-    /// Remove finished and idle rooms. Returns count removed.
     pub fn cleanup_stale(&self, idle_timeout: Duration) -> usize {
         let mut rooms = self.rooms.write();
         let now = Instant::now();
         let before = rooms.len();
+
         rooms.retain(|_, room| {
             let r = room.read();
             let idle = now.duration_since(r.last_activity) > idle_timeout;
             let finished = r.state == RoomState::Finished;
             !(idle && finished)
         });
+
         before - rooms.len()
     }
 }
 
-/// Serializable room snapshot for HTTP responses.
+/// Serializable room snapshot.
 #[derive(Debug, Serialize)]
 pub struct RoomSnapshot {
     pub code: String,
@@ -248,20 +255,30 @@ impl RoomSnapshot {
     }
 }
 
-/// Generate a random 6-character uppercase room code (letters only).
-///
-/// Uses `secrets::gen_code` semantics — we deliberately don't use
-/// `random::choices` because a 6-char alphabetic code (26^6 ≈ 3e8) must
-/// be collision-resistant. The registry handles the atomic uniqueness
-/// check via `rooms.contains_key(&code)` with a single retry.
-fn gen_code() -> String {
+/// Generate a random 6-character room code.
+fn generate_room_code() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     (0..6)
         .map(|_| {
-            // Generate a random letter A-Z directly, no filter needed.
             let idx = rng.gen_range(0..26);
             (b'A' + idx) as char
         })
         .collect()
+}
+
+/// Legacy room registry (for backward compatibility).
+#[derive(Clone)]
+pub struct LegacyRoomRegistry {
+    rooms: Arc<RwLock<HashMap<String, Arc<RwLock<LegacyRoom>>>>>,
+    max_rooms: usize,
+}
+
+impl LegacyRoomRegistry {
+    pub fn new(max_rooms: usize) -> Self {
+        Self {
+            rooms: Arc::new(RwLock::new(HashMap::new())),
+            max_rooms,
+        }
+    }
 }
