@@ -95,6 +95,8 @@ pub struct Room {
     /// Monotonic token identifying the current question. Timer tasks compare
     /// it before advancing so a stale timer can never skip a question.
     pub question_token: u64,
+    /// Where the current question set came from: `ai:<provider>` or `fallback`.
+    pub question_source: String,
 }
 
 impl Room {
@@ -115,6 +117,7 @@ impl Room {
             started_at: None,
             tx,
             question_token: 0,
+            question_source: String::new(),
         }
     }
 
@@ -152,8 +155,9 @@ impl Room {
     }
 
     /// Install a freshly generated question set and start playing.
-    pub fn set_questions(&mut self, questions: Vec<serde_json::Value>) {
+    pub fn set_questions(&mut self, questions: Vec<serde_json::Value>, source: &str) {
         self.questions = questions;
+        self.question_source = source.to_string();
         self.current_q = 0;
         self.question_token = 1;
         self.state = RoomState::Playing;

@@ -20,7 +20,10 @@
     lock:
       '<rect x="4.8" y="10.5" width="14.4" height="9.7" rx="2.6" /><path d="M8.3 10.5V8a3.7 3.7 0 0 1 7.4 0v2.5" />',
     logout: '<path d="M14.5 8V5.5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h6.5a2 2 0 0 0 2-2V16" /><path d="M9.5 12h11" /><path d="M17.5 8.5 21 12l-3.5 3.5" />',
-    plus: '<path d="M12 5v14" /><path d="M5 12h14" />'
+    plus: '<path d="M12 5v14" /><path d="M5 12h14" />',
+    sparkle:
+      '<path d="M12 3.2l1.9 5.4 5.4 1.9-5.4 1.9L12 17.8l-1.9-5.4L4.7 10.5l5.4-1.9L12 3.2Z" fill="currentColor" stroke="none" /><path d="M18.5 16.2l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" fill="currentColor" stroke="none" />',
+    clock: '<circle cx="12" cy="12" r="8.4" /><path d="M12 7.6V12l3.2 2" />'
   };
 </script>
 

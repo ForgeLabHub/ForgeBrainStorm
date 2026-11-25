@@ -19,7 +19,9 @@
 	let qIndex = 0;
 	let qTotal = 0;
 	let selected: number | null = null;
-	let phase: 'waiting' | 'playing' | 'result' | 'finished' = 'waiting';
+	let phase: 'waiting' | 'preparing' | 'playing' | 'result' | 'finished' = 'waiting';
+	let questionSource = '';
+	let preparingCount = 0;
 	let isHost = false;
 	let topic = '';
 	let error = '';
@@ -44,6 +46,7 @@
 		players = data.players || [];
 		// The host restarting the game resets every score to zero.
 		if (phase === 'finished' && players.length > 0 && players.every((player) => player.score === 0)) {
+			questionSource = '';
 			phase = 'waiting';
 			question = null;
 			verdict = null;
@@ -55,6 +58,7 @@
 
 	function onQuestion(data: any) {
 		question = data.question;
+		questionSource = typeof data.source === 'string' ? data.source : '';
 		timeLimit = data.time_limit || data.question?.time_limit || 30;
 		qIndex = typeof data.index === 'number' ? data.index : 0;
 		qTotal = typeof data.total === 'number' ? data.total : 0;
@@ -94,6 +98,12 @@
 			if (data.topic) topic = data.topic;
 		},
 		players_updated: onPlayers,
+		game_preparing: () => {
+			phase = 'preparing';
+			verdict = null;
+			selected = null;
+			error = '';
+		},
 		question_emitted: onQuestion,
 		question_result: onResult,
 		game_over: onGameOver,
@@ -210,8 +220,8 @@
 			</p>
 		{/if}
 
-		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
-			<div class="min-w-0">
+		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-center">
+			<div class="min-w-0 lg:flex lg:min-h-[calc(100vh-170px)] lg:flex-col lg:justify-center">
 				{#if phase === 'waiting'}
 					<section class="card card-pad animate-rise text-center">
 						<p class="text-sm text-dim">{topic || 'Комната'}</p>
@@ -246,11 +256,29 @@
 							{/if}
 						</div>
 					</section>
+				{:else if phase === 'preparing'}
+					<section class="card card-pad animate-rise text-center flex min-h-[45vh] flex-col justify-center">
+						<div class="mx-auto grid h-14 w-14 place-items-center rounded-full border border-amber/40 bg-amber/10">
+							<span class="animate-pulse text-amber"><Icon name="sparkle" size={24} /></span>
+						</div>
+						<p class="mt-4 font-display text-lg text-chalk">Готовим вопросы</p>
+						<p class="mt-1.5 text-sm text-dim">
+							{topic} · {preparingCount || 5} вопросов · несколько секунд
+						</p>
+						<p class="mt-4 text-xs text-dim">Вопросы придумывает модель по вашей теме, поэтому они не повторяются между играми.</p>
+					</section>
 				{:else if phase === 'playing' && question}
 					<section class="animate-rise">
 						<div class="mb-3 flex items-center justify-between gap-3">
-							<p class="truncate text-sm text-dim">{topic}</p>
-							<span class="chip sm:hidden">Вопрос {qIndex + 1} из {qTotal}</span>
+							<p class="flex min-w-0 items-center gap-2 text-sm text-dim">
+								<span class="truncate">{topic}</span>
+								{#if questionSource}
+									<span class="chip shrink-0 py-0.5 text-[11px] {questionSource === 'fallback' ? '' : 'border-amber/40 text-amber'}">
+										{questionSource === 'fallback' ? 'офлайн-банк' : 'AI · ' + questionSource.replace('ai:', '')}
+									</span>
+								{/if}
+							</p>
+							<span class="chip shrink-0 sm:hidden">Вопрос {qIndex + 1} из {qTotal}</span>
 						</div>
 
 						<h1 class="mb-5 font-display text-[21px] leading-snug text-chalk sm:text-[28px] lg:text-[31px]">

@@ -30,7 +30,7 @@ use crate::services::ai::{AiCapability, GenerationRequest};
 use crate::services::questions::fallback_questions;
 use sqlx::PgPool;
 
-use crate::services::{accounts, leaderboard};
+use crate::services::{accounts, history, leaderboard};
 use crate::AppState;
 
 /// How long the answer is shown before the next question appears.
@@ -172,30 +172,50 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     num_options,
                     capabilities: vec![AiCapability::QuestionGeneration],
                     exclude_hashes: Vec::new(),
+                    bypass_cache: true,
                 };
 
-                let questions = match state.ai_router.generate_questions(&request).await {
-                    Ok(response) => response
-                        .questions
-                        .into_iter()
-                        .filter_map(|question| serde_json::to_value(question).ok())
-                        .collect::<Vec<_>>(),
+                // Generation can take several seconds; tell the room so the UI
+                // shows progress instead of a frozen "waiting" screen.
+                let _ = room.read().tx.send(
+                    json!({
+                        "type": "game_preparing",
+                        "data": { "topic": topic, "count": count }
+                    })
+                    .to_string(),
+                );
+
+                let (questions, source) = match state.ai_router.generate_questions(&request).await {
+                    Ok(response) => {
+                        let provider = response.provider_used.clone();
+                        (
+                            response
+                                .questions
+                                .into_iter()
+                                .filter_map(|question| serde_json::to_value(question).ok())
+                                .collect::<Vec<_>>(),
+                            format!("ai:{provider}"),
+                        )
+                    }
                     Err(error) => {
                         warn!(
                             error = %error,
                             topic = %topic,
                             "AI generation failed, using offline fallback bank"
                         );
-                        fallback_questions(&topic, count)
-                            .into_iter()
-                            .filter_map(|question| serde_json::to_value(question).ok())
-                            .collect::<Vec<_>>()
+                        (
+                            fallback_questions(&topic, count)
+                                .into_iter()
+                                .filter_map(|question| serde_json::to_value(question).ok())
+                                .collect::<Vec<_>>(),
+                            "fallback".to_string(),
+                        )
                     }
                 };
 
                 let (first_question, players, token) = {
                     let mut room = room.write();
-                    room.set_questions(questions);
+                    room.set_questions(questions, &source);
                     (question_event(&room), players_event(&room), room.question_token)
                 };
 
@@ -373,6 +393,7 @@ fn question_event(room: &Room) -> Option<String> {
                 "time_limit": time_limit,
                 "index": room.current_q,
                 "total": room.questions.len(),
+                "source": room.question_source,
             }
         })
         .to_string(),
@@ -385,7 +406,7 @@ fn question_event(room: &Room) -> Option<String> {
 async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<PgPool>) {
     let mut events: Vec<String> = Vec::new();
     let mut schedule_next: Option<u64> = None;
-    let mut finished: Option<(Vec<(i64, String, i64)>, i32)> = None;
+    let mut finished: Option<(Vec<(i64, String, i64)>, history::GameInfo)> = None;
 
     {
         let mut room = room.write();
@@ -419,7 +440,7 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
             events.push(json!({"type": "game_over", "data": {"scores": scores}}).to_string());
             events.push(players_event(&room));
 
-            let results = room
+            let mut results = room
                 .players
                 .values()
                 .filter_map(|player| {
@@ -428,11 +449,19 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
                         .map(|id| (id, player.username.clone(), player.score))
                 })
                 .collect::<Vec<_>>();
+            results.sort_by(|a, b| b.2.cmp(&a.2));
             let duration = room
                 .started_at
                 .map(|started| started.elapsed().as_secs() as i32)
                 .unwrap_or(0);
-            finished = Some((results, duration));
+            let info = history::GameInfo {
+                room_code: room.code.clone(),
+                topic: room.settings.topic.clone(),
+                mode: room.settings.mode.clone(),
+                players: room.players.len() as i32,
+                duration_secs: duration,
+            };
+            finished = Some((results, info));
         } else {
             // Hold the result screen briefly before the next question so
             // players can read the correct answer.
@@ -447,8 +476,8 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
     for event in events {
         let _ = tx.send(event);
     }
-    if let (Some(pool), Some((results, duration))) = (pool.clone(), finished) {
-        tokio::spawn(async move { persist_results(&pool, results, duration).await });
+    if let (Some(pool), Some((results, info))) = (pool.clone(), finished) {
+        tokio::spawn(async move { persist_results(&pool, results, info).await });
     }
     if let Some(token) = schedule_next {
         let room = room.clone();
@@ -480,22 +509,39 @@ fn spawn_timer(room: Arc<RwLock<Room>>, token: u64, pool: Option<PgPool>) {
     });
 }
 
-/// Write finished-game stats to Postgres: per-user totals, leaderboard row and coins.
-async fn persist_results(pool: &PgPool, results: Vec<(i64, String, i64)>, duration_secs: i32) {
+/// Write finished-game stats to Postgres: per-user totals, leaderboard row, coins
+/// and the game history rows that back the profile page.
+async fn persist_results(
+    pool: &PgPool,
+    results: Vec<(i64, String, i64)>,
+    info: history::GameInfo,
+) {
     let best = results.iter().map(|(_, _, score)| *score).max().unwrap_or(0);
-    for (user_id, username, score) in results {
+    let mut outcomes = Vec::with_capacity(results.len());
+    for (index, (user_id, username, score)) in results.into_iter().enumerate() {
         let won = best > 0 && score == best;
         if let Err(error) = accounts::update_stats(pool, user_id, score, won, score / 10).await {
             warn!(user_id, %error, "failed to update user stats");
             continue;
         }
         if let Err(error) =
-            leaderboard::update_leaderboard(pool, user_id, &username, score, won, duration_secs).await
+            leaderboard::update_leaderboard(pool, user_id, &username, score, won, info.duration_secs)
+                .await
         {
             warn!(user_id, %error, "failed to update leaderboard");
         }
         if score > 0 {
             let _ = accounts::add_coins(pool, user_id, (score / 20) as i32).await;
         }
+        outcomes.push(history::GameOutcome {
+            user_id,
+            username,
+            score,
+            place: index as i32 + 1,
+        });
+    }
+
+    if let Err(error) = history::save_game(pool, &info, &outcomes).await {
+        warn!(room = %info.room_code, %error, "failed to save game history");
     }
 }

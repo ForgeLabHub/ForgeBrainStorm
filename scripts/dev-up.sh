@@ -27,10 +27,10 @@ if is_up "$BACKEND_PORT/health"; then
 	echo "backend: already running on $BACKEND_PORT"
 else
 	BIN="$ROOT/rust-server/target/debug/brainstorm"
-	if [ ! -x "$BIN" ]; then
-		echo "backend: building"
-		(cd "$ROOT/rust-server" && cargo build) || exit 1
-	fi
+	echo "backend: building"
+	pushd "$ROOT/rust-server" >/dev/null || exit 1
+	cargo build --quiet || { popd >/dev/null; exit 1; }
+	popd >/dev/null || true
 	echo "backend: starting on $BACKEND_PORT"
 	pushd "$ROOT/rust-server" >/dev/null || exit 1
 	PORT="$BACKEND_PORT" setsid nohup "$BIN" >"$RUN_DIR/backend.log" 2>&1 </dev/null &

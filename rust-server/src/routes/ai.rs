@@ -61,6 +61,7 @@ async fn generate_questions(
         num_options: input.num_options.unwrap_or(4).clamp(2, 6),
         capabilities: vec![AiCapability::QuestionGeneration],
         exclude_hashes: Vec::new(),
+        bypass_cache: false,
     };
 
     let response = state

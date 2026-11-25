@@ -84,6 +84,21 @@ export interface LeaderboardResponse extends ApiBase {
 players: User[];
 }
 
+export interface RecentGame {
+room_code: string;
+topic: string;
+mode: string;
+score: number;
+place: number;
+players: number;
+duration_secs: number;
+played_at: string;
+}
+
+export interface RecentGamesResponse extends ApiBase {
+games: RecentGame[];
+}
+
 export interface PlayerRankResponse extends ApiBase {
 player: User;
 }
@@ -136,6 +151,9 @@ body: JSON.stringify(input),
 }),
 
 getRoom: (code: string) => request<RoomResponse>(`/api/rooms/${code}`),
+
+// Profile
+recentGames: (limit = 5) => request<RecentGamesResponse>(`/api/profile/games?limit=${limit}`),
 
 // Leaderboard
 topPlayers: (limit = 50) => request<LeaderboardResponse>(`/api/leaderboard/top?limit=${limit}`),

@@ -71,6 +71,8 @@ pub struct GenerationRequest {
     pub num_options: usize,
     pub capabilities: Vec<AiCapability>,
     pub exclude_hashes: Vec<String>,
+    /// Live games want a fresh set every round; API callers may reuse cached sets.
+    pub bypass_cache: bool,
 }
 
 /// AI generation response.

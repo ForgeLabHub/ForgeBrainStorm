@@ -1,13 +1,24 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, type User } from '$lib/api';
+	import { api, type RecentGame, type User } from '$lib/api';
 	import { currentUser, authChecked, refreshAuth, logout } from '$lib/stores/auth';
 	import Icon from '$lib/components/Icon.svelte';
 	import { initial, levelFromXp, levelBounds, levelProgress, plural } from '$lib/ui';
 
 	let stats: User | null = null;
+	let games: RecentGame[] = [];
+	let gamesLoading = true;
 	let loading = true;
+
+	function formatDate(iso: string) {
+		const date = new Date(iso);
+		const sameDay = new Date().toDateString() === date.toDateString();
+		return sameDay
+			? `сегодня, ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+			: date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+	}
+
 
 	onMount(async () => {
 		await refreshAuth();
@@ -20,6 +31,18 @@
 			loading = false;
 		}
 	});
+
+	api
+		.recentGames(5)
+		.then((response) => {
+			games = response.games ?? [];
+		})
+		.catch(() => {
+			games = [];
+		})
+		.finally(() => {
+			gamesLoading = false;
+		});
 
 	$: user = stats ?? $currentUser;
 	$: level = user ? levelFromXp(user.xp) : 1;
@@ -88,6 +111,41 @@
 			</div>
 		</section>
 
+
+		<section class="mt-6">
+			<h2 class="section-title mb-3">Последние игры</h2>
+			{#if gamesLoading}
+				<div class="card card-pad text-center text-sm text-dim">Загружаем историю…</div>
+			{:else if games.length === 0}
+				<div class="card card-pad text-center">
+					<p class="text-sm text-dim">Игр пока нет. Сыграйте первую — она появится здесь.</p>
+					<a href="/room/create" class="btn btn-primary mt-4 w-full sm:w-auto">Создать комнату</a>
+				</div>
+			{:else}
+				<ul class="divide-y divide-line/70 overflow-hidden rounded-xl2 border border-line/80">
+					{#each games as game}
+						<li class="flex items-center gap-3 bg-ink-850 px-4 py-3">
+							<span class="digits w-10 shrink-0 text-center text-sm {game.place === 1 && game.players > 1 ? 'text-amber' : 'text-dim'}">
+								{game.place === 1 && game.players > 1 ? '★' : '#' + game.place}
+							</span>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm text-chalk">{game.topic}</p>
+								<p class="mt-0.5 text-xs text-dim">
+									{formatDate(game.played_at)} · {game.players}
+									{plural(game.players, 'игрок', 'игрока', 'игроков')} · код {game.room_code}
+								</p>
+							</div>
+							<div class="shrink-0 text-right">
+								<p class="digits text-sm text-chalk">{game.score}</p>
+								<p class="text-[11px] text-dim">
+									{game.place === 1 && game.players > 1 ? 'победа' : game.score > 0 ? 'очков' : 'без очков'}
+								</p>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
 		<section class="mt-6">
 			<h2 class="section-title mb-3">Дальше</h2>
 			<div class="divide-y divide-line/70 overflow-hidden rounded-xl2 border border-line/80">

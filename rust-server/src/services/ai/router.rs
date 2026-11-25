@@ -198,15 +198,16 @@ impl AiRouter {
         &self,
         request: &GenerationRequest,
     ) -> Result<GenerationResponse, AiError> {
-        // Check cache first
         let cache_key = format!(
             "q:{}:{}:{}:{}",
             request.topic, request.difficulty, request.count, request.num_options
         );
 
-        if let Some(cached) = self.cache.get(&cache_key) {
-            info!("Serving questions from cache");
-            return Ok(cached);
+        if !request.bypass_cache {
+            if let Some(cached) = self.cache.get(&cache_key) {
+                info!("Serving questions from cache");
+                return Ok(cached);
+            }
         }
 
         // Try providers with fallback
@@ -237,8 +238,9 @@ impl AiRouter {
                         }
                     }
 
-                    // Cache the response
-                    self.cache.set(cache_key, response.clone());
+                    if !request.bypass_cache {
+                        self.cache.set(cache_key, response.clone());
+                    }
 
                     info!(
                         provider = provider.name(),
