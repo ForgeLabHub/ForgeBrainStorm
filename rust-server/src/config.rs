@@ -35,21 +35,13 @@ pub struct Settings {
     #[serde(default = "default_db_pool_size")]
     pub db_pool_size: u32,
 
-    /// GigaChat API credentials (OAuth client secret).
+    /// Multi-AI provider configurations.
     #[serde(default)]
-    pub gigachat_credentials: String,
+    pub ai_providers: Vec<AiProviderConfig>,
 
-    /// GigaChat OAuth scope.
-    #[serde(default = "default_gigachat_scope")]
-    pub gigachat_scope: String,
-
-    /// GigaChat model id.
-    #[serde(default = "default_gigachat_model")]
-    pub gigachat_model: String,
-
-    /// Maximum concurrent AI requests.
-    #[serde(default = "default_ai_concurrency")]
-    pub ai_concurrency: usize,
+    /// Default AI provider name.
+    #[serde(default)]
+    pub default_ai_provider: String,
 
     /// CORS allowed origins (empty = deny all; `*` is forbidden in production).
     #[serde(default)]
@@ -96,6 +88,34 @@ pub struct Settings {
     pub disconnect_grace_secs: u64,
 }
 
+/// AI provider configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AiProviderConfig {
+    pub name: String,
+    pub provider_type: String,
+    pub api_key: Option<String>,
+    pub api_endpoint: Option<String>,
+    pub model: String,
+    pub max_concurrent: usize,
+    pub timeout_secs: u64,
+    pub enabled: bool,
+}
+
+impl Default for AiProviderConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            provider_type: String::new(),
+            api_key: None,
+            api_endpoint: None,
+            model: String::new(),
+            max_concurrent: 4,
+            timeout_secs: 30,
+            enabled: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Environment {
@@ -114,9 +134,6 @@ fn default_listen_addr() -> SocketAddr {
 }
 
 fn default_db_pool_size() -> u32 { 20 }
-fn default_gigachat_scope() -> String { "GIGACHAT_API_PERS".into() }
-fn default_gigachat_model() -> String { "GigaChat".into() }
-fn default_ai_concurrency() -> usize { 4 }
 fn default_true() -> bool { true }
 fn default_session_ttl() -> u64 { 86_400 }
 fn default_auth_rate_limit() -> u32 { 10 }

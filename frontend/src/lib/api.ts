@@ -87,4 +87,20 @@ export const api = {
 
 	playerRank: (username: string) =>
 		request<User>(`/api/leaderboard/rank/${username}`),
+
+	// AI Providers
+	getAiProviders: () =>
+		request<{ providers: string[]; default: string }>('/api/ai/providers'),
+
+	switchAiProvider: (provider: string) =>
+		request<void>('/api/ai/providers/switch', {
+			method: 'POST',
+			body: JSON.stringify({ provider }),
+		}),
+
+	getAiCacheStats: () =>
+		request<{ questions_cached: number; hints_cached: number }>('/api/ai/cache/stats'),
+
+	clearAiCache: () =>
+		request<void>('/api/ai/cache/clear', { method: 'POST' }),
 };

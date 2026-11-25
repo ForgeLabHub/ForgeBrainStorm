@@ -18,10 +18,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::connect_info::IntoMakeServiceWithConnectInfo;
-use axum::extract::{Request, State};
-use axum::http::StatusCode;
-use axum::middleware::Next;
-use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
@@ -34,7 +30,8 @@ use crate::domain::room::RoomRegistry;
 use crate::error::AppError;
 use crate::middleware::auth::{AuthContext, SessionCache, SESSION_COOKIE};
 use crate::middleware::rate_limit::RateLimiter;
-use crate::services::ai_client::AiClient;
+use crate::services::ai::router::AiRouter;
+use crate::services::ai::{AiCapability, ProviderConfig, ProviderType};
 
 /// Shared application state passed to all handlers.
 #[derive(Clone)]
@@ -42,7 +39,7 @@ pub struct AppState {
     pub settings: Arc<Settings>,
     pub db: DbHandle,
     pub rooms: RoomRegistry,
-    pub ai: AiClient,
+    pub ai_router: Arc<AiRouter>,
     pub session_cache: SessionCache,
 }
 
@@ -87,16 +84,50 @@ async fn main() -> anyhow::Result<()> {
     info!("connecting to database");
     let pool = db::init_pool(&settings).await?;
 
+    // Build AI router with multiple providers.
+    info!("initializing AI router");
+    let ai_configs: Vec<ProviderConfig> = settings
+        .ai_providers
+        .iter()
+        .map(|c| {
+            let provider_type = match c.provider_type.to_lowercase().as_str() {
+                "gigachat" => ProviderType::GigaChat,
+                "openai" => ProviderType::OpenAI,
+                "ollama" => ProviderType::Ollama,
+                "anthropic" => ProviderType::Anthropic,
+                _ => ProviderType::Custom,
+            };
+
+            ProviderConfig {
+                name: c.name.clone(),
+                provider_type,
+                api_key: c.api_key.clone(),
+                api_endpoint: c.api_endpoint.clone(),
+                model: c.model.clone(),
+                max_concurrent: c.max_concurrent,
+                timeout_secs: c.timeout_secs,
+                capabilities: vec![
+                    AiCapability::QuestionGeneration,
+                    AiCapability::HintGeneration,
+                    AiCapability::ExplanationGeneration,
+                ],
+                cost_per_1k_tokens: 0.0,
+                enabled: c.enabled,
+            }
+        })
+        .collect();
+
+    let ai_router = Arc::new(AiRouter::new(ai_configs));
+
     // Build shared state.
     let session_cache = SessionCache::new(Duration::from_secs(300), pool.clone());
     let rooms = RoomRegistry::new(settings.max_rooms);
-    let ai = AiClient::new(&settings, pool.clone());
 
     let state = AppState {
         settings: Arc::new(settings.clone()),
         db: DbHandle::new(pool),
         rooms: rooms.clone(),
-        ai,
+        ai_router,
         session_cache: session_cache.clone(),
     };
 
@@ -151,9 +182,9 @@ async fn main() -> anyhow::Result<()> {
 /// Extracts session from cookie, validates it, and injects AuthContext.
 async fn ws_auth_middleware(
     State(session_cache): State<SessionCache>,
-    req: Request,
-    next: Next,
-) -> Result<Response, AppError> {
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, AppError> {
     // Extract session cookie
     let cookie_header = req
         .headers()
