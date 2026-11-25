@@ -229,7 +229,7 @@ fn test_message_serialization_client() {
     };
 
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("CreateRoom"));
+    assert!(json.contains("create_room"));
     assert!(json.contains("Test"));
 }
 
@@ -244,15 +244,15 @@ fn test_message_serialization_server() {
     };
 
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("RoomJoined"));
+    assert!(json.contains("room_joined"));
     assert!(json.contains("ABCDEF"));
 }
 
 #[test]
-fn test_message_deserialization_client() {
+fn test_message_deserialization_client_with_question_index() {
     use brainstorm::ws::protocol::ClientMessage;
 
-    let json = r#"{"type":"SubmitAnswer","data":{"question_index":0,"answer_index":2}}"#;
+    let json = r#"{"type":"submit_answer","data":{"question_index":0,"answer_index":2}}"#;
     let msg: ClientMessage = serde_json::from_str(json).unwrap();
 
     match msg {
@@ -260,7 +260,27 @@ fn test_message_deserialization_client() {
             question_index,
             answer_index,
         } => {
-            assert_eq!(question_index, 0);
+            assert_eq!(question_index, Some(0));
+            assert_eq!(answer_index, 2);
+        }
+        _ => panic!("Expected SubmitAnswer"),
+    }
+}
+
+#[test]
+fn test_message_deserialization_client_without_question_index() {
+    use brainstorm::ws::protocol::ClientMessage;
+
+    // Frontend sends submit_answer without question_index
+    let json = r#"{"type":"submit_answer","data":{"answer_index":2}}"#;
+    let msg: ClientMessage = serde_json::from_str(json).unwrap();
+
+    match msg {
+        ClientMessage::SubmitAnswer {
+            question_index,
+            answer_index,
+        } => {
+            assert_eq!(question_index, None);
             assert_eq!(answer_index, 2);
         }
         _ => panic!("Expected SubmitAnswer"),
@@ -285,7 +305,7 @@ fn test_message_serialization_roundtrip() {
     
     // Verify the JSON structure
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(parsed["type"], "QuestionEmitted");
+    assert_eq!(parsed["type"], "question_emitted");
     assert_eq!(parsed["data"]["question_index"], 5);
     assert_eq!(parsed["data"]["question"]["question"], "What is 2+2?");
     assert_eq!(parsed["data"]["question"]["options"].as_array().unwrap().len(), 4);
@@ -454,7 +474,7 @@ fn test_game_over_message() {
     };
 
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("GameOver"));
+    assert!(json.contains("game_over"));
     assert!(json.contains("winner"));
     assert!(json.contains("loser"));
 }
@@ -466,7 +486,7 @@ fn test_timer_update_message() {
     };
 
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("TimerUpdate"));
+    assert!(json.contains("timer_update"));
     assert!(json.contains("15"));
 }
 
@@ -477,7 +497,7 @@ fn test_error_message() {
     };
 
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("Error"));
+    assert!(json.contains("error"));
     assert!(json.contains("Something went wrong"));
 }
 

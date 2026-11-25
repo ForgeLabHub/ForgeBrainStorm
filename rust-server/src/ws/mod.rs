@@ -177,11 +177,7 @@ async fn handle_client_message(
         }
 
         ClientMessage::JoinRoom { code, name } => {
-            let display_name = if name.is_empty() {
-                username.to_string()
-            } else {
-                name
-            };
+            let display_name = name.unwrap_or_else(|| username.to_string());
 
             match room_manager
                 .join_room(&code, user_id, username, &display_name)
@@ -270,8 +266,21 @@ async fn handle_client_message(
             answer_index,
         } => {
             if let Some(room_code) = current_room_code.as_ref() {
+                // If question_index not provided, get current question from room
+                let q_index = if let Some(idx) = question_index {
+                    idx
+                } else {
+                    // Default to current question
+                    if let Some(room_arc) = room_manager.get_room(room_code) {
+                        let room = room_arc.read();
+                        room.current_question.unwrap_or(0)
+                    } else {
+                        return Ok(());
+                    }
+                };
+
                 room_manager
-                    .submit_answer(room_code, user_id, question_index, answer_index)
+                    .submit_answer(room_code, user_id, q_index, answer_index)
                     .await;
             }
         }

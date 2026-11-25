@@ -42,7 +42,7 @@
 			players = data.players || [];
 		});
 		ws.on('question_emitted', (data) => {
-			question = data.question;
+			question = { ...data.question, time_limit: data.time_limit || 30 };
 			timeLeft = data.time_limit || 30;
 			selectedAnswer = null;
 			gamePhase = 'playing';
@@ -53,9 +53,47 @@
 			stopTimer();
 			lastResult = data;
 		});
-		ws.on('game_over', () => {
+		ws.on('game_over', (data) => {
 			gamePhase = 'finished';
 			stopTimer();
+			// Update players with final scores
+			if (data?.final_leaderboard) {
+				players = data.final_leaderboard.map((p: any) => ({
+					name: p.username,
+					score: p.score,
+					is_host: false,
+					is_ready: true,
+				}));
+			}
+		});
+		ws.on('game_started', () => {
+			gamePhase = 'playing';
+		});
+		ws.on('timer_update', (data) => {
+			timeLeft = data.seconds_remaining || 0;
+		});
+		ws.on('player_joined', (data) => {
+			if (data?.player) {
+				players = [...players, {
+					name: data.player.display_name || data.player.username,
+					score: data.player.score || 0,
+					is_host: data.player.is_host || false,
+					is_ready: data.player.is_ready || false,
+				}];
+			}
+		});
+		ws.on('player_left', (data) => {
+			players = players.filter(p => p.name !== data?.username);
+		});
+		ws.on('players_updated', (data) => {
+			if (data?.players) {
+				players = data.players.map((p: any) => ({
+					name: p.display_name || p.username,
+					score: p.score || 0,
+					is_host: p.is_host || false,
+					is_ready: p.is_ready || false,
+				}));
+			}
 		});
 		ws.on('error', (data) => {
 			error = data.message || 'Ошибка';

@@ -154,6 +154,22 @@ impl RoomManager {
 
         let _ = room.tx.send(ServerMessage::PlayerJoined { player: player_info });
 
+        // Also send full player list update
+        let all_players: Vec<PlayerInfo> = room
+            .players
+            .values()
+            .map(|p| PlayerInfo {
+                user_id: p.user_id,
+                username: p.username.clone(),
+                display_name: p.display_name.clone(),
+                score: p.score,
+                lives: p.lives,
+                is_ready: p.is_ready,
+                is_host: p.user_id == room.host_user_id,
+            })
+            .collect();
+        let _ = room.tx.send(ServerMessage::PlayersUpdated { players: all_players });
+
         info!(code, user_id, username, "Player joined room");
 
         Ok(room_arc)
@@ -180,6 +196,24 @@ impl RoomManager {
 
             // Now remove the player
             room.players.remove(&user_id);
+
+            // Send updated player list
+            if !room.players.is_empty() {
+                let all_players: Vec<PlayerInfo> = room
+                    .players
+                    .values()
+                    .map(|p| PlayerInfo {
+                        user_id: p.user_id,
+                        username: p.username.clone(),
+                        display_name: p.display_name.clone(),
+                        score: p.score,
+                        lives: p.lives,
+                        is_ready: p.is_ready,
+                        is_host: p.user_id == room.host_user_id,
+                    })
+                    .collect();
+                let _ = room.tx.send(ServerMessage::PlayersUpdated { players: all_players });
+            }
 
             // If room is empty, remove it
             if room.players.is_empty() {

@@ -9,7 +9,7 @@ pub use crate::domain::player::PlayerAnswer;
 
 /// Client → Server messages.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Create a new game room.
     CreateRoom {
@@ -19,9 +19,10 @@ pub enum ClientMessage {
     },
 
     /// Join an existing room by code.
+    /// `name` is optional — server uses the authenticated username if omitted.
     JoinRoom {
         code: String,
-        name: String,
+        name: Option<String>,
     },
 
     /// Leave the current room.
@@ -31,8 +32,9 @@ pub enum ClientMessage {
     StartGame,
 
     /// Submit an answer to the current question.
+    /// `question_index` is optional — if omitted, the server uses the current question.
     SubmitAnswer {
-        question_index: usize,
+        question_index: Option<usize>,
         answer_index: usize,
     },
 
@@ -57,7 +59,7 @@ pub struct RoomSettingsInput {
 
 /// Server → Client messages.
 #[derive(Debug, Serialize, Clone)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Room created successfully.
     RoomCreated {
@@ -134,6 +136,9 @@ pub enum ServerMessage {
 
     /// Timer update (sent every second).
     TimerUpdate { seconds_remaining: u64 },
+
+    /// Full player list update (sent on join/leave).
+    PlayersUpdated { players: Vec<PlayerInfo> },
 }
 
 /// Player information.
