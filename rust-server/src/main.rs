@@ -18,6 +18,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::connect_info::IntoMakeServiceWithConnectInfo;
+use axum::extract::{Request, State};
+use axum::http::StatusCode;
+use axum::middleware::Next;
+use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
@@ -27,7 +31,8 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::config::Settings;
 use crate::domain::room::RoomRegistry;
-use crate::middleware::auth::SessionCache;
+use crate::error::AppError;
+use crate::middleware::auth::{AuthContext, SessionCache, SESSION_COOKIE};
 use crate::middleware::rate_limit::RateLimiter;
 use crate::services::ai_client::AiClient;
 
@@ -104,10 +109,16 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .merge(routes::build_router(state.clone()))
-        .route("/ws", get(ws::ws_handler))
+        .route(
+            "/ws",
+            get(ws::ws_handler).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                ws_auth_middleware,
+            )),
+        )
         .layer(cors)
         .layer(axum::Extension(rate_limiter))
-        .layer(axum::Extension(session_cache))
+        .layer(axum::Extension(session_cache.clone()))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -134,4 +145,40 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
+}
+
+/// Middleware for WebSocket authentication.
+/// Extracts session from cookie, validates it, and injects AuthContext.
+async fn ws_auth_middleware(
+    State(session_cache): State<SessionCache>,
+    req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    // Extract session cookie
+    let cookie_header = req
+        .headers()
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok());
+
+    let session_token = cookie_header
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let cookie = cookie.trim();
+                if cookie.starts_with(&format!("{}=", SESSION_COOKIE)) {
+                    cookie.strip_prefix(&format!("{}=", SESSION_COOKIE))
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| AppError::Unauthorized)?;
+
+    // Validate session and get user context
+    let auth_context = session_cache.get_or_load(session_token).await?;
+
+    // Inject AuthContext into request extensions
+    let mut req = req;
+    req.extensions_mut().insert(auth_context);
+
+    Ok(next.run(req).await)
 }
