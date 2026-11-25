@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["ws", "macros"] }
+dotenvy = "0.15"
 axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
 tower = { version = "0.4", features = ["timeout", "limit", "filter"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "fs", "catch-panic", "set-header", "request-id", "util"] }

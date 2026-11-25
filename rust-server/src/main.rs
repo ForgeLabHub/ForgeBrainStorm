@@ -65,6 +65,10 @@ impl DbHandle {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Pick up `.env` from the repo root (same convention as the Python entry point).
+    let _ = dotenvy::dotenv();
+    let _ = dotenvy::from_filename("../.env");
+
     // Initialise tracing (JSON format for structured logging).
     fmt()
         .with_env_filter(

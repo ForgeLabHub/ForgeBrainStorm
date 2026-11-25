@@ -36,7 +36,7 @@ High-performance rewrite of the BrainStorm quiz platform backend in Rust.
    ```
    Or let the app run them automatically on startup.
 
-3. **Configure environment**:
+3. **Configure environment** (a `.env` file in the repo root is loaded automatically):
    ```bash
    cp config/default.toml config/local.toml
    # Edit local.toml with your settings
