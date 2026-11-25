@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { api, type User } from '$lib/api';
 	import { currentUser, authChecked, refreshAuth, logout } from '$lib/stores/auth';
+	import Icon from '$lib/components/Icon.svelte';
+	import { initial, levelFromXp, levelBounds, levelProgress, plural } from '$lib/ui';
 
 	let stats: User | null = null;
 	let loading = true;
@@ -20,14 +22,9 @@
 	});
 
 	$: user = stats ?? $currentUser;
-
-	// Mirrors the backend: level = floor(sqrt(xp / 100)), min 1.
-	$: level = user ? Math.max(1, Math.floor(Math.sqrt(user.xp / 100))) : 1;
-	$: levelFloor = level * level * 100;
-	$: levelCeil = (level + 1) * (level + 1) * 100;
-	$: levelProgress = user
-		? Math.min(100, Math.max(0, ((user.xp - levelFloor) / (levelCeil - levelFloor)) * 100))
-		: 0;
+	$: level = user ? levelFromXp(user.xp) : 1;
+	$: nextLevelXp = levelBounds(level).to;
+	$: progress = user ? levelProgress(user.xp) : 0;
 	$: winRate = user && user.games_played > 0 ? Math.round((user.wins / user.games_played) * 100) : 0;
 
 	async function handleLogout() {
@@ -36,101 +33,85 @@
 	}
 </script>
 
-<div class="mx-auto max-w-4xl px-6 py-8">
-	{#if loading || !$authChecked}
-		<div class="flex items-center justify-center py-20">
-			<div class="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-		</div>
-	{:else if !user}
-		<div class="rounded-2xl border border-slate-700 bg-slate-800 p-10 text-center">
-			<div class="mb-3 text-5xl">🔒</div>
-			<h1 class="mb-2 text-2xl font-bold text-white">Профиль недоступен</h1>
-			<p class="mb-6 text-slate-400">Войдите, чтобы увидеть статистику и прогресс.</p>
-			<a
-				href="/auth/login"
-				class="inline-block rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
-			>
-				Войти
-			</a>
-		</div>
-	{:else}
-		<div class="mb-6 rounded-2xl border border-slate-700 bg-slate-800 p-6">
-			<div class="flex flex-col items-center gap-6 sm:flex-row">
-				<div
-					class="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-4xl font-bold text-white"
-				>
-					{user.username.charAt(0).toUpperCase()}
-				</div>
-				<div class="flex-1 text-center sm:text-left">
-					<h1 class="text-3xl font-bold text-white">{user.username}</h1>
-					<p class="mt-1 text-slate-400">Уровень {level}</p>
-					<div class="mt-3">
-						<div class="mb-1 flex justify-between text-xs text-slate-400">
-							<span>{user.xp} XP</span>
-							<span>до уровня {level + 1}: {levelCeil - user.xp} XP</span>
-						</div>
-						<div class="h-2.5 overflow-hidden rounded-full bg-slate-700">
-							<div
-								class="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
-								style="width: {levelProgress}%"
-							></div>
-						</div>
-					</div>
+{#if loading || !$authChecked}
+	<div class="py-16">
+		<div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-amber/30 border-t-amber"></div>
+	</div>
+{:else if !user}
+	<div class="card card-pad mx-auto max-w-md text-center">
+		<h1 class="font-display text-xl text-chalk">Профиль недоступен</h1>
+		<p class="mt-1 text-sm text-dim">Войдите, чтобы видеть статистику и прогресс.</p>
+		<a href="/auth/login" class="btn btn-primary mt-5 w-full">Войти</a>
+	</div>
+{:else}
+	<div class="mx-auto w-full max-w-2xl">
+		<section class="card card-pad">
+			<div class="flex items-center gap-4">
+				<span class="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-ink-700 font-display text-2xl text-chalk">
+					{initial(user.username)}
+				</span>
+				<div class="min-w-0 flex-1">
+					<h1 class="truncate font-display text-[22px] tracking-tight text-chalk">{user.username}</h1>
+					<p class="mt-0.5 text-sm text-dim">Уровень {level}</p>
 				</div>
 			</div>
-		</div>
 
-		<div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-				<div class="text-sm text-slate-400">Опыт</div>
-				<div class="mt-1 text-2xl font-bold text-blue-400">{user.xp}</div>
+			<div class="mt-5">
+				<div class="mb-1.5 flex items-baseline justify-between text-xs text-dim">
+					<span class="digits text-sm text-chalk">{user.xp} XP</span>
+					<span>до уровня {level + 1} — {Math.max(0, nextLevelXp - user.xp)} XP</span>
+				</div>
+				<div class="h-2 overflow-hidden rounded-full bg-ink-700">
+					<div class="h-full rounded-full bg-amber transition-all duration-500" style="width: {progress}%"></div>
+				</div>
 			</div>
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-				<div class="text-sm text-slate-400">Монеты</div>
-				<div class="mt-1 text-2xl font-bold text-yellow-400">{user.coins}</div>
-			</div>
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-				<div class="text-sm text-slate-400">Игр сыграно</div>
-				<div class="mt-1 text-2xl font-bold text-white">{user.games_played}</div>
-			</div>
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-5">
-				<div class="text-sm text-slate-400">Побед</div>
-				<div class="mt-1 text-2xl font-bold text-green-400">{winRate}%</div>
-			</div>
-		</div>
+		</section>
 
-		<div class="rounded-2xl border border-slate-700 bg-slate-800 p-6">
-			<h2 class="mb-4 text-lg font-semibold text-white">Быстрые действия</h2>
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				<a
-					href="/room/create"
-					class="rounded-lg border border-slate-600 bg-slate-700 p-4 text-left transition hover:border-blue-500 hover:bg-slate-600"
-				>
-					<div class="font-semibold text-white">🎮 Создать комнату</div>
-					<div class="text-sm text-slate-400">Начать новую викторину</div>
+		<section class="card mt-4">
+			<div class="grid grid-cols-2 divide-line/70 sm:grid-cols-4 sm:divide-x">
+				<div class="border-b border-line/70 px-4 py-4 sm:border-b-0">
+					<p class="text-xs text-dim">Опыт</p>
+					<p class="digits mt-1 text-xl text-chalk">{user.xp}</p>
+				</div>
+				<div class="border-b border-line/70 px-4 py-4 sm:border-b-0">
+					<p class="text-xs text-dim">Монеты</p>
+					<p class="digits mt-1 text-xl text-amber">{user.coins}</p>
+				</div>
+				<div class="border-b border-line/70 px-4 py-4 sm:border-b-0">
+					<p class="text-xs text-dim">Игр</p>
+					<p class="digits mt-1 text-xl text-chalk">{user.games_played}</p>
+				</div>
+				<div class="px-4 py-4">
+					<p class="text-xs text-dim">Побед</p>
+					<p class="digits mt-1 text-xl text-mint">{winRate}%</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="mt-6">
+			<h2 class="section-title mb-3">Дальше</h2>
+			<div class="divide-y divide-line/70 overflow-hidden rounded-xl2 border border-line/80">
+				<a href="/room/create" class="flex items-center gap-3 bg-ink-850 px-4 py-3.5 hover:bg-ink-800">
+					<Icon name="play" size={18} />
+					<span class="flex-1 text-sm text-chalk">Создать комнату</span>
+					<span class="text-xs text-dim">новая игра</span>
 				</a>
-				<a
-					href="/lobby"
-					class="rounded-lg border border-slate-600 bg-slate-700 p-4 text-left transition hover:border-blue-500 hover:bg-slate-600"
-				>
-					<div class="font-semibold text-white">🧩 Лобби</div>
-					<div class="text-sm text-slate-400">Присоединиться к игре</div>
+				<a href="/leaderboard" class="flex items-center gap-3 bg-ink-850 px-4 py-3.5 hover:bg-ink-800">
+					<Icon name="trophy" size={18} />
+					<span class="flex-1 text-sm text-chalk">Рейтинг игроков</span>
+					<span class="text-xs text-dim">всего {user.games_played}
+						{plural(user.games_played, 'игра', 'игры', 'игр')}</span>
 				</a>
-				<a
-					href="/settings"
-					class="rounded-lg border border-slate-600 bg-slate-700 p-4 text-left transition hover:border-blue-500 hover:bg-slate-600"
-				>
-					<div class="font-semibold text-white">⚙️ Настройки AI</div>
-					<div class="text-sm text-slate-400">Выбрать провайдера вопросов</div>
+				<a href="/settings" class="flex items-center gap-3 bg-ink-850 px-4 py-3.5 hover:bg-ink-800">
+					<Icon name="sliders" size={18} />
+					<span class="flex-1 text-sm text-chalk">Настройки AI</span>
+					<span class="text-xs text-dim">провайдер вопросов</span>
 				</a>
-				<button
-					on:click={handleLogout}
-					class="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-left transition hover:bg-red-500/20"
-				>
-					<div class="font-semibold text-red-300">🚪 Выйти</div>
-					<div class="text-sm text-red-400/80">Завершить сессию</div>
+				<button on:click={handleLogout} class="flex w-full items-center gap-3 bg-ink-850 px-4 py-3.5 text-left hover:bg-ink-800">
+					<Icon name="logout" size={18} />
+					<span class="flex-1 text-sm text-coral">Выйти из аккаунта</span>
 				</button>
 			</div>
-		</div>
-	{/if}
-</div>
+		</section>
+	</div>
+{/if}

@@ -11,6 +11,8 @@ export class WSClient {
 	private reconnectAttempts = 0;
 	private maxReconnectAttempts = 10;
 	private reconnectDelay = 1000;
+	/** Set by `disconnect()` so leaving a page does not start a reconnect loop. */
+	private closedByUser = false;
 
 	constructor(url?: string) {
 		this.url = url ?? null;
@@ -26,6 +28,10 @@ export class WSClient {
 		return `${protocol}//${window.location.host}/ws`;
 	}
 
+	get isOpen(): boolean {
+		return this.ws?.readyState === WebSocket.OPEN;
+	}
+
 	connect(): void {
 		if (this.ws?.readyState === WebSocket.OPEN) {
 			return;
@@ -33,10 +39,11 @@ export class WSClient {
 
 		const url = this.resolveUrl();
 		if (!url) return;
+
+		this.closedByUser = false;
 		this.ws = new WebSocket(url);
 
 		this.ws.onopen = () => {
-			console.log('WebSocket connected');
 			this.reconnectAttempts = 0;
 			this.emit('connected', {});
 		};
@@ -51,20 +58,19 @@ export class WSClient {
 		};
 
 		this.ws.onclose = () => {
-			console.log('WebSocket disconnected');
 			this.emit('disconnected', {});
-			this.attemptReconnect();
+			if (!this.closedByUser) this.attemptReconnect();
 		};
 
-		this.ws.onerror = (error) => {
-			console.error('WebSocket error:', error);
-			this.emit('error', { error });
+		this.ws.onerror = () => {
+			// A failed socket always closes afterwards, so reconnection is handled there.
+			this.emit('socket_error', {});
 		};
 	}
 
 	send(type: string, data: any = {}): void {
 		if (this.ws?.readyState !== WebSocket.OPEN) {
-			console.warn('WebSocket not connected');
+			console.warn('WebSocket is not connected, dropping message', type);
 			return;
 		}
 		this.ws.send(JSON.stringify({ type, data }));
@@ -79,37 +85,28 @@ export class WSClient {
 
 	off(event: string, handler: MessageHandler): void {
 		const handlers = this.handlers.get(event);
-		if (handlers) {
-			const index = handlers.indexOf(handler);
-			if (index > -1) {
-				handlers.splice(index, 1);
-			}
-		}
+		if (!handlers) return;
+		const index = handlers.indexOf(handler);
+		if (index > -1) handlers.splice(index, 1);
 	}
 
 	private emit(event: string, data: any): void {
-		const handlers = this.handlers.get(event);
-		if (handlers) {
-			handlers.forEach((handler) => handler(data));
-		}
+		this.handlers.get(event)?.forEach((handler) => handler(data));
 	}
 
 	private attemptReconnect(): void {
 		if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-			console.error('Max reconnect attempts reached');
+			this.emit('reconnect_failed', {});
 			return;
 		}
 
 		this.reconnectAttempts++;
 		const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-		console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-
-		setTimeout(() => {
-			this.connect();
-		}, delay);
+		setTimeout(() => this.connect(), delay);
 	}
 
 	disconnect(): void {
+		this.closedByUser = true;
 		this.ws?.close();
 		this.ws = null;
 	}

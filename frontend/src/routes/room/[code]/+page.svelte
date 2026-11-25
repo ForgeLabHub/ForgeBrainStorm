@@ -3,288 +3,401 @@
 	import { api } from '$lib/api';
 	import { ws } from '$lib/ws';
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import Icon from '$lib/components/Icon.svelte';
+	import { currentUser } from '$lib/stores/auth';
+	import { copyText, initial, plural } from '$lib/ui';
+
+	type Player = { name: string; score: number; is_host: boolean; is_ready: boolean };
+	type Question = { question: string; options: string[]; time_limit: number };
+	type Verdict = { correct: boolean | null; correctIndex: number; explanation: string };
 
 	$: roomCode = ($page.params.code ?? '').toUpperCase();
 
-	type Player = {
-		name: string;
-		score: number;
-		is_host: boolean;
-		is_ready: boolean;
-	};
-
-	type Question = {
-		question: string;
-		options: string[];
-		time_limit: number;
-	};
-
 	let players: Player[] = [];
 	let question: Question | null = null;
-	let selectedAnswer: number | null = null;
-	let timeLeft = 0;
-	let gamePhase: 'waiting' | 'playing' | 'result' | 'finished' = 'waiting';
+	let qIndex = 0;
+	let qTotal = 0;
+	let selected: number | null = null;
+	let phase: 'waiting' | 'playing' | 'result' | 'finished' = 'waiting';
 	let isHost = false;
 	let topic = '';
 	let error = '';
-	let timerInterval: ReturnType<typeof setInterval> | null = null;
-	let lastResult: { correct: boolean; correctIndex: number; explanation: string } | null = null;
+	let connected = false;
+	let verdict: Verdict | null = null;
+	let deadline = 0;
+	let timeLimit = 30;
+	let now = Date.now();
+	let copied = false;
+
+	let ticker: ReturnType<typeof setInterval> | null = null;
+	let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$: timeLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+	$: timePct = Math.max(0, Math.min(100, ((deadline - now) / (timeLimit * 1000)) * 100));
+	$: lowTime = phase === 'playing' && timeLeft <= 5;
+	$: ranked = [...players].sort((a, b) => b.score - a.score);
+	$: myName = $currentUser?.username ?? '';
+	$: myScore = players.find((player) => player.name === myName)?.score ?? 0;
+
+	function onPlayers(data: any) {
+		players = data.players || [];
+		// The host restarting the game resets every score to zero.
+		if (phase === 'finished' && players.length > 0 && players.every((player) => player.score === 0)) {
+			phase = 'waiting';
+			question = null;
+			verdict = null;
+			selected = null;
+			qIndex = 0;
+			qTotal = 0;
+		}
+	}
+
+	function onQuestion(data: any) {
+		question = data.question;
+		timeLimit = data.time_limit || data.question?.time_limit || 30;
+		qIndex = typeof data.index === 'number' ? data.index : 0;
+		qTotal = typeof data.total === 'number' ? data.total : 0;
+		deadline = Date.now() + timeLimit * 1000;
+		selected = null;
+		verdict = null;
+		error = '';
+		phase = 'playing';
+	}
+
+	function onResult(data: any) {
+		const correctIndex =
+			typeof data.correctIndex === 'number' ? data.correctIndex : (data.correct_index ?? 0);
+		verdict = {
+			correct: selected === null ? null : selected === correctIndex,
+			correctIndex,
+			explanation: data.explanation || ''
+		};
+		phase = 'result';
+	}
+
+	function onGameOver() {
+		phase = 'finished';
+		verdict = null;
+	}
+
+	const handlers: Record<string, (data: any) => void> = {
+		connected: () => {
+			connected = true;
+			ws.send('join_room', { code: roomCode });
+		},
+		disconnected: () => {
+			connected = false;
+		},
+		room_joined: (data) => {
+			isHost = Boolean(data.is_host);
+			if (data.topic) topic = data.topic;
+		},
+		players_updated: onPlayers,
+		question_emitted: onQuestion,
+		question_result: onResult,
+		game_over: onGameOver,
+		error: (data) => {
+			error = data.message || 'Что-то пошло не так';
+		}
+	};
+
+	function onKeydown(event: KeyboardEvent) {
+		if (phase !== 'playing' || !question || event.metaKey || event.ctrlKey || event.altKey) return;
+		const index = Number.parseInt(event.key, 10);
+		if (Number.isNaN(index) || index < 1 || index > question.options.length) return;
+		event.preventDefault();
+		submitAnswer(index - 1);
+	}
 
 	onMount(() => {
-		api.getRoom(roomCode)
+		api
+			.getRoom(roomCode)
 			.then((response) => {
 				if (response.room) topic = response.room.topic;
 			})
 			.catch(() => {});
+
+		for (const [event, handler] of Object.entries(handlers)) ws.on(event, handler);
+		window.addEventListener('keydown', onKeydown);
 		ws.connect();
-		ws.on('connected', () => {
-			ws.send('join_room', { code: roomCode });
-		});
-		ws.on('room_joined', (data) => {
-			isHost = data.is_host;
-			topic = data.topic || '';
-		});
-		ws.on('players_updated', (data) => {
-			players = data.players || [];
-		});
-		ws.on('question_emitted', (data) => {
-			question = data.question;
-			timeLeft = data.time_limit || 30;
-			selectedAnswer = null;
-			gamePhase = 'playing';
-			startTimer();
-		});
-		ws.on('question_result', (data) => {
-			gamePhase = 'result';
-			stopTimer();
-			const correctIndex =
-				typeof data.correctIndex === 'number' ? data.correctIndex : data.correct_index;
-			lastResult = {
-				correct: selectedAnswer === correctIndex,
-				correctIndex,
-				explanation: data.explanation || ''
-			};
-		});
-		ws.on('game_over', () => {
-			gamePhase = 'finished';
-			stopTimer();
-		});
-		ws.on('error', (data) => {
-			error = data.message || 'Ошибка';
-		});
+		ticker = setInterval(() => (now = Date.now()), 200);
+
+		return () => {
+			for (const [event, handler] of Object.entries(handlers)) ws.off(event, handler);
+			window.removeEventListener('keydown', onKeydown);
+		};
 	});
 
 	onDestroy(() => {
-		stopTimer();
+		if (ticker) clearInterval(ticker);
+		if (copyTimer) clearTimeout(copyTimer);
+		ws.disconnect();
 	});
 
-	function startTimer() {
-		stopTimer();
-		timerInterval = setInterval(() => {
-			timeLeft = Math.max(0, timeLeft - 1);
-			if (timeLeft === 0) stopTimer();
-		}, 1000);
-	}
-
-	function stopTimer() {
-		if (timerInterval) {
-			clearInterval(timerInterval);
-			timerInterval = null;
-		}
-	}
-
 	function submitAnswer(index: number) {
-		if (selectedAnswer !== null || gamePhase !== 'playing') return;
-		selectedAnswer = index;
+		if (phase !== 'playing' || selected !== null) return;
+		selected = index;
 		ws.send('submit_answer', { answer_index: index });
 	}
 
 	function startGame() {
+		error = '';
 		ws.send('start_game', {});
 	}
 
-	function getTimerColor(): string {
-		if (timeLeft > 15) return 'text-green-400';
-		if (timeLeft > 5) return 'text-yellow-400';
-		return 'text-red-400';
+	function playAgain() {
+		ws.send('play_again', {});
 	}
 
-	function getTimerPercent(): number {
-		if (!question) return 0;
-		return (timeLeft / question.time_limit) * 100;
+	async function copyCode() {
+		if (await copyText(roomCode)) {
+			copied = true;
+			if (copyTimer) clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => (copied = false), 1800);
+		}
+	}
+
+	function letter(index: number): string {
+		return String.fromCharCode(65 + index);
 	}
 </script>
 
-<div class="mx-auto max-w-6xl px-6 py-8">
-	<!-- Header -->
-	<div class="mb-6 flex items-center justify-between">
-		<div>
-			<div class="font-mono text-sm text-slate-400">Комната: {roomCode}</div>
-			<h1 class="text-2xl font-bold text-white">{topic || 'Без темы'}</h1>
-		</div>
-		<div class="flex items-center gap-4">
-			<div class="text-right">
-				<div class="text-xs text-slate-400">Игроков</div>
-				<div class="text-2xl font-bold text-white">{players.length}</div>
-			</div>
-		</div>
-	</div>
+<div class="flex min-h-[100dvh] flex-col">
+	<header class="sticky top-0 z-30 border-b border-line/60 bg-ink-950/85 backdrop-blur-md">
+		<div class="mx-auto flex h-14 w-full max-w-5xl items-center gap-1.5 px-3 sm:px-6">
+			<a href="/lobby" class="btn-icon h-10 w-10" aria-label="Вернуться в комнаты">
+				<Icon name="back" size={18} />
+			</a>
 
-	{#if error}
-		<div class="mb-4 rounded-lg bg-red-500/10 p-4 text-red-400">{error}</div>
-	{/if}
+			<button
+				on:click={copyCode}
+				class="flex min-h-[40px] items-center gap-2 rounded-[11px] px-2 text-chalk transition-colors hover:bg-ink-900"
+				title="Скопировать код комнаты"
+			>
+				<span class="digits text-sm tracking-[0.16em]">{copied ? 'Скопировано' : roomCode}</span>
+				<Icon name={copied ? 'check' : 'copy'} size={15} />
+			</button>
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-		<!-- Main area -->
-		<div class="lg:col-span-2">
-			{#if gamePhase === 'waiting'}
-				<div class="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center">
-					<div class="mb-4 text-6xl">⏳</div>
-					<h2 class="mb-2 text-xl font-semibold text-white">Ожидание игроков</h2>
-					<p class="mb-6 text-slate-400">Поделитесь кодом комнаты: <span class="font-mono text-blue-400">{roomCode}</span></p>
-
-					{#if isHost}
-						<button
-							on:click={startGame}
-							disabled={players.length < 1}
-							class="rounded-lg bg-green-600 px-8 py-3 font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							▶ Начать игру
-						</button>
-						{#if players.length < 1}
-							<p class="mt-2 text-sm text-slate-400">Нужен хотя бы 1 игрок</p>
-						{/if}
-					{:else}
-						<div class="text-slate-400">Ожидание хоста...</div>
-					{/if}
-				</div>
-
-			{:else if gamePhase === 'playing' && question}
-				<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-					<!-- Timer -->
-					<div class="mb-6">
-						<div class="mb-2 flex items-center justify-between">
-							<span class="text-sm text-slate-400">Осталось времени</span>
-							<span class="font-mono text-2xl font-bold {getTimerColor()}">{timeLeft}с</span>
-						</div>
-						<div class="h-2 overflow-hidden rounded-full bg-slate-700">
-							<div
-								class="h-full bg-blue-500 transition-all duration-1000"
-								style="width: {getTimerPercent()}%"
-							></div>
-						</div>
-					</div>
-
-					<!-- Question -->
-					<h2 class="mb-6 text-xl font-semibold text-white">{question.question}</h2>
-
-					<!-- Options -->
-					<div class="space-y-3">
-						{#each question.options as option, i}
-							<button
-								on:click={() => submitAnswer(i)}
-								disabled={selectedAnswer !== null}
-								class="w-full rounded-lg border-2 p-4 text-left transition
-									{selectedAnswer === i
-									? 'border-blue-500 bg-blue-500/20 text-white'
-									: selectedAnswer !== null
-									? 'border-slate-600 bg-slate-700 opacity-50'
-									: 'border-slate-600 bg-slate-700 text-slate-200 hover:border-blue-500 hover:bg-slate-600'}"
-							>
-								<span class="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-600 font-bold">
-									{String.fromCharCode(65 + i)}
-								</span>
-								{option}
-							</button>
-						{/each}
-					</div>
-				</div>
-
-			{:else if gamePhase === 'result' && lastResult}
-				<div class="rounded-xl border-2 border-blue-500/30 bg-slate-800 p-6">
-					<div class="mb-4 text-center">
-						<div class="text-5xl">
-							{lastResult.correct ? '✅' : '❌'}
-						</div>
-						<div class="mt-2 text-2xl font-bold text-white">
-							{lastResult.correct ? 'Правильно!' : 'Неправильно'}
-						</div>
-					</div>
-
-					<div class="rounded-lg bg-slate-700 p-4">
-						<div class="mb-2 text-sm text-slate-400">Правильный ответ:</div>
-						<div class="text-lg font-semibold text-green-400">
-							{question?.options?.[lastResult.correctIndex] || '—'}
-						</div>
-					</div>
-
-					{#if lastResult.explanation}
-						<div class="mt-4 rounded-lg bg-slate-700/50 p-4">
-							<div class="mb-1 text-sm text-slate-400">Пояснение:</div>
-							<div class="text-slate-200">{lastResult.explanation}</div>
-						</div>
-					{/if}
-				</div>
-
-			{:else if gamePhase === 'finished'}
-				<div class="rounded-xl border-2 border-yellow-500/30 bg-slate-800 p-8 text-center">
-					<div class="mb-4 text-6xl">🏆</div>
-					<h2 class="mb-2 text-2xl font-bold text-white">Игра окончена!</h2>
-					<p class="text-slate-400">Посмотрите результаты</p>
-
-					<div class="mt-6 space-y-2">
-						{#each players.sort((a, b) => b.score - a.score).slice(0, 3) as player, i}
-							<div class="flex items-center justify-between rounded-lg bg-slate-700 p-4">
-								<div class="flex items-center gap-3">
-									<span class="text-2xl">
-										{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}
-									</span>
-									<span class="font-semibold text-white">{player.name}</span>
-								</div>
-								<span class="text-xl font-bold text-yellow-400">{player.score}</span>
-							</div>
-						{/each}
-					</div>
-
-					<div class="mt-6 flex justify-center gap-3">
-						<a href="/lobby" class="rounded-lg bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700">
-							В лобби
-						</a>
-						<button
-							on:click={() => ws.send('play_again', {})}
-							class="rounded-lg bg-green-600 px-6 py-2 font-semibold text-white hover:bg-green-700"
-						>
-							Ещё раз
-						</button>
-					</div>
-				</div>
-
-			{:else}
-				<div class="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center text-slate-400">
-					Подключение...
-				</div>
+			{#if !connected}
+				<span class="chip animate-pulse-soft text-amber">Переподключение</span>
 			{/if}
-		</div>
 
-		<!-- Sidebar: players -->
-		<div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
-			<h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Игроки</h3>
-			<div class="space-y-2">
-				{#each players as player}
-					<div class="flex items-center justify-between rounded-lg bg-slate-700 p-3">
-						<div class="flex items-center gap-2">
-							{#if player.is_host}
-								<span class="text-yellow-400">👑</span>
-							{/if}
-							<span class="font-medium text-white">{player.name}</span>
-						</div>
-						<span class="font-mono text-sm text-blue-400">{player.score}</span>
-					</div>
-				{/each}
-				{#if players.length === 0}
-					<div class="py-4 text-center text-sm text-slate-500">Пока никого нет</div>
+			<div class="ml-auto flex items-center gap-2">
+				{#if qTotal > 0 && (phase === 'playing' || phase === 'result')}
+					<span class="chip hidden sm:inline-flex">Вопрос {qIndex + 1} из {qTotal}</span>
+				{/if}
+				{#if phase === 'playing'}
+					<span class="digits text-lg {lowTime ? 'text-coral' : 'text-amber'}">{timeLeft} с</span>
 				{/if}
 			</div>
 		</div>
-	</div>
+
+		{#if phase === 'playing'}
+			<div class="h-1 w-full bg-ink-800">
+				<div
+					class="h-full transition-[width] duration-200 ease-linear {lowTime ? 'bg-coral' : 'bg-amber'}"
+					style="width: {timePct}%"
+				></div>
+			</div>
+		{/if}
+	</header>
+
+	<main class="mx-auto w-full max-w-5xl flex-1 px-3 py-4 sm:px-6 sm:py-6">
+		{#if error}
+			<p class="mb-3 rounded-[12px] border border-coral/30 bg-coral/10 px-4 py-2.5 text-sm text-coral" role="alert">
+				{error}
+			</p>
+		{/if}
+
+		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
+			<div class="min-w-0">
+				{#if phase === 'waiting'}
+					<section class="card card-pad animate-rise text-center">
+						<p class="text-sm text-dim">{topic || 'Комната'}</p>
+						<button
+							on:click={copyCode}
+							class="digits mx-auto mt-2 block rounded-[16px] border border-line bg-ink-900 px-5 py-3 text-[30px] tracking-[0.22em] text-chalk transition-colors hover:border-amber/60 sm:text-[38px]"
+							title="Скопировать код"
+						>
+							{roomCode}
+						</button>
+						<p class="mt-2 text-sm text-dim">
+							{copied ? 'Код скопирован — отправьте его друзьям' : 'Нажмите на код, чтобы скопировать'}
+						</p>
+
+						<div class="mx-auto mt-6 max-w-sm space-y-1.5 text-left text-sm text-dim">
+							<p class="flex gap-2.5"><span class="digits text-amber">1</span> Отправьте код друзьям</p>
+							<p class="flex gap-2.5"><span class="digits text-amber">2</span> Дождитесь их в списке игроков</p>
+							<p class="flex gap-2.5"><span class="digits text-amber">3</span> Хост нажимает «Начать игру»</p>
+						</div>
+
+						<div class="mt-6">
+							{#if isHost}
+								<button on:click={startGame} disabled={players.length < 1} class="btn btn-primary w-full sm:w-auto sm:px-8">
+									<Icon name="play" size={16} />
+									Начать игру
+								</button>
+								{#if players.length < 1}
+									<p class="mt-2 text-xs text-dim">Нужен хотя бы один игрок в комнате</p>
+								{/if}
+							{:else}
+								<p class="text-sm text-dim">Ждём, когда хост начнёт игру</p>
+							{/if}
+						</div>
+					</section>
+				{:else if phase === 'playing' && question}
+					<section class="animate-rise">
+						<div class="mb-3 flex items-center justify-between gap-3">
+							<p class="truncate text-sm text-dim">{topic}</p>
+							<span class="chip sm:hidden">Вопрос {qIndex + 1} из {qTotal}</span>
+						</div>
+
+						<h1 class="mb-5 font-display text-[21px] leading-snug text-chalk sm:text-[28px] lg:text-[31px]">
+							{question.question}
+						</h1>
+
+						<div class="grid gap-2 sm:grid-cols-2">
+							{#each question.options as option, i}
+								<button
+									on:click={() => submitAnswer(i)}
+									disabled={selected !== null}
+									class="flex min-h-[62px] items-center gap-3 rounded-[16px] border px-3.5 py-3 text-left text-[15px] transition-colors sm:text-base lg:text-[17px] {selected === i
+										? 'border-amber bg-ink-800 text-chalk'
+										: selected !== null
+											? 'border-line/60 bg-ink-850 text-dim opacity-60'
+											: 'border-line bg-ink-850 text-chalk hover:border-amber/60 hover:bg-ink-800'}"
+								>
+									<span
+										class="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-ink-700 text-xs font-semibold {selected === i
+											? 'text-amber'
+											: 'text-dim'}"
+									>
+										{letter(i)}
+									</span>
+									<span class="min-w-0">{option}</span>
+								</button>
+							{/each}
+						</div>
+
+						<p class="mt-3 text-sm text-dim">
+							{selected === null
+								? 'Выберите ответ — изменить его будет нельзя.'
+								: 'Ответ принят. Ждём остальных игроков…'}
+						</p>
+					</section>
+				{:else if phase === 'result' && verdict}
+					<section class="card card-pad animate-rise {verdict.correct === false ? 'border-coral/40' : 'border-mint/40'}">
+						<p
+							class="font-display text-xl sm:text-2xl {verdict.correct === true
+								? 'text-mint'
+								: verdict.correct === false
+									? 'text-coral'
+									: 'text-dim'}"
+						>
+							{#if verdict.correct === true}
+								Верно
+							{:else if verdict.correct === false}
+								Мимо
+							{:else}
+								Время вышло
+							{/if}
+						</p>
+
+						<div class="mt-4 rounded-[14px] border border-line/70 bg-ink-900 px-4 py-3">
+							<p class="text-xs text-dim">Правильный ответ</p>
+							<p class="mt-1 font-medium text-chalk">{question?.options?.[verdict.correctIndex] ?? '—'}</p>
+						</div>
+
+						{#if verdict.explanation}
+							<div class="mt-2 rounded-[14px] border border-line/70 bg-ink-900 px-4 py-3">
+								<p class="text-xs text-dim">Почему</p>
+								<p class="mt-1 text-sm leading-relaxed text-chalk">{verdict.explanation}</p>
+							</div>
+						{/if}
+
+						<p class="mt-4 text-sm text-dim">
+							{qIndex + 1 < qTotal ? 'Следующий вопрос — через пару секунд.' : 'Это был последний вопрос, считаем итоги.'}
+						</p>
+					</section>
+				{:else if phase === 'finished'}
+					<section class="animate-rise space-y-4">
+						<div class="card card-pad">
+							<p class="font-display text-xl text-chalk sm:text-2xl">Игра окончена</p>
+							<p class="mt-1 text-sm text-dim">{topic}</p>
+
+							{#if ranked.length > 0}
+								<ol class="mt-5 space-y-1.5">
+									{#each ranked as player, i}
+										<li
+											class="flex items-center gap-3 rounded-[14px] border px-3.5 py-3 {player.name === myName
+												? 'border-amber/60 bg-ink-800'
+												: 'border-line/70 bg-ink-900'}"
+										>
+											<span class="digits w-6 text-center text-sm text-dim">{i + 1}</span>
+											<span class="grid h-8 w-8 place-items-center rounded-full bg-ink-700 text-xs font-semibold text-chalk">
+												{initial(player.name)}
+											</span>
+											<span class="min-w-0 flex-1 truncate text-sm font-medium text-chalk">
+												{player.name}
+												{#if player.is_host}<span class="ml-1 text-xs text-dim">хост</span>{/if}
+											</span>
+											<span class="digits text-base text-chalk">{player.score}</span>
+										</li>
+									{/each}
+								</ol>
+							{:else}
+								<p class="mt-4 text-sm text-dim">В игре не было игроков.</p>
+							{/if}
+
+							<div class="mt-5 flex flex-col gap-2 sm:flex-row">
+								{#if isHost}
+									<button on:click={playAgain} class="btn btn-primary flex-1">Играть снова</button>
+								{/if}
+								<button on:click={() => goto('/lobby')} class="btn btn-quiet flex-1">В комнаты</button>
+							</div>
+						</div>
+					</section>
+				{:else}
+					<section class="card card-pad text-center text-sm text-dim">Подключаемся к комнате…</section>
+				{/if}
+			</div>
+
+			<aside class="card card-pad lg:sticky lg:top-20 {phase === 'waiting' ? '' : 'hidden lg:block'}">
+				<div class="mb-3 flex items-baseline justify-between">
+					<h2 class="text-sm font-semibold text-chalk">Игроки</h2>
+					<span class="text-xs text-dim">
+						{players.length} {plural(players.length, 'человек', 'человека', 'человек')}
+					</span>
+				</div>
+
+				{#if phase !== 'waiting'}
+					<p class="mb-3 flex items-center justify-between rounded-[12px] border border-line/70 bg-ink-900 px-3 py-2 text-sm">
+						<span class="text-dim">Ваш счёт</span>
+						<span class="digits text-chalk">{myScore}</span>
+					</p>
+				{/if}
+
+				<ul class="space-y-1.5">
+					{#each ranked as player}
+						<li class="flex items-center gap-2.5 rounded-[12px] px-1.5 py-1.5">
+							<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink-700 text-[11px] font-semibold text-chalk">
+								{initial(player.name)}
+							</span>
+							<span class="min-w-0 flex-1 truncate text-sm {player.name === myName ? 'text-amber' : 'text-chalk'}">
+								{player.name}
+							</span>
+							<span class="digits text-sm text-dim">
+								{#if phase !== 'waiting'}{player.score}{/if}
+							</span>
+						</li>
+					{/each}
+				</ul>
+
+				{#if players.length === 0}
+					<p class="py-3 text-sm text-dim">Пока никого нет. Отправьте друзьям код комнаты.</p>
+				{/if}
+			</aside>
+		</div>
+	</main>
 </div>

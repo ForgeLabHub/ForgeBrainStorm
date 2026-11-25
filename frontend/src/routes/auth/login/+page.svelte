@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import { refreshAuth } from '$lib/stores/auth';
 
 	let username = '';
 	let password = '';
@@ -9,7 +10,7 @@
 
 	async function handleLogin() {
 		if (!username.trim() || !password) {
-			error = 'Заполните все поля';
+			error = 'Заполните оба поля';
 			return;
 		}
 
@@ -19,77 +20,72 @@
 		try {
 			const response = await api.login(username.trim(), password);
 			if (response.ok) {
+				await refreshAuth();
 				goto('/lobby');
 			} else {
-				error = response.error || 'Неверные учётные данные';
+				error = response.error || 'Неверное имя или пароль';
 			}
-		} catch (e) {
-			console.error('Login failed:', e);
-			error = 'Ошибка соединения с сервером';
+		} catch (e: any) {
+			error = e.message || 'Сервер не отвечает. Попробуйте ещё раз.';
 		} finally {
 			loading = false;
 		}
 	}
 </script>
 
-<div class="flex min-h-[70vh] items-center justify-center">
-	<div class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-xl">
-		<div class="mb-6 text-center">
-			<div class="mb-3 text-5xl">🧠</div>
-			<h1 class="text-2xl font-bold text-white">Вход в BrainStorm</h1>
-			<p class="mt-1 text-sm text-slate-400">Войдите, чтобы играть и отслеживать прогресс</p>
-		</div>
+<div class="mx-auto flex min-h-[70vh] w-full max-w-[400px] flex-col justify-center py-4">
+	<div class="card card-pad">
+		<h1 class="font-display text-2xl tracking-tight text-chalk">Вход</h1>
+		<p class="mt-1 text-sm text-dim">Войдите, чтобы играть и сохранять прогресс.</p>
 
-		<form on:submit|preventDefault={handleLogin} class="space-y-4">
+		<form on:submit|preventDefault={handleLogin} class="mt-6 space-y-4">
 			<div>
-				<label for="username" class="mb-1 block text-sm font-medium text-slate-300">Имя пользователя</label>
+				<label for="username" class="label">Имя пользователя</label>
 				<input
 					id="username"
 					type="text"
 					bind:value={username}
-					placeholder="your_name"
-					class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2.5 text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none"
+					placeholder="например, anna"
+					class="field"
 					autocomplete="username"
+					autocapitalize="none"
+					spellcheck="false"
 				/>
 			</div>
 
 			<div>
-				<label for="password" class="mb-1 block text-sm font-medium text-slate-300">Пароль</label>
+				<label for="password" class="label">Пароль</label>
 				<input
 					id="password"
 					type="password"
 					bind:value={password}
-					placeholder="••••••••"
-					class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2.5 text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none"
+					placeholder="••••••••••••"
+					class="field"
 					autocomplete="current-password"
 				/>
 			</div>
 
 			{#if error}
-				<div class="rounded-lg bg-red-500/10 p-3 text-sm text-red-400">
+				<p class="rounded-[12px] border border-coral/30 bg-coral/10 px-3 py-2.5 text-sm text-coral" role="alert">
 					{error}
-				</div>
+				</p>
 			{/if}
 
-			<button
-				type="submit"
-				disabled={loading}
-				class="w-full rounded-lg bg-blue-600 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-			>
+			<button type="submit" disabled={loading} class="btn btn-primary w-full">
 				{#if loading}
-					<span class="flex items-center justify-center gap-2">
-						<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-						Вход...
-					</span>
+					<span class="h-4 w-4 animate-spin rounded-full border-2 border-ink-950/40 border-t-ink-950"></span>
+					Вход…
 				{:else}
 					Войти
 				{/if}
 			</button>
 		</form>
 
-		<div class="mt-6 text-center text-sm text-slate-400">
+		<p class="mt-5 text-sm text-dim">
 			Нет аккаунта?
-			<a href="/auth/register" class="font-medium text-blue-400 hover:text-blue-300">Зарегистрироваться</a>
-		</div>
+			<a href="/auth/register" class="font-medium text-chalk underline decoration-line underline-offset-4 hover:decoration-amber">
+				Зарегистрироваться
+			</a>
+		</p>
 	</div>
 </div>

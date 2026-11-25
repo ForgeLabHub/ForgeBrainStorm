@@ -2,18 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-	--background: #0f172a;
-	--foreground: #f8fafc;
-	--primary: #3b82f6;
-	--primary-foreground: #ffffff;
-	--accent: #8b5cf6;
-	--muted: #334155;
-	--border: #475569;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ink-950 font-sans text-chalk antialiased;
+    background-image: radial-gradient(60rem 40rem at 80% -10%, rgba(177, 140, 255, 0.09), transparent 70%),
+      radial-gradient(45rem 30rem at 0% 0%, rgba(255, 182, 61, 0.06), transparent 70%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-amber/30 text-chalk;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-amber/70 ring-offset-2 ring-offset-ink-950;
+  }
 }
 
-body {
-	background-color: var(--background);
-	color: var(--foreground);
-	font-family: 'Inter', system-ui, sans-serif;
+@layer components {
+  .card {
+    @apply rounded-xl2 border border-line/80 bg-ink-850;
+  }
+
+  .card-pad {
+    @apply p-5 sm:p-6;
+  }
+
+  /* Base button: pair with .btn-primary or .btn-quiet in markup. */
+  .btn {
+    @apply inline-flex min-h-[48px] select-none items-center justify-center gap-2 rounded-[14px] px-5 text-[15px] font-semibold transition-colors disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .btn-primary {
+    @apply bg-amber text-ink-950 hover:bg-amber-600;
+  }
+
+  .btn-quiet {
+    @apply border border-line text-chalk hover:bg-ink-800;
+  }
+
+  .btn-icon {
+    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-line text-dim transition-colors hover:bg-ink-800 hover:text-chalk;
+  }
+
+  .field {
+    @apply min-h-[48px] w-full rounded-[14px] border border-line bg-ink-900 px-4 text-[16px] text-chalk placeholder:text-dim/60 focus:border-amber/70 focus:outline-none;
+  }
+
+  .label {
+    @apply mb-2 block text-sm text-dim;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-ink-900/60 px-2.5 py-1 text-xs text-dim;
+  }
+
+  .digits {
+    @apply font-display tabular-nums;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-chalk sm:text-xl;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

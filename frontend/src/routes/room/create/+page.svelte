@@ -2,6 +2,17 @@
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { MODES } from '$lib/ui';
+
+	const suggestions = ['Космос', 'История России', 'Кино', 'Музыка', 'Спорт', 'Наука', 'География', 'IT'];
+	const difficulties = [
+		{ value: 'easy', label: 'Лёгкая' },
+		{ value: 'medium', label: 'Средняя' },
+		{ value: 'hard', label: 'Сложная' }
+	];
+	const questionPresets = [5, 10, 15, 20];
+	const optionPresets = [3, 4, 6];
+	const timerPresets = [15, 30, 60];
 
 	let topic = '';
 	let difficulty = 'medium';
@@ -12,22 +23,22 @@
 	let creating = false;
 	let error = '';
 
-	let aiProviders: string[] = [];
+	let providers: string[] = [];
 	let selectedProvider = '';
 
 	onMount(async () => {
 		try {
 			const response = await api.getAiProviders();
-			aiProviders = response.providers || [];
-			selectedProvider = response.default || aiProviders[0] || '';
-		} catch (e) {
-			console.error('Failed to load AI providers:', e);
+			providers = response.providers || [];
+			selectedProvider = response.default || providers[0] || '';
+		} catch {
+			providers = [];
 		}
 	});
 
 	async function createRoom() {
 		if (!topic.trim()) {
-			error = 'Введите тему викторины';
+			error = 'Напишите тему — по ней AI составит вопросы';
 			return;
 		}
 
@@ -42,7 +53,7 @@
 				question_count: questionCount,
 				num_options: numOptions,
 				timer_seconds: timerSeconds,
-				ai_provider: selectedProvider,
+				ai_provider: selectedProvider || undefined
 			});
 
 			if (response.ok && response.room) {
@@ -50,182 +61,191 @@
 			} else {
 				error = response.error || 'Не удалось создать комнату';
 			}
-		} catch (e) {
-			console.error('Failed to create room:', e);
-			error = 'Ошибка соединения с сервером';
+		} catch (e: any) {
+			error = e.message || 'Сервер не отвечает. Попробуйте ещё раз.';
 		} finally {
 			creating = false;
 		}
 	}
 </script>
 
-<div class="mx-auto max-w-3xl px-6 py-8">
-	<div class="mb-8">
-		<h1 class="mb-2 text-3xl font-bold text-white">Создать комнату</h1>
-		<p class="text-slate-400">Настройте параметры викторины</p>
+<div class="mx-auto w-full max-w-2xl">
+	<div class="mb-6">
+		<a href="/lobby" class="mb-3 inline-flex items-center gap-1.5 text-sm text-dim hover:text-chalk">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M14.5 5.5 8 12l6.5 6.5" />
+			</svg>
+			Комнаты
+		</a>
+		<h1 class="font-display text-[26px] tracking-tight text-chalk sm:text-3xl">Новая комната</h1>
+		<p class="mt-1 text-sm text-dim">Настройте игру — изменить код потом нельзя, но перезапустить можно.</p>
 	</div>
 
-	<form on:submit|preventDefault={createRoom} class="space-y-6">
-		<!-- Тема -->
-		<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-			<label class="mb-3 block">
-				<span class="mb-2 block text-sm font-medium text-white">Тема викторины</span>
-				<input
-					type="text"
-					bind:value={topic}
-					placeholder="Например: История России, Космос, Литература..."
-					class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-3 text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none"
-					maxlength="60"
-				/>
-				<span class="mt-1 block text-xs text-slate-400">{topic.length}/60 символов</span>
-			</label>
-		</div>
-
-		<!-- Сложность и режим -->
-		<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-				<span class="mb-3 block text-sm font-medium text-white">Сложность</span>
-				<div class="space-y-2">
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {difficulty === 'easy' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={difficulty} value="easy" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">Легкая</div>
-							<div class="text-xs text-slate-400">Для начинающих</div>
-						</div>
-					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {difficulty === 'medium' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={difficulty} value="medium" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">Средняя</div>
-							<div class="text-xs text-slate-400">Для всех</div>
-						</div>
-					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {difficulty === 'hard' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={difficulty} value="hard" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">Сложная</div>
-							<div class="text-xs text-slate-400">Для экспертов</div>
-						</div>
-					</label>
-				</div>
-			</div>
-
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-				<span class="mb-3 block text-sm font-medium text-white">Режим игры</span>
-				<div class="space-y-2">
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {mode === 'classic' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={mode} value="classic" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">Классический</div>
-							<div class="text-xs text-slate-400">Все отвечают одновременно</div>
-						</div>
-					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {mode === 'ffa' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={mode} value="ffa" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">Каждый за себя</div>
-							<div class="text-xs text-slate-400">Кто первый ответит</div>
-						</div>
-					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {mode === 'team' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={mode} value="team" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">Командный</div>
-							<div class="text-xs text-slate-400">Игра командами</div>
-						</div>
-					</label>
-					<label class="flex cursor-pointer items-center rounded-lg border border-slate-600 p-3 transition hover:border-blue-500 {mode === 'lives' ? 'border-blue-500 bg-blue-500/10' : ''}">
-						<input type="radio" bind:group={mode} value="lives" class="mr-3" />
-						<div>
-							<div class="font-medium text-white">На выживание</div>
-							<div class="text-xs text-slate-400">3 жизни, кто выживет</div>
-						</div>
-					</label>
-				</div>
-			</div>
-		</div>
-
-		<!-- Параметры -->
-		<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-				<label class="block">
-					<span class="mb-2 block text-sm font-medium text-white">Количество вопросов</span>
-					<input
-						type="number"
-						bind:value={questionCount}
-						min="5"
-						max="30"
-						class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
-					/>
-				</label>
-			</div>
-
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-				<label class="block">
-					<span class="mb-2 block text-sm font-medium text-white">Вариантов ответа</span>
-					<input
-						type="number"
-						bind:value={numOptions}
-						min="2"
-						max="6"
-						class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
-					/>
-				</label>
-			</div>
-
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-				<label class="block">
-					<span class="mb-2 block text-sm font-medium text-white">Время на вопрос (сек)</span>
-					<input
-						type="number"
-						bind:value={timerSeconds}
-						min="10"
-						max="120"
-						class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
-					/>
-				</label>
-			</div>
-		</div>
-
-		<!-- AI Provider -->
-		{#if aiProviders.length > 0}
-			<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-				<label class="block">
-					<span class="mb-2 block text-sm font-medium text-white">AI-провайдер</span>
-					<select
-						bind:value={selectedProvider}
-						class="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
+	<form on:submit|preventDefault={createRoom} class="space-y-4">
+		<section class="card card-pad">
+			<label for="topic" class="label">Тема вопросов</label>
+			<input
+				id="topic"
+				type="text"
+				bind:value={topic}
+				maxlength="60"
+				placeholder="Например: космос и планеты"
+				class="field"
+				autocomplete="off"
+			/>
+			<div class="mt-3 flex flex-wrap gap-1.5">
+				{#each suggestions as suggestion}
+					<button
+						type="button"
+						on:click={() => (topic = suggestion)}
+						class="chip min-h-[36px] px-3 text-[13px] transition-colors hover:border-amber/50 hover:text-chalk"
 					>
-						{#each aiProviders as provider}
-							<option value={provider}>{provider}</option>
-						{/each}
-					</select>
-					<span class="mt-1 block text-xs text-slate-400">Можно изменить в настройках AI</span>
-				</label>
+						{suggestion}
+					</button>
+				{/each}
 			</div>
-		{/if}
-
-		<!-- Error -->
-		{#if error}
-			<div class="rounded-lg bg-red-500/10 p-4 text-red-400">
-				{error}
-			</div>
-		{/if}
-
-		<!-- Submit -->
-		<button
-			type="submit"
-			disabled={creating || !topic.trim()}
-			class="w-full rounded-lg bg-blue-600 px-6 py-4 text-lg font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-		>
-			{#if creating}
-				<span class="flex items-center justify-center gap-2">
-					<div class="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-					Создание...
-				</span>
-			{:else}
-				Создать комнату
+			{#if providers.length === 0}
+				<p class="mt-3 text-xs leading-relaxed text-dim">
+					AI-ключ не настроен, поэтому вопросы возьмутся из встроенного набора по теме. Играть это не мешает.
+				</p>
 			{/if}
-		</button>
+		</section>
+
+		<section class="card card-pad">
+			<span class="label">Сложность</span>
+			<div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Сложность">
+				{#each difficulties as item}
+					<button
+						type="button"
+						on:click={() => (difficulty = item.value)}
+						aria-pressed={difficulty === item.value}
+						class="min-h-[44px] rounded-[12px] border px-2 text-sm font-medium transition-colors {difficulty ===
+						item.value
+							? 'border-amber bg-ink-800 text-amber'
+							: 'border-line text-dim hover:text-chalk'}"
+					>
+						{item.label}
+					</button>
+				{/each}
+			</div>
+		</section>
+
+		<div class="grid gap-4 sm:grid-cols-2">
+			<section class="card card-pad">
+				<span class="label">Сколько вопросов</span>
+				<div class="grid grid-cols-4 gap-1.5" role="group" aria-label="Количество вопросов">
+					{#each questionPresets as count}
+						<button
+							type="button"
+							on:click={() => (questionCount = count)}
+							aria-pressed={questionCount === count}
+							class="min-h-[44px] rounded-[12px] border text-sm font-medium transition-colors {questionCount === count
+								? 'border-amber bg-ink-800 text-amber'
+								: 'border-line text-dim hover:text-chalk'}"
+						>
+							{count}
+						</button>
+					{/each}
+				</div>
+			</section>
+
+			<section class="card card-pad">
+				<span class="label">Время на вопрос</span>
+				<div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Время на вопрос">
+					{#each timerPresets as seconds}
+						<button
+							type="button"
+							on:click={() => (timerSeconds = seconds)}
+							aria-pressed={timerSeconds === seconds}
+							class="min-h-[44px] rounded-[12px] border text-sm font-medium transition-colors {timerSeconds === seconds
+								? 'border-amber bg-ink-800 text-amber'
+								: 'border-line text-dim hover:text-chalk'}"
+						>
+							{seconds} с
+						</button>
+					{/each}
+				</div>
+			</section>
+		</div>
+
+		<section class="card card-pad">
+			<span class="label">Вариантов ответа</span>
+			<div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Количество вариантов ответа">
+				{#each optionPresets as count}
+					<button
+						type="button"
+						on:click={() => (numOptions = count)}
+						aria-pressed={numOptions === count}
+						class="min-h-[44px] rounded-[12px] border text-sm font-medium transition-colors {numOptions === count
+							? 'border-amber bg-ink-800 text-amber'
+							: 'border-line text-dim hover:text-chalk'}"
+					>
+						{count}
+					</button>
+				{/each}
+			</div>
+		</section>
+
+		<section class="card card-pad">
+			<span class="label">Режим</span>
+			<div class="space-y-1.5">
+				{#each Object.entries(MODES) as [value, meta]}
+					<button
+						type="button"
+						on:click={() => (mode = value)}
+						aria-pressed={mode === value}
+						class="flex w-full items-center gap-3 rounded-[12px] border px-3.5 py-3 text-left transition-colors {mode ===
+						value
+							? 'border-amber bg-ink-800'
+							: 'border-line hover:bg-ink-800'}"
+					>
+						<span
+							class="grid h-5 w-5 shrink-0 place-items-center rounded-full border {mode === value
+								? 'border-amber'
+								: 'border-line'}"
+						>
+							{#if mode === value}
+								<span class="h-2.5 w-2.5 rounded-full bg-amber"></span>
+							{/if}
+						</span>
+						<span class="min-w-0">
+							<span class="block text-sm font-medium text-chalk">{meta.label}</span>
+							<span class="block text-xs text-dim">{meta.hint}</span>
+						</span>
+					</button>
+				{/each}
+			</div>
+		</section>
+
+		{#if providers.length > 0}
+			<section class="card card-pad">
+				<label for="provider" class="label">Провайдер вопросов</label>
+				<select id="provider" bind:value={selectedProvider} class="field appearance-none">
+					{#each providers as provider}
+						<option value={provider}>{provider}</option>
+					{/each}
+				</select>
+			</section>
+		{/if}
+
+		{#if error}
+			<p class="rounded-[12px] border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral" role="alert">
+				{error}
+			</p>
+		{/if}
+
+		<div class="pt-1">
+			<button type="submit" disabled={creating || !topic.trim()} class="btn btn-primary w-full">
+				{#if creating}
+					<span class="h-4 w-4 animate-spin rounded-full border-2 border-ink-950/40 border-t-ink-950"></span>
+					Создаём комнату…
+				{:else}
+					Создать комнату
+				{/if}
+			</button>
+			<p class="mt-2 text-center text-xs text-dim">
+				После создания вы получите код — отправьте его друзьям.
+			</p>
+		</div>
 	</form>
 </div>

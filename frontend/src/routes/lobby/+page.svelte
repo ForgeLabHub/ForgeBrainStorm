@@ -1,19 +1,23 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import type { Room } from '$lib/api';
+	import { api, type Room } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import Icon from '$lib/components/Icon.svelte';
+	import { currentUser } from '$lib/stores/auth';
+	import { modeLabel } from '$lib/ui';
 
 	let rooms: Room[] = [];
 	let loading = true;
+	let loadError = '';
 	let joinCode = '';
 	let joinError = '';
 	let joining = false;
 
 	onMount(() => {
 		loadRooms();
-		// Refresh rooms every 5 seconds
-		const interval = setInterval(loadRooms, 5000);
+		const interval = setInterval(() => {
+			if (!document.hidden) loadRooms();
+		}, 5000);
 		return () => clearInterval(interval);
 	});
 
@@ -21,19 +25,29 @@
 		try {
 			const response = await api.listRooms();
 			rooms = response.rooms || [];
-		} catch (e) {
-			console.error('Failed to load rooms:', e);
+			loadError = '';
+		} catch {
+			loadError = 'Не удалось загрузить список комнат';
 		} finally {
 			loading = false;
 		}
 	}
 
+	function normalizeCode(value: string) {
+		joinCode = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6);
+	}
+
 	async function joinRoom() {
 		const code = joinCode.trim().toUpperCase();
 		if (code.length !== 6) {
-			joinError = 'Код комнаты — 6 символов';
+			joinError = 'В коде ровно 6 символов';
 			return;
 		}
+		if (!$currentUser) {
+			goto('/auth/login');
+			return;
+		}
+
 		joining = true;
 		joinError = '';
 		try {
@@ -41,126 +55,119 @@
 			if (response.ok && response.room) {
 				goto(`/room/${code}`);
 			} else {
-				joinError = 'Комната не найдена';
+				joinError = 'Комнаты с таким кодом нет';
 			}
-		} catch (e) {
-			joinError = 'Ошибка соединения с сервером';
+		} catch {
+			joinError = 'Комнаты с таким кодом нет';
 		} finally {
 			joining = false;
 		}
 	}
-
-	function getModeLabel(mode: string): string {
-		const labels: Record<string, string> = {
-			classic: '🎯 Классика',
-			ffa: '⚔️ Каждый за себя',
-			team: '👥 Команды',
-			lives: '❤️ На выживание',
-			coop: '🤝 Кооператив',
-			svoyaigra: '🎲 Своя Игра',
-		};
-		return labels[mode] || mode;
-	}
-
-	function getModeColor(mode: string): string {
-		const colors: Record<string, string> = {
-			classic: 'text-blue-400',
-			ffa: 'text-orange-400',
-			team: 'text-purple-400',
-			lives: 'text-red-400',
-			coop: 'text-green-400',
-			svoyaigra: 'text-yellow-400',
-		};
-		return colors[mode] || 'text-slate-400';
-	}
 </script>
 
-<div class="mx-auto max-w-6xl px-6 py-8">
-	<!-- Header -->
-	<div class="mb-8 flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold text-white">Комнаты</h1>
-			<p class="mt-1 text-slate-400">Присоединитесь к игре или создайте свою</p>
-		</div>
-		<a
-			href="/room/create"
-			class="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
+<div class="mb-6 flex items-start justify-between gap-4">
+	<div>
+		<h1 class="font-display text-[26px] tracking-tight text-chalk sm:text-3xl">Комнаты</h1>
+		<p class="mt-1 text-sm text-dim">Зайдите по коду или начните свою игру.</p>
+	</div>
+	<a href="/room/create" class="btn btn-primary shrink-0 px-4 text-sm sm:px-5">
+		<Icon name="plus" size={16} />
+		<span class="hidden sm:inline">Создать комнату</span>
+		<span class="sm:hidden">Создать</span>
+	</a>
+</div>
+
+{#if !$currentUser}
+	<p class="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[14px] border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-chalk">
+		Чтобы играть, нужен аккаунт.
+		<a href="/auth/login" class="font-semibold underline decoration-amber/60 underline-offset-4">Войти</a>
+		<span class="text-dim">или</span>
+		<a href="/auth/register" class="font-semibold underline decoration-amber/60 underline-offset-4">зарегистрироваться</a>
+	</p>
+{/if}
+
+<section class="card card-pad mb-6">
+	<h2 class="section-title mb-1">Войти по коду</h2>
+	<p class="mb-4 text-sm text-dim">Код комнаты покажет хост — шесть букв или цифр.</p>
+
+	<form on:submit|preventDefault={joinRoom} class="flex flex-col gap-2.5 sm:flex-row">
+		<label class="sr-only" for="room-code">Код комнаты</label>
+		<input
+			id="room-code"
+			type="text"
+			inputmode="text"
+			autocapitalize="characters"
+			autocomplete="off"
+			spellcheck="false"
+			maxlength="6"
+			value={joinCode}
+			on:input={(event) => normalizeCode(event.currentTarget.value)}
+			placeholder="ABC123"
+			class="field flex-1 text-center font-display text-lg tracking-[0.28em] uppercase placeholder:tracking-[0.28em]"
+		/>
+		<button
+			type="submit"
+			disabled={joining || joinCode.length !== 6}
+			class="btn sm:w-36 {joinCode.length === 6 ? 'btn-primary' : 'btn-quiet opacity-60'}"
 		>
-			+ Создать комнату
-		</a>
+			{joining ? 'Проверяем…' : 'Войти'}
+		</button>
+	</form>
+
+	{#if joinError}
+		<p class="mt-2.5 text-sm text-coral" role="alert">{joinError}</p>
+	{/if}
+</section>
+
+<section>
+	<div class="mb-3 flex items-baseline justify-between">
+		<h2 class="section-title">Открытые комнаты</h2>
+		<span class="text-sm text-dim">{rooms.length}</span>
 	</div>
 
-	<!-- Join room -->
-	<div class="mb-8 rounded-xl border border-slate-700 bg-slate-800 p-6">
-		<h2 class="mb-4 text-lg font-semibold text-white">Присоединиться по коду</h2>
-		<form on:submit|preventDefault={joinRoom} class="flex gap-3">
-			<input
-				type="text"
-				bind:value={joinCode}
-				placeholder="ABCDEF"
-				maxlength="6"
-				class="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-4 py-2.5 text-center font-mono text-lg tracking-widest text-white uppercase placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-			/>
-			<button
-				type="submit"
-				disabled={joining || joinCode.length !== 6}
-				class="rounded-lg bg-green-600 px-6 py-2.5 font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-			>
-				{joining ? '...' : 'Войти'}
-			</button>
-		</form>
-		{#if joinError}
-			<p class="mt-2 text-sm text-red-400">{joinError}</p>
-		{/if}
-	</div>
-
-	<!-- Rooms list -->
-	<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-		<h2 class="mb-4 text-lg font-semibold text-white">Доступные комнаты ({rooms.length})</h2>
-
-		{#if loading}
-			<div class="py-12 text-center">
-				<div class="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-			</div>
-		{:else if rooms.length === 0}
-			<div class="py-12 text-center text-slate-400">
-				<div class="mb-3 text-4xl">🎮</div>
-				<p>Нет активных комнат</p>
-				<p class="mt-1 text-sm">Создайте свою и пригласите друзей!</p>
-			</div>
-		{:else}
-			<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-				{#each rooms as room}
+	{#if loading}
+		<div class="space-y-2">
+			{#each [0, 1, 2] as row}
+				<div class="h-[74px] animate-pulse rounded-[16px] border border-line/50 bg-ink-850" class:opacity-60={row > 0}></div>
+			{/each}
+		</div>
+	{:else if loadError}
+		<p class="rounded-[14px] border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">{loadError}</p>
+	{:else if rooms.length === 0}
+		<div class="card card-pad text-center">
+			<p class="font-medium text-chalk">Пока никто не играет</p>
+			<p class="mx-auto mt-1 max-w-[38ch] text-sm text-dim">
+				Создайте комнату — она сразу появится здесь, и друзьям будет достаточно ввести код.
+			</p>
+			<a href="/room/create" class="btn btn-primary mt-4 w-full sm:w-auto sm:px-6">Создать комнату</a>
+		</div>
+	{:else}
+		<ul class="space-y-2">
+			{#each rooms as room (room.code)}
+				<li>
 					<a
 						href="/room/{room.code}"
-						class="group rounded-lg border border-slate-600 bg-slate-700 p-4 transition hover:border-blue-500 hover:bg-slate-600"
+						class="flex items-center gap-3 rounded-[16px] border border-line/70 bg-ink-850 px-3.5 py-3 transition-colors hover:border-line hover:bg-ink-800 sm:gap-4 sm:px-4"
 					>
-						<div class="mb-3 flex items-start justify-between">
-							<div>
-								<div class="font-mono text-sm text-slate-400">{room.code}</div>
-								<div class="mt-1 font-semibold text-white">{room.topic || 'Без темы'}</div>
+						<span class="digits shrink-0 rounded-[10px] bg-ink-900 px-2.5 py-1.5 text-[12px] tracking-[0.12em] text-dim">
+							{room.code}
+						</span>
+
+						<div class="min-w-0 flex-1">
+							<p class="truncate font-medium text-chalk">{room.topic || 'Без темы'}</p>
+							<div class="mt-1 flex flex-wrap items-center gap-1.5">
+								<span class="chip">{modeLabel(room.mode)}</span>
+								<span class="text-xs text-dim">Хост {room.host}</span>
 							</div>
-							<div class="text-2xl opacity-0 transition group-hover:opacity-100">→</div>
 						</div>
 
-						<div class="flex items-center justify-between text-sm">
-							<span class="{getModeColor(room.mode)}">
-								{getModeLabel(room.mode)}
-							</span>
-							<span class="flex items-center gap-1 text-slate-400">
-								<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-									<path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
-								</svg>
-								{room.player_count || 0}
-							</span>
-						</div>
-
-						<div class="mt-2 text-xs text-slate-500">
-							Хост: {room.host}
-						</div>
+						<span class="flex shrink-0 items-center gap-1.5 text-sm text-dim">
+							<Icon name="users" size={16} />
+							{room.player_count ?? 0}
+						</span>
 					</a>
-				{/each}
-			</div>
-		{/if}
-	</div>
-</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</section>
