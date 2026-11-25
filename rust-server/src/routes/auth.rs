@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use argon2::{PasswordHasher, PasswordVerifier};
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::Cookie;
 use serde::Deserialize;
@@ -76,7 +77,10 @@ async fn register(
     let jar = set_session_cookie(jar, &token, &state);
     let user = fetch_user_response(state.db.pool(), user_id).await?;
 
-    Ok((jar, StatusCode::CREATED, Json(serde_json::json!({"ok": true, "user": user}))))
+    let mut response =
+        (jar, Json(serde_json::json!({"ok": true, "user": user}))).into_response();
+    *response.status_mut() = StatusCode::CREATED;
+    Ok(response)
 }
 
 async fn login(
@@ -168,7 +172,7 @@ fn set_session_cookie(jar: CookieJar, token: &str, state: &AppState) -> CookieJa
     let mut cookie = Cookie::build((SESSION_COOKIE, token.to_string()))
         .path("/")
         .http_only(true)
-        .same_site(axum::http::SameSite::Strict);
+        .same_site(axum_extra::extract::cookie::SameSite::Strict);
     if state.settings.session_cookie_secure {
         cookie = cookie.secure(true);
     }

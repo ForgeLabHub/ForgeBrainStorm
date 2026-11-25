@@ -11,7 +11,7 @@ use crate::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/top", get(top_players))
-        .route("/rank/{username}", get(player_rank))
+        .route("/rank/:username", get(player_rank))
 }
 
 #[derive(Deserialize)]
@@ -25,7 +25,7 @@ async fn top_players(
 ) -> AppResult<impl axum::response::IntoResponse> {
     let limit = query.limit.unwrap_or(50).min(200);
     let rows = sqlx::query_as::<_, (i64, String, i64, i32, i32, i32, chrono::DateTime<chrono::Utc>)>(
-        "SELECT user_id, username, total_score, games_played, wins, rank, last_seen
+        "SELECT user_id, username, total_score, games_played, wins, rank::int, last_seen
          FROM leaderboard_ranked ORDER BY rank LIMIT $1",
     )
     .bind(limit)
@@ -49,7 +49,7 @@ async fn player_rank(
     Path(username): Path<String>,
 ) -> AppResult<impl axum::response::IntoResponse> {
     let row = sqlx::query_as::<_, (i64, String, i64, i32, i32, i32)>(
-        "SELECT user_id, username, total_score, games_played, wins, rank
+        "SELECT user_id, username, total_score, games_played, wins, rank::int
          FROM leaderboard_ranked WHERE username = $1",
     )
     .bind(&username)

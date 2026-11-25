@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { api, ws } from '$lib/api';
+	import { api } from '$lib/api';
+	import { ws } from '$lib/ws';
 	import { onMount, onDestroy } from 'svelte';
 
-	$: roomCode = $page.params.code.toUpperCase();
+	$: roomCode = ($page.params.code ?? '').toUpperCase();
 
 	type Player = {
 		name: string;
@@ -30,6 +31,11 @@
 	let lastResult: { correct: boolean; correctIndex: number; explanation: string } | null = null;
 
 	onMount(() => {
+		api.getRoom(roomCode)
+			.then((response) => {
+				if (response.room) topic = response.room.topic;
+			})
+			.catch(() => {});
 		ws.connect();
 		ws.on('connected', () => {
 			ws.send('join_room', { code: roomCode });
@@ -51,7 +57,13 @@
 		ws.on('question_result', (data) => {
 			gamePhase = 'result';
 			stopTimer();
-			lastResult = data;
+			const correctIndex =
+				typeof data.correctIndex === 'number' ? data.correctIndex : data.correct_index;
+			lastResult = {
+				correct: selectedAnswer === correctIndex,
+				correctIndex,
+				explanation: data.explanation || ''
+			};
 		});
 		ws.on('game_over', () => {
 			gamePhase = 'finished';

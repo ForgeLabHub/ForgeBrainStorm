@@ -6,14 +6,24 @@ type MessageHandler = (data: any) => void;
 
 export class WSClient {
 	private ws: WebSocket | null = null;
-	private url: string;
+	private url: string | null;
 	private handlers: Map<string, MessageHandler[]> = new Map();
 	private reconnectAttempts = 0;
 	private maxReconnectAttempts = 10;
 	private reconnectDelay = 1000;
 
 	constructor(url?: string) {
-		this.url = url || import.meta.env.VITE_WS_URL || 'ws://localhost:5000/ws';
+		this.url = url ?? null;
+	}
+
+	/** Resolve lazily so SSR never touches `window`. */
+	private resolveUrl(): string {
+		if (this.url) return this.url;
+		const configured = import.meta.env.VITE_WS_URL;
+		if (configured) return configured;
+		if (typeof window === 'undefined') return '';
+		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+		return `${protocol}//${window.location.host}/ws`;
 	}
 
 	connect(): void {
@@ -21,7 +31,9 @@ export class WSClient {
 			return;
 		}
 
-		this.ws = new WebSocket(this.url);
+		const url = this.resolveUrl();
+		if (!url) return;
+		this.ws = new WebSocket(url);
 
 		this.ws.onopen = () => {
 			console.log('WebSocket connected');

@@ -19,7 +19,7 @@ pub async fn init_pool(settings: &Settings) -> Result<PgPool, AppError> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("migration failed: {e}")))?;
     info!("migrations complete");
 
     Ok(pool)

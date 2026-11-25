@@ -33,7 +33,7 @@ pub struct RoomSettings {
     pub question_count: usize,
     #[serde(default = "default_num_options")]
     pub num_options: usize,
-    #[serde(default = "default_timer")]
+    #[serde(default = "default_timer", alias = "timer_seconds")]
     pub timer_secs: u64,
     #[serde(default)]
     pub difficulty: String,
@@ -87,20 +87,14 @@ pub struct Room {
     pub deadline: Option<Instant>,
     pub created_at: Instant,
     pub last_activity: Instant,
+    /// Set when the first question goes out; used to record game duration.
+    pub started_at: Option<Instant>,
     /// Broadcast channel for fan-out to all players in this room.
-    pub tx: broadcast::Sender<WsEvent>,
-}
-
-/// Events broadcast to all players in a room.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", content = "data")]
-pub enum WsEvent {
-    PlayersUpdated,
-    QuestionEmitted { index: usize },
-    QuestionResult { correct_index: usize },
-    ChatMessage { name: String, text: String, ts: i64 },
-    GameOver { scores: HashMap<String, i64> },
-    Custom(String, serde_json::Value),
+    /// Messages are pre-serialised `{type, data}` JSON objects.
+    pub tx: broadcast::Sender<String>,
+    /// Monotonic token identifying the current question. Timer tasks compare
+    /// it before advancing so a stale timer can never skip a question.
+    pub question_token: u64,
 }
 
 impl Room {
@@ -118,7 +112,9 @@ impl Room {
             deadline: None,
             created_at: Instant::now(),
             last_activity: Instant::now(),
+            started_at: None,
             tx,
+            question_token: 0,
         }
     }
 
@@ -153,6 +149,18 @@ impl Room {
     pub fn advance_question(&mut self) -> bool {
         self.current_q += 1;
         self.current_q < self.questions.len()
+    }
+
+    /// Install a freshly generated question set and start playing.
+    pub fn set_questions(&mut self, questions: Vec<serde_json::Value>) {
+        self.questions = questions;
+        self.current_q = 0;
+        self.question_token = 1;
+        self.state = RoomState::Playing;
+        self.started_at = Some(Instant::now());
+        self.deadline = Some(Instant::now() + Duration::from_secs(self.settings.timer_secs));
+        self.reset_answers();
+        self.touch();
     }
 }
 
@@ -227,6 +235,7 @@ impl RoomRegistry {
 #[derive(Debug, Serialize)]
 pub struct RoomSnapshot {
     pub code: String,
+    #[serde(rename = "host")]
     pub host_name: String,
     pub state: RoomState,
     pub mode: String,

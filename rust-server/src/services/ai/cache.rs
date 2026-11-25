@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
+use serde::Serialize;
 use tracing::debug;
 
 use super::GenerationResponse;
@@ -125,7 +126,7 @@ impl AiCache {
 }
 
 /// Cache statistics.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CacheStats {
     pub questions_cached: usize,
     pub hints_cached: usize,

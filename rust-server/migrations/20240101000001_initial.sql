@@ -1,4 +1,7 @@
 -- BrainStorm initial schema.
+-- Requires the `citext` extension (shipped in postgresql-contrib).
+CREATE EXTENSION IF NOT EXISTS citext;
+
 -- Designed to close the critical vulnerabilities found in the Python audit:
 --   * bans keyed by (identifier, kind) cover IP, user_id, session hash
 --   * audit_log is append-only for admin actions

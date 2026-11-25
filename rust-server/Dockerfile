@@ -2,7 +2,7 @@
 # Final image is ~15-20 MB (distroless-like).
 
 # ── Builder ───────────────────────────────────────────────────
-FROM rust:1.80-slim AS builder
+FROM rust:1.85-slim AS builder
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
@@ -20,7 +20,7 @@ FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash appuser

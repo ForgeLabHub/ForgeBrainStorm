@@ -1,33 +1,48 @@
 //! CORS layer configured from [`Settings::cors_origins`].
 //!
-//! Refuses to start with `*` in production — the check lives in
-//! [`Settings::validate`], so by the time we reach this code the origins
-//! are already guaranteed to be explicit.
+//! `Access-Control-Allow-Credentials: true` cannot be combined with wildcard
+//! `Origin`, `Methods`, or `Headers` — tower-http panics on that combination.
+//! We therefore always send explicit method/header lists, and use a wildcard
+//! origin only when the caller opted in with `*` (which disables credentials).
 
-use tower_http::cors::{AllowOrigin, CorsLayer};
+use axum::http::{header, HeaderValue, Method};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use crate::config::Settings;
 
+const ALLOWED_METHODS: [Method; 6] = [
+    Method::GET,
+    Method::POST,
+    Method::PUT,
+    Method::PATCH,
+    Method::DELETE,
+    Method::OPTIONS,
+];
+
+const ALLOWED_HEADERS: [header::HeaderName; 6] = [
+    header::CONTENT_TYPE,
+    header::AUTHORIZATION,
+    header::ACCEPT,
+    header::ORIGIN,
+    header::COOKIE,
+    header::SET_COOKIE,
+];
+
 pub fn build_cors_layer(settings: &Settings) -> CorsLayer {
-    let origins: Vec<axum::http::HeaderValue> = settings
-        .cors_origins
-        .iter()
-        .filter_map(|o| o.parse().ok())
-        .collect();
+    let base = CorsLayer::new()
+        .allow_methods(ALLOWED_METHODS)
+        .allow_headers(ALLOWED_HEADERS)
+        .expose_headers([header::CONTENT_TYPE, header::SET_COOKIE]);
 
-    let allow = if origins.is_empty() {
-        AllowOrigin::default()
+    if settings.cors_origins.iter().any(|o| o == "*") {
+        base.allow_origin(Any)
     } else {
-        AllowOrigin::list(origins)
-    };
-
-    CorsLayer::new()
-        .allow_origin(allow)
-        .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any)
-        .allow_credentials(true)
-        .expose_headers([
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::SET_COOKIE,
-        ])
+        let origins: Vec<HeaderValue> = settings
+            .cors_origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        base.allow_origin(AllowOrigin::list(origins))
+            .allow_credentials(true)
+    }
 }

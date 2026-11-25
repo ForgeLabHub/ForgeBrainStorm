@@ -32,3 +32,14 @@ Thumbs.db
 
 # Состояние forge.sh/forge.bat: PID-файлы и логи запусков
 .run/
+
+# Rust
+rust-server/target/
+
+# Node / SvelteKit
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+
+# OpenHands agent memory
+.openhands/

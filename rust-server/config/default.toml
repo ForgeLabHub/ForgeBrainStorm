@@ -2,14 +2,13 @@
 # Override any value via environment variables prefixed with BRAINSTORM_.
 # Example: BRAINSTORM_SECRET_KEY=... or simply SECRET_KEY=...
 
-[env]
 # "development" or "production".
 env = "development"
 
 # Bind address.
 listen = "0.0.0.0:5000"
 
-# Secret key for HMAC, sessions, CSRF. Must be ≥ 32 bytes in production.
+# Secret key for HMAC, sessions, CSRF. Must be >= 32 bytes in production.
 secret_key = "dev-secret-change-me-in-production-please-use-a-long-random-string"
 
 # Admin activation key.
@@ -22,22 +21,20 @@ database_url = "postgres://brainstorm:brainstorm@localhost:5432/brainstorm"
 db_pool_size = 20
 
 # ── Multi-AI Provider Configuration ─────────────────────────
-# Configure multiple AI providers with automatic fallback.
-# The system will try providers in order, falling back to the next if one fails.
-# You can switch providers at runtime via the API.
+# Providers are tried in order, falling back to the next on failure.
+# The active provider can also be switched at runtime via /api/ai/providers/switch.
 
-# Default provider (used first if available)
-default_ai_provider = "gigachat"
+# Default provider (used first if available).
+default_ai_provider = "openrouter"
 
-# Provider configurations
 [[ai_providers]]
-name = "gigachat"
-provider_type = "gigachat"
-api_key = ""  # OAuth credentials (base64 encoded client_id:client_secret)
-api_endpoint = "GIGACHAT_API_PERS"
-model = "GigaChat"
+name = "openrouter"
+provider_type = "openrouter"
+api_key = ""  # Set via OPENROUTER_API_KEY env var (recommended) or here.
+api_endpoint = "https://openrouter.ai/api/v1/chat/completions"
+model = "openai/gpt-4o-mini"
 max_concurrent = 4
-timeout_secs = 30
+timeout_secs = 60
 enabled = true
 
 [[ai_providers]]
@@ -48,17 +45,27 @@ api_endpoint = "https://api.openai.com/v1/chat/completions"
 model = "gpt-4o-mini"
 max_concurrent = 4
 timeout_secs = 30
-enabled = false  # Disabled by default (requires API key)
+enabled = false
+
+[[ai_providers]]
+name = "gigachat"
+provider_type = "gigachat"
+api_key = ""  # base64(client_id:client_secret)
+api_endpoint = "GIGACHAT_API_PERS"
+model = "GigaChat"
+max_concurrent = 4
+timeout_secs = 30
+enabled = false
 
 [[ai_providers]]
 name = "ollama"
 provider_type = "ollama"
-api_key = null  # No API key needed for local models
+api_key = ""
 api_endpoint = "http://localhost:11434"
 model = "llama3"
 max_concurrent = 2
 timeout_secs = 60
-enabled = false  # Disabled by default (requires Ollama running)
+enabled = false
 
 # CORS allowed origins. Empty = deny all. "*" is forbidden in production.
 cors_origins = ["http://localhost:5173", "http://localhost:3000"]

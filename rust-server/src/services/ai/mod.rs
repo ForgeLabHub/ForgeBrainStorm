@@ -44,6 +44,7 @@ pub struct ProviderConfig {
 pub enum ProviderType {
     GigaChat,
     OpenAI,
+    OpenRouter,
     Anthropic,
     Ollama,
     Custom,

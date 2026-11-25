@@ -5,102 +5,164 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export interface User {
-	username: string;
-	xp: number;
-	coins: number;
-	games_played: number;
-	wins: number;
-	level: number;
+username: string;
+xp: number;
+coins: number;
+games_played: number;
+wins: number;
+level: number;
 }
 
 export interface Room {
-	code: string;
-	host: string;
-	mode: string;
-	topic: string;
-	player_count?: number;
+code: string;
+host: string;
+mode: string;
+topic: string;
+player_count?: number;
 }
 
-export interface ApiResponse<T> {
-	ok: boolean;
-	user?: T;
-	room?: T;
-	rooms?: T[];
-	players?: T[];
-	error?: string;
+export interface AiQuestion {
+question: string;
+options: string[];
+correct_index: number;
+explanation: string;
+hint: string;
+difficulty: string;
+category?: string | null;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> {
-	const response = await fetch(`${API_BASE}${path}`, {
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json',
-			...options?.headers,
-		},
-		...options,
-	});
+export interface CreateRoomInput {
+topic?: string;
+mode?: string;
+difficulty?: string;
+max_players?: number;
+question_count?: number;
+num_options?: number;
+timer_seconds?: number;
+ai_provider?: string;
+}
 
-	if (!response.ok) {
-		const error = await response.json().catch(() => ({ error: 'Request failed' }));
-		throw new Error(error.error || `HTTP ${response.status}`);
-	}
+export interface ApiBase {
+ok: boolean;
+error?: string;
+}
 
-	return response.json();
+export interface MeResponse extends ApiBase {
+logged_in?: boolean;
+user?: User;
+}
+
+export interface LoginResponse extends ApiBase {
+user?: User;
+}
+
+export interface RoomsResponse extends ApiBase {
+rooms: Room[];
+}
+
+export interface RoomResponse extends ApiBase {
+room: Room;
+}
+
+export interface ProvidersResponse extends ApiBase {
+providers: string[];
+default: string;
+}
+
+export interface CacheStatsResponse extends ApiBase {
+cache: { questions_cached: number; hints_cached: number };
+}
+
+export interface GenerateResponse extends ApiBase {
+provider: string;
+tokens_used: number;
+latency_ms: number;
+questions: AiQuestion[];
+}
+
+export interface LeaderboardResponse extends ApiBase {
+players: User[];
+}
+
+export interface PlayerRankResponse extends ApiBase {
+player: User;
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+const response = await fetch(`${API_BASE}${path}`, {
+credentials: 'include',
+headers: {
+'Content-Type': 'application/json',
+...options?.headers,
+},
+...options,
+});
+
+if (!response.ok) {
+const body = await response.json().catch(() => null);
+const raw = body?.error;
+const message = typeof raw === 'string' ? raw : raw?.message;
+throw new Error(message || `HTTP ${response.status}`);
+}
+
+return response.json();
 }
 
 export const api = {
-	// Auth
-	register: (username: string, password: string) =>
-		request<User>('/api/auth/register', {
-			method: 'POST',
-			body: JSON.stringify({ username, password }),
-		}),
+// Auth
+register: (username: string, password: string) =>
+request<LoginResponse>('/api/auth/register', {
+method: 'POST',
+body: JSON.stringify({ username, password }),
+}),
 
-	login: (username: string, password: string) =>
-		request<User>('/api/auth/login', {
-			method: 'POST',
-			body: JSON.stringify({ username, password }),
-		}),
+login: (username: string, password: string) =>
+request<LoginResponse>('/api/auth/login', {
+method: 'POST',
+body: JSON.stringify({ username, password }),
+}),
 
-	logout: () =>
-		request<void>('/api/auth/logout', { method: 'POST' }),
+logout: () => request<ApiBase>('/api/auth/logout', { method: 'POST' }),
 
-	me: () =>
-		request<User>('/api/auth/me'),
+me: () => request<MeResponse>('/api/auth/me'),
 
-	// Rooms
-	listRooms: () =>
-		request<Room>('/api/rooms'),
+// Rooms
+listRooms: () => request<RoomsResponse>('/api/rooms'),
 
-	createRoom: (topic?: string, mode?: string) =>
-		request<Room>('/api/rooms', {
-			method: 'POST',
-			body: JSON.stringify({ topic, mode }),
-		}),
+createRoom: (input: CreateRoomInput) =>
+request<RoomResponse>('/api/rooms', {
+method: 'POST',
+body: JSON.stringify(input),
+}),
 
-	getRoom: (code: string) =>
-		request<Room>(`/api/rooms/${code}`),
+getRoom: (code: string) => request<RoomResponse>(`/api/rooms/${code}`),
 
-	// Leaderboard
-	topPlayers: (limit = 50) =>
-		request<User>(`/api/leaderboard/top?limit=${limit}`),
+// Leaderboard
+topPlayers: (limit = 50) => request<LeaderboardResponse>(`/api/leaderboard/top?limit=${limit}`),
 
-	playerRank: (username: string) =>
-		request<User>(`/api/leaderboard/rank/${username}`),
+playerRank: (username: string) => request<PlayerRankResponse>(`/api/leaderboard/rank/${username}`),
 
-	// AI Providers
-	getAiProviders: () =>
-		request<{ providers: string[]; default: string }>('/api/ai/providers'),
+// AI
+generateQuestions: (topic: string, count = 10, difficulty = 'medium', numOptions = 4) =>
+request<GenerateResponse>('/api/ai/generate', {
+method: 'POST',
+body: JSON.stringify({
+topic,
+count,
+difficulty,
+num_options: numOptions,
+}),
+}),
 
-	switchAiProvider: (provider: string) =>
-		request<void>('/api/ai/providers/switch', {
-			method: 'POST',
-			body: JSON.stringify({ provider }),
-		}),
+getAiProviders: () => request<ProvidersResponse>('/api/ai/providers'),
 
-	getAiCacheStats: () =>
-		request<{ questions_cached: number; hints_cached: number }>('/api/ai/cache/stats'),
+switchAiProvider: (provider: string) =>
+request<ApiBase>('/api/ai/providers/switch', {
+method: 'POST',
+body: JSON.stringify({ provider }),
+}),
 
-	clearAiCache: () =>
-		request<void>('/api/ai/cache/clear', { method: 'POST' }),
+getAiCacheStats: () => request<CacheStatsResponse>('/api/ai/cache/stats'),
+
+clearAiCache: () => request<ApiBase>('/api/ai/cache/clear', { method: 'POST' }),
 };

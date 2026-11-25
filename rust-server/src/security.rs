@@ -1,5 +1,6 @@
 //! Security primitives: HMAC, constant-time comparison, CSRF tokens.
 
+use base64::Engine;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 

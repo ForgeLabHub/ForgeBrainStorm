@@ -22,7 +22,8 @@ struct OpenAIRequest {
     messages: Vec<OpenAIMessage>,
     temperature: f64,
     max_tokens: usize,
-    response_format: ResponseFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat>,
 }
 
 #[derive(Debug, Serialize)]
@@ -137,7 +138,10 @@ impl AiProvider for OpenAIProvider {
     }
 
     async fn is_available(&self) -> bool {
-        self.config.api_key.is_some()
+        self.config
+            .api_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
     }
 
     fn capabilities(&self) -> &[AiCapability] {
@@ -175,9 +179,9 @@ impl AiProvider for OpenAIProvider {
             ],
             temperature: 0.7,
             max_tokens: 4000,
-            response_format: ResponseFormat {
+            response_format: Some(ResponseFormat {
                 r#type: "json_object".to_string(),
-            },
+            }),
         };
 
         let response = self
@@ -214,7 +218,7 @@ impl AiProvider for OpenAIProvider {
 
         let latency_ms = start.elapsed().as_millis() as u64;
         info!(
-            provider = "openai",
+            provider = self.name(),
             questions = questions.len(),
             latency_ms = latency_ms,
             "Generated questions"
@@ -250,9 +254,7 @@ impl AiProvider for OpenAIProvider {
             }],
             temperature: 0.5,
             max_tokens: 100,
-            response_format: ResponseFormat {
-                r#type: "text".to_string(),
-            },
+            response_format: None,
         };
 
         let response = self
@@ -308,9 +310,7 @@ impl AiProvider for OpenAIProvider {
             }],
             temperature: 0.5,
             max_tokens: 200,
-            response_format: ResponseFormat {
-                r#type: "text".to_string(),
-            },
+            response_format: None,
         };
 
         let response = self

@@ -125,9 +125,21 @@ impl AiRouter {
                 continue;
             }
 
-            let provider: ProviderBox = match config.provider_type {
+            let needs_key = matches!(
+                config.provider_type,
+                ProviderType::OpenAI | ProviderType::OpenRouter | ProviderType::GigaChat
+            );
+            if needs_key && config.api_key.as_deref().unwrap_or("").trim().is_empty() {
+                info!(provider = %config.name, "skipping provider: no API key configured");
+                continue;
+            }
+
+            let provider: ProviderBox = match config.provider_type.clone() {
                 ProviderType::GigaChat => ProviderBox::new(GigaChatProvider::new(config)),
-                ProviderType::OpenAI => ProviderBox::new(OpenAIProvider::new(config)),
+                // OpenRouter speaks the OpenAI chat-completions protocol.
+                ProviderType::OpenAI | ProviderType::OpenRouter => {
+                    ProviderBox::new(OpenAIProvider::new(config))
+                }
                 ProviderType::Ollama => ProviderBox::new(OllamaProvider::new(config)),
                 ProviderType::Anthropic | ProviderType::Custom => {
                     // TODO: Implement other providers

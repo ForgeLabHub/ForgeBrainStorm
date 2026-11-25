@@ -2,7 +2,7 @@
 name = "brainstorm"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 description = "BrainStorm — realtime quiz platform (Rust rewrite)"
 license = "MIT"
 
@@ -60,6 +60,7 @@ dashmap = "6"
 
 # Utilities
 base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
 bytes = "1"
 parking_lot = "0.12"
 async-trait = "0.1"

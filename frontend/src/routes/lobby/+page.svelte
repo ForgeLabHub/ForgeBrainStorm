@@ -10,8 +10,8 @@
 	let joinError = '';
 	let joining = false;
 
-	onMount(async () => {
-		await loadRooms();
+	onMount(() => {
+		loadRooms();
 		// Refresh rooms every 5 seconds
 		const interval = setInterval(loadRooms, 5000);
 		return () => clearInterval(interval);

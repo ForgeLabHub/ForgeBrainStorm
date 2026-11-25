@@ -6,7 +6,8 @@ pub mod ollama;
 
 use async_trait::async_trait;
 
-use super::{AiProvider, GenerationRequest, GenerationResponse, AiError};
+pub use super::{AiCapability, AiQuestion, ProviderConfig};
+use super::{AiError, AiProvider, GenerationRequest, GenerationResponse};
 
 /// Re-export provider structs.
 pub use gigachat::GigaChatProvider;

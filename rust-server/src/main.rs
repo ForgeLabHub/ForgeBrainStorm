@@ -17,7 +17,7 @@ mod ws;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::connect_info::IntoMakeServiceWithConnectInfo;
+use axum::extract::State;
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
@@ -93,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
             let provider_type = match c.provider_type.to_lowercase().as_str() {
                 "gigachat" => ProviderType::GigaChat,
                 "openai" => ProviderType::OpenAI,
+                "openrouter" => ProviderType::OpenRouter,
                 "ollama" => ProviderType::Ollama,
                 "anthropic" => ProviderType::Anthropic,
                 _ => ProviderType::Custom,
@@ -118,6 +119,14 @@ async fn main() -> anyhow::Result<()> {
         .collect();
 
     let ai_router = Arc::new(AiRouter::new(ai_configs));
+    if !settings.default_ai_provider.is_empty()
+        && !ai_router.set_default_provider(&settings.default_ai_provider)
+    {
+        tracing::warn!(
+            provider = %settings.default_ai_provider,
+            "default_ai_provider is not enabled; using the first available provider"
+        );
+    }
 
     // Build shared state.
     let session_cache = SessionCache::new(Duration::from_secs(300), pool.clone());
