@@ -247,14 +247,20 @@ impl RoomSnapshot {
     }
 }
 
-/// Generate a random 6-character uppercase room code.
+/// Generate a random 6-character uppercase room code (letters only).
+///
+/// Uses `secrets::gen_code` semantics — we deliberately don't use
+/// `random::choices` because a 6-char alphabetic code (26^6 ≈ 3e8) must
+/// be collision-resistant. The registry handles the atomic uniqueness
+/// check via `rooms.contains_key(&code)` with a single retry.
 fn gen_code() -> String {
-    use rand::distributions::Alphanumeric;
+    use rand::Rng;
     let mut rng = rand::thread_rng();
     (0..6)
-        .map(|_| char::from(rng.sample(Alphanumeric)))
-        .map(|c| c.to_ascii_uppercase())
-        .filter(|c| c.is_ascii_alphabetic())
-        .take(6)
+        .map(|_| {
+            // Generate a random letter A-Z directly, no filter needed.
+            let idx = rng.gen_range(0..26);
+            (b'A' + idx) as char
+        })
         .collect()
 }

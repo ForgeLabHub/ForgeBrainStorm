@@ -5,15 +5,17 @@
 //! - Load balancing across multiple providers
 //! - Provider priority based on cost and latency
 //! - Circuit breaker pattern for failing providers
+//!
+//! Note: `default_provider` uses `std::sync::RwLock` (not parking_lot)
+//! because we need cheap shared access through `Arc` without requiring
+//! mutable references. `parking_lot` is not used here because we never
+//! hold the lock across `.await` points.
 
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
-use dashmap::DashMap;
-use parking_lot::RwLock;
-use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use super::providers::ProviderBox;
 use super::{
@@ -32,6 +34,10 @@ enum CircuitState {
 }
 
 /// Circuit breaker for a provider.
+///
+/// Wrapped in `std::sync::RwLock` (not parking_lot) so it can live behind
+/// an `Arc` shared across async tasks. We never hold the lock across an
+/// `.await` point, so there is no risk of stalling the runtime.
 struct CircuitBreaker {
     state: CircuitState,
     failure_count: u32,
@@ -97,11 +103,16 @@ impl CircuitBreaker {
 }
 
 /// AI router that manages multiple providers with fallback.
+///
+/// `circuits` and `default_provider` are wrapped in `std::sync::RwLock` so
+/// the whole `AiRouter` can live behind an `Arc` and be mutated through
+/// shared references (e.g. from an Axum handler). The lock is held only
+/// for short, non-blocking operations — never across `.await` points.
 pub struct AiRouter {
     providers: Vec<ProviderBox>,
-    circuits: Arc<RwLock<Vec<CircuitBreaker>>>,
+    circuits: RwLock<Vec<CircuitBreaker>>,
     cache: Arc<AiCache>,
-    default_provider: usize,
+    default_provider: RwLock<usize>,
 }
 
 impl AiRouter {
@@ -132,34 +143,36 @@ impl AiRouter {
 
         Self {
             providers,
-            circuits: Arc::new(RwLock::new(circuits)),
+            circuits: RwLock::new(circuits),
             cache: Arc::new(AiCache::new(Duration::from_secs(3600))), // 1 hour cache
-            default_provider: 0,
+            default_provider: RwLock::new(0),
         }
     }
 
     /// Select provider based on priority and availability.
     fn select_provider(&self, capability: AiCapability) -> Option<usize> {
-        let circuits = self.circuits.read();
+        let circuits = self.circuits.read().ok()?;
+        let default = *self.default_provider.read().ok()?;
 
         // Try default provider first
-        if self.default_provider < self.providers.len() {
-            let circuit = &circuits[self.default_provider];
-            if circuit.is_available() && self.providers[self.default_provider]
-                .capabilities()
-                .contains(&capability)
+        if default < self.providers.len() {
+            let circuit = circuits.get(default)?;
+            if circuit.is_available()
+                && self.providers[default]
+                    .capabilities()
+                    .contains(&capability)
             {
-                return Some(self.default_provider);
+                return Some(default);
             }
         }
 
         // Fallback to other providers
         for (idx, provider) in self.providers.iter().enumerate() {
-            if idx == self.default_provider {
+            if idx == default {
                 continue;
             }
 
-            let circuit = &circuits[idx];
+            let circuit = circuits.get(idx)?;
             if circuit.is_available() && provider.capabilities().contains(&capability) {
                 return Some(idx);
             }
@@ -179,7 +192,7 @@ impl AiRouter {
             request.topic, request.difficulty, request.count, request.num_options
         );
 
-        if let Some(cached) = self.cache.get(&cache_key).await {
+        if let Some(cached) = self.cache.get(&cache_key) {
             info!("Serving questions from cache");
             return Ok(cached);
         }
@@ -206,13 +219,14 @@ impl AiRouter {
             match provider.generate_questions(request).await {
                 Ok(response) => {
                     // Record success
-                    {
-                        let mut circuits = self.circuits.write();
-                        circuits[provider_idx].record_success();
+                    if let Ok(mut circuits) = self.circuits.write() {
+                        if let Some(cb) = circuits.get_mut(provider_idx) {
+                            cb.record_success();
+                        }
                     }
 
                     // Cache the response
-                    self.cache.set(cache_key, response.clone()).await;
+                    self.cache.set(cache_key, response.clone());
 
                     info!(
                         provider = provider.name(),
@@ -231,9 +245,10 @@ impl AiRouter {
                     );
 
                     // Record failure
-                    {
-                        let mut circuits = self.circuits.write();
-                        circuits[provider_idx].record_failure();
+                    if let Ok(mut circuits) = self.circuits.write() {
+                        if let Some(cb) = circuits.get_mut(provider_idx) {
+                            cb.record_failure();
+                        }
                     }
 
                     last_error = Some(e);
@@ -254,7 +269,7 @@ impl AiRouter {
     pub async fn generate_hint(&self, question: &str) -> Result<String, AiError> {
         // Check cache
         let cache_key = format!("hint:{}", question);
-        if let Some(cached) = self.cache.get_hint(&cache_key).await {
+        if let Some(cached) = self.cache.get_hint(&cache_key) {
             return Ok(cached);
         }
 
@@ -266,7 +281,7 @@ impl AiRouter {
         let hint = provider.generate_hint(question).await?;
 
         // Cache the hint
-        self.cache.set_hint(cache_key, hint.clone()).await;
+        self.cache.set_hint(cache_key, hint.clone());
 
         Ok(hint)
     }
@@ -287,33 +302,40 @@ impl AiRouter {
 
     /// Get list of available providers.
     pub fn available_providers(&self) -> Vec<String> {
-        let circuits = self.circuits.read();
+        let Ok(circuits) = self.circuits.read() else {
+            return Vec::new();
+        };
         self.providers
             .iter()
             .enumerate()
-            .filter(|(idx, _)| circuits[*idx].is_available())
+            .filter(|(idx, _)| circuits.get(*idx).map(|c| c.is_available()).unwrap_or(false))
             .map(|(_, p)| p.name().to_string())
             .collect()
     }
 
-    /// Set default provider by name.
-    pub fn set_default_provider(&mut self, name: &str) -> bool {
+    /// Set default provider by name. Uses interior mutability so it can be
+    /// called through an `Arc<AiRouter>` from an Axum handler.
+    pub fn set_default_provider(&self, name: &str) -> bool {
         if let Some(idx) = self.providers.iter().position(|p| p.name() == name) {
-            self.default_provider = idx;
-            info!("Default provider set to: {}", name);
-            true
+            if let Ok(mut default) = self.default_provider.write() {
+                *default = idx;
+                info!("Default provider set to: {}", name);
+                true
+            } else {
+                false
+            }
         } else {
             false
         }
     }
 
     /// Get cache statistics.
-    pub async fn cache_stats(&self) -> super::cache::CacheStats {
-        self.cache.stats().await
+    pub fn cache_stats(&self) -> super::cache::CacheStats {
+        self.cache.stats()
     }
 
     /// Clear cache.
-    pub async fn clear_cache(&self) {
-        self.cache.clear().await;
+    pub fn clear_cache(&self) {
+        self.cache.clear();
     }
 }

@@ -28,7 +28,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 use crate::config::Settings;
 use crate::domain::room::RoomRegistry;
 use crate::error::AppError;
-use crate::middleware::auth::{AuthContext, SessionCache, SESSION_COOKIE};
+use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
 use crate::middleware::rate_limit::RateLimiter;
 use crate::services::ai::router::AiRouter;
 use crate::services::ai::{AiCapability, ProviderConfig, ProviderType};
@@ -181,8 +181,8 @@ async fn main() -> anyhow::Result<()> {
 /// Middleware for WebSocket authentication.
 /// Extracts session from cookie, validates it, and injects AuthContext.
 async fn ws_auth_middleware(
-    State(session_cache): State<SessionCache>,
-    req: axum::extract::Request,
+    State(state): State<AppState>,
+    mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, AppError> {
     // Extract session cookie
@@ -205,10 +205,9 @@ async fn ws_auth_middleware(
         .ok_or_else(|| AppError::Unauthorized)?;
 
     // Validate session and get user context
-    let auth_context = session_cache.get_or_load(session_token).await?;
+    let auth_context = state.session_cache.get_or_load(session_token).await?;
 
     // Inject AuthContext into request extensions
-    let mut req = req;
     req.extensions_mut().insert(auth_context);
 
     Ok(next.run(req).await)

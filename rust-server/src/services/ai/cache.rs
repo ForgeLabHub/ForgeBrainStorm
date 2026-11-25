@@ -2,12 +2,15 @@
 //!
 //! Caches generated questions, hints, and explanations to reduce API calls
 //! and costs. Uses in-memory cache with automatic expiration.
+//!
+//! Note: DashMap operations are synchronous and thread-safe. The cache
+//! methods are NOT async — they don't need to be. Callers `.await` the
+//! underlying provider, then insert into the cache synchronously.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use tokio::sync::Mutex;
 use tracing::debug;
 
 use super::GenerationResponse;
@@ -22,24 +25,22 @@ struct CacheEntry<T> {
 pub struct AiCache {
     questions: Arc<DashMap<String, CacheEntry<GenerationResponse>>>,
     hints: Arc<DashMap<String, CacheEntry<String>>>,
-    cleanup_interval: Duration,
 }
 
 impl AiCache {
-    pub fn new(ttl: Duration) -> Self {
+    pub fn new(_ttl: Duration) -> Self {
         let cache = Self {
             questions: Arc::new(DashMap::new()),
             hints: Arc::new(DashMap::new()),
-            cleanup_interval: Duration::from_secs(60),
         };
 
-        // Start background cleanup task
+        // Start background cleanup task — runs every 60 seconds and removes
+        // expired entries. This keeps memory bounded even under load.
         let questions = Arc::clone(&cache.questions);
         let hints = Arc::clone(&cache.hints);
-        let interval = cache.cleanup_interval;
 
         tokio::spawn(async move {
-            let mut interval_timer = tokio::time::interval(interval);
+            let mut interval_timer = tokio::time::interval(Duration::from_secs(60));
             loop {
                 interval_timer.tick().await;
                 Self::cleanup(&questions, &hints);
@@ -72,8 +73,12 @@ impl AiCache {
         }
     }
 
-    /// Get cached questions.
-    pub async fn get(&self, key: &str) -> Option<GenerationResponse> {
+    /// Get cached questions. Returns `None` if the entry is missing or expired.
+    ///
+    /// Note: this method is intentionally synchronous. DashMap.get() acquires
+    /// a read lock, and we drop the `Ref` before returning — so no lock is
+    /// held across any `.await` point upstream.
+    pub fn get(&self, key: &str) -> Option<GenerationResponse> {
         let entry = self.questions.get(key)?;
         if entry.expires_at > Instant::now() {
             Some(entry.value.clone())
@@ -82,20 +87,14 @@ impl AiCache {
         }
     }
 
-    /// Cache questions.
-    pub async fn set(&self, key: String, value: GenerationResponse) {
-        let expires_at = Instant::now() + Duration::from_secs(3600); // 1 hour
-        self.questions.insert(
-            key,
-            CacheEntry {
-                value,
-                expires_at,
-            },
-        );
+    /// Cache questions for 1 hour.
+    pub fn set(&self, key: String, value: GenerationResponse) {
+        let expires_at = Instant::now() + Duration::from_secs(3600);
+        self.questions.insert(key, CacheEntry { value, expires_at });
     }
 
-    /// Get cached hint.
-    pub async fn get_hint(&self, key: &str) -> Option<String> {
+    /// Get cached hint. Returns `None` if missing or expired.
+    pub fn get_hint(&self, key: &str) -> Option<String> {
         let entry = self.hints.get(key)?;
         if entry.expires_at > Instant::now() {
             Some(entry.value.clone())
@@ -104,26 +103,20 @@ impl AiCache {
         }
     }
 
-    /// Cache hint.
-    pub async fn set_hint(&self, key: String, value: String) {
-        let expires_at = Instant::now() + Duration::from_secs(1800); // 30 minutes
-        self.hints.insert(
-            key,
-            CacheEntry {
-                value,
-                expires_at,
-            },
-        );
+    /// Cache a hint for 30 minutes.
+    pub fn set_hint(&self, key: String, value: String) {
+        let expires_at = Instant::now() + Duration::from_secs(1800);
+        self.hints.insert(key, CacheEntry { value, expires_at });
     }
 
     /// Clear all cache.
-    pub async fn clear(&self) {
+    pub fn clear(&self) {
         self.questions.clear();
         self.hints.clear();
     }
 
     /// Get cache statistics.
-    pub async fn stats(&self) -> CacheStats {
+    pub fn stats(&self) -> CacheStats {
         CacheStats {
             questions_cached: self.questions.len(),
             hints_cached: self.hints.len(),
