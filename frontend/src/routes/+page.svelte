@@ -33,7 +33,7 @@
 		</div>
 		<div class="rounded-lg bg-slate-800 p-6">
 			<h3 class="mb-2 text-xl font-semibold text-purple-400">🤖 AI-вопросы</h3>
-			<p class="text-slate-400">GigaChat генерирует уникальные вопросы на любую тему</p>
+				<p class="text-slate-400">AI-провайдер генерирует уникальные вопросы на любую тему</p>
 		</div>
 		<div class="rounded-lg bg-slate-800 p-6">
 			<h3 class="mb-2 text-xl font-semibold text-purple-400">🏆 Лидерборд</h3>
