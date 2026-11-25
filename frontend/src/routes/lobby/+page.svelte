@@ -4,15 +4,14 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
-	let rooms: Room[] = [];
-	let loading = true;
-	let joinCode = '';
-	let joinError = '';
-	let joining = false;
+	let rooms: Room[] = $state([]);
+	let loading = $state(true);
+	let joinCode = $state('');
+	let joinError = $state('');
+	let joining = $state(false);
 
 	onMount(async () => {
 		await loadRooms();
-		// Refresh rooms every 5 seconds
 		const interval = setInterval(loadRooms, 5000);
 		return () => clearInterval(interval);
 	});
@@ -64,103 +63,158 @@
 
 	function getModeColor(mode: string): string {
 		const colors: Record<string, string> = {
-			classic: 'text-blue-400',
-			ffa: 'text-orange-400',
-			team: 'text-purple-400',
-			lives: 'text-red-400',
-			coop: 'text-green-400',
-			svoyaigra: 'text-yellow-400',
+			classic: 'from-blue-500 to-cyan-500',
+			ffa: 'from-orange-500 to-red-500',
+			team: 'from-purple-500 to-pink-500',
+			lives: 'from-red-500 to-rose-500',
+			coop: 'from-green-500 to-emerald-500',
+			svoyaigra: 'from-yellow-500 to-amber-500',
 		};
-		return colors[mode] || 'text-slate-400';
+		return colors[mode] || 'from-slate-500 to-slate-600';
+	}
+
+	function getModeBadge(mode: string): string {
+		const badges: Record<string, string> = {
+			classic: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+			ffa: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+			team: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+			lives: 'bg-red-500/10 text-red-400 border-red-500/20',
+			coop: 'bg-green-500/10 text-green-400 border-green-500/20',
+			svoyaigra: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+		};
+		return badges[mode] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
 	}
 </script>
 
-<div class="mx-auto max-w-6xl px-6 py-8">
+<div class="mx-auto max-w-7xl px-6 py-8">
 	<!-- Header -->
-	<div class="mb-8 flex items-center justify-between">
+	<div class="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 		<div>
-			<h1 class="text-3xl font-bold text-white">Комнаты</h1>
+			<h1 class="text-3xl font-bold text-white">Игровые комнаты</h1>
 			<p class="mt-1 text-slate-400">Присоединитесь к игре или создайте свою</p>
 		</div>
-		<a
-			href="/room/create"
-			class="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
-		>
-			+ Создать комнату
+		<a href="/room/create" class="relative group">
+			<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur-md opacity-40 group-hover:opacity-70 transition-opacity"></div>
+			<div class="relative flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-2.5 font-semibold text-white shadow-lg">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+				Создать комнату
+			</div>
 		</a>
 	</div>
 
 	<!-- Join room -->
-	<div class="mb-8 rounded-xl border border-slate-700 bg-slate-800 p-6">
-		<h2 class="mb-4 text-lg font-semibold text-white">Присоединиться по коду</h2>
-		<form on:submit|preventDefault={joinRoom} class="flex gap-3">
-			<input
-				type="text"
-				bind:value={joinCode}
-				placeholder="ABCDEF"
-				maxlength="6"
-				class="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-4 py-2.5 text-center font-mono text-lg tracking-widest text-white uppercase placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-			/>
-			<button
-				type="submit"
-				disabled={joining || joinCode.length !== 6}
-				class="rounded-lg bg-green-600 px-6 py-2.5 font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-			>
-				{joining ? '...' : 'Войти'}
-			</button>
-		</form>
-		{#if joinError}
-			<p class="mt-2 text-sm text-red-400">{joinError}</p>
-		{/if}
+	<div class="mb-8 relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm">
+		<div class="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent"></div>
+		<div class="relative z-10">
+			<h2 class="mb-4 text-lg font-semibold text-white flex items-center gap-2">
+				<svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+				Присоединиться по коду
+			</h2>
+			<form onsubmit={(e) => { e.preventDefault(); joinRoom(); }} class="flex gap-3">
+				<input
+					type="text"
+					bind:value={joinCode}
+					placeholder="ABCDEF"
+					maxlength="6"
+					class="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center font-mono text-lg tracking-[0.3em] text-white uppercase placeholder-slate-600 focus:border-green-500/50 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+				/>
+				<button
+					type="submit"
+					disabled={joining || joinCode.length !== 6}
+					class="rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-3 font-semibold text-white shadow-lg transition-all hover:shadow-green-500/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+				>
+					{#if joining}
+						<span class="flex items-center gap-2">
+							<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+							Поиск...
+						</span>
+					{:else}
+						Войти
+					{/if}
+				</button>
+			</form>
+			{#if joinError}
+				<div class="mt-3 flex items-center gap-2 text-sm text-red-400">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+					{joinError}
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Rooms list -->
-	<div class="rounded-xl border border-slate-700 bg-slate-800 p-6">
-		<h2 class="mb-4 text-lg font-semibold text-white">Доступные комнаты ({rooms.length})</h2>
+	<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm">
+		<div class="absolute inset-0 bg-gradient-to-br from-blue-500/3 to-transparent"></div>
+		<div class="relative z-10">
+			<div class="mb-6 flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-white flex items-center gap-2">
+					<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+					Доступные комнаты
+					<span class="ml-2 rounded-full bg-white/10 px-2.5 py-0.5 text-sm font-normal text-slate-300">{rooms.length}</span>
+				</h2>
+				{#if !loading && rooms.length > 0}
+					<div class="flex items-center gap-2 text-xs text-slate-500">
+						<span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+						Обновляется автоматически
+					</div>
+				{/if}
+			</div>
 
-		{#if loading}
-			<div class="py-12 text-center">
-				<div class="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-			</div>
-		{:else if rooms.length === 0}
-			<div class="py-12 text-center text-slate-400">
-				<div class="mb-3 text-4xl">🎮</div>
-				<p>Нет активных комнат</p>
-				<p class="mt-1 text-sm">Создайте свою и пригласите друзей!</p>
-			</div>
-		{:else}
-			<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-				{#each rooms as room}
-					<a
-						href="/room/{room.code}"
-						class="group rounded-lg border border-slate-600 bg-slate-700 p-4 transition hover:border-blue-500 hover:bg-slate-600"
-					>
-						<div class="mb-3 flex items-start justify-between">
-							<div>
-								<div class="font-mono text-sm text-slate-400">{room.code}</div>
-								<div class="mt-1 font-semibold text-white">{room.topic || 'Без темы'}</div>
+			{#if loading}
+				<div class="py-16 text-center">
+					<div class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-blue-500/30 border-t-blue-500"></div>
+					<p class="mt-4 text-slate-500">Загрузка комнат...</p>
+				</div>
+			{:else if rooms.length === 0}
+				<div class="py-16 text-center">
+					<div class="mb-4 text-5xl">🎮</div>
+					<p class="text-lg text-slate-300">Пока нет активных комнат</p>
+					<p class="mt-2 text-sm text-slate-500">Создайте свою и пригласите друзей!</p>
+				</div>
+			{:else}
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+					{#each rooms as room}
+						<a
+							href="/room/{room.code}"
+							class="group relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:border-white/20 hover:bg-white/[0.05] hover:scale-[1.02]"
+						>
+							<!-- Gradient accent -->
+							<div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r {getModeColor(room.mode)} opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+							<div class="flex items-start justify-between mb-3">
+								<div>
+									<div class="font-mono text-xs text-slate-500 tracking-wider">{room.code}</div>
+									<div class="mt-1 font-semibold text-white group-hover:text-blue-300 transition-colors">
+										{room.topic || 'Без темы'}
+									</div>
+								</div>
+								<div class="opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+									<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+								</div>
 							</div>
-							<div class="text-2xl opacity-0 transition group-hover:opacity-100">→</div>
-						</div>
 
-						<div class="flex items-center justify-between text-sm">
-							<span class="{getModeColor(room.mode)}">
-								{getModeLabel(room.mode)}
-							</span>
-							<span class="flex items-center gap-1 text-slate-400">
-								<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-									<path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
-								</svg>
-								{room.player_count || 0}
-							</span>
-						</div>
+							<div class="flex items-center justify-between">
+								<span class="inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium {getModeBadge(room.mode)}">
+									{getModeLabel(room.mode)}
+								</span>
+								<span class="flex items-center gap-1.5 text-sm text-slate-400">
+									<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+										<path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+									</svg>
+									{room.player_count || 0}
+								</span>
+							</div>
 
-						<div class="mt-2 text-xs text-slate-500">
-							Хост: {room.host}
-						</div>
-					</a>
-				{/each}
-			</div>
-		{/if}
+							<div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+								<div class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-[10px] font-bold text-white">
+									{room.host?.charAt(0).toUpperCase() || '?'}
+								</div>
+								<span>{room.host || 'Unknown'}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 </div>

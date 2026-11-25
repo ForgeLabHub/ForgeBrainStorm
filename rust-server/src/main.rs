@@ -73,6 +73,15 @@ async fn main() -> anyhow::Result<()> {
         .json()
         .init();
 
+    // Load .env file if it exists (supports ../.env for monorepo setup)
+    if let Err(e) = dotenvy::from_filename("../.env") {
+        // Not an error — .env is optional
+        tracing::debug!(error = %e, "No .env file in parent directory");
+    }
+    if let Err(e) = dotenvy::dotenv() {
+        tracing::debug!(error = %e, "No .env file in current directory");
+    }
+
     info!("loading configuration");
     let settings = Settings::load().unwrap_or_else(|e| {
         eprintln!("ERROR: configuration failed to load: {e}");

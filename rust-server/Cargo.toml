@@ -63,6 +63,7 @@ base64 = "0.22"
 bytes = "1"
 parking_lot = "0.12"
 async-trait = "0.1"
+dotenvy = "0.15"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
