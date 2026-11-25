@@ -1,0 +1,84 @@
+# BrainStorm default configuration.
+# Override any value via environment variables prefixed with BRAINSTORM_.
+# Example: BRAINSTORM_SECRET_KEY=... or simply SECRET_KEY=...
+
+[env]
+# "development" or "production".
+env = "development"
+
+# Bind address.
+listen = "0.0.0.0:5000"
+
+# Secret key for HMAC, sessions, CSRF. Must be ≥ 32 bytes in production.
+secret_key = "dev-secret-change-me-in-production-please-use-a-long-random-string"
+
+# Admin activation key.
+admin_secret_key = ""
+
+# PostgreSQL connection string.
+database_url = "postgres://brainstorm:brainstorm@localhost:5432/brainstorm"
+
+# Database connection pool size.
+db_pool_size = 20
+
+# ── Multi-AI Provider Configuration ─────────────────────────
+# Configure multiple AI providers with automatic fallback.
+# The system will try providers in order, falling back to the next if one fails.
+# You can switch providers at runtime via the API.
+
+# Default provider (used first if available)
+default_ai_provider = "gigachat"
+
+# Provider configurations
+[[ai_providers]]
+name = "gigachat"
+provider_type = "gigachat"
+api_key = ""  # OAuth credentials (base64 encoded client_id:client_secret)
+api_endpoint = "GIGACHAT_API_PERS"
+model = "GigaChat"
+max_concurrent = 4
+timeout_secs = 30
+enabled = true
+
+[[ai_providers]]
+name = "openai"
+provider_type = "openai"
+api_key = ""  # OpenAI API key (sk-...)
+api_endpoint = "https://api.openai.com/v1/chat/completions"
+model = "gpt-4o-mini"
+max_concurrent = 4
+timeout_secs = 30
+enabled = false  # Disabled by default (requires API key)
+
+[[ai_providers]]
+name = "ollama"
+provider_type = "ollama"
+api_key = null  # No API key needed for local models
+api_endpoint = "http://localhost:11434"
+model = "llama3"
+max_concurrent = 2
+timeout_secs = 60
+enabled = false  # Disabled by default (requires Ollama running)
+
+# CORS allowed origins. Empty = deny all. "*" is forbidden in production.
+cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+
+# Trust X-Forwarded-* headers from upstream proxies (Render, Fly.io, etc).
+trust_proxy = false
+
+# Session cookie security.
+session_cookie_secure = false
+session_ttl_secs = 86400  # 24 hours
+
+# Redis URL (optional in dev, required in production for rate-limit/sessions).
+redis_url = ""
+
+# Rate limiting.
+rate_limit_enabled = true
+auth_rate_limit = 10
+auth_rate_window = 60
+
+# Room limits.
+max_rooms = 200
+max_players = 30
+disconnect_grace_secs = 30
