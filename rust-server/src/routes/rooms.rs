@@ -18,7 +18,7 @@ pub fn routes() -> Router<AppState> {
     // Public routes — no auth required.
     let public = Router::new()
         .route("/", get(list_rooms))
-        .route("/{code}", get(get_room));
+        .route("/:code", get(get_room));
 
     // Protected routes — require auth.
     let protected = Router::new()

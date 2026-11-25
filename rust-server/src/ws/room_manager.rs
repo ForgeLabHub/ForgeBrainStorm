@@ -324,8 +324,9 @@ impl RoomManager {
                 // Spawn game loop
                 let room_clone = room_arc.clone();
                 let ai_router = self.state.ai_router.clone();
+                let db = self.state.db.pool().clone();
                 tokio::spawn(async move {
-                    GameLoop::run(room_clone, ai_router).await;
+                    GameLoop::run(room_clone, ai_router, Some(db)).await;
                 });
             }
             Err(e) => {
@@ -469,12 +470,13 @@ impl RoomManager {
                 leaderboard,
             });
 
-            // Move to next question after delay
+            // Move to next question after delay (5 seconds so players can see result)
             let room_clone = room_arc.clone();
+            let db = self.state.db.pool().clone();
             drop(room);
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                GameLoop::advance_question(room_clone).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                GameLoop::advance_question(room_clone, Some(db)).await;
             });
         }
     }
