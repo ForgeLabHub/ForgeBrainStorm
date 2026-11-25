@@ -25,12 +25,20 @@
 - **30% файлов написано**
 - **0% проверено**
 
-### Что было исправлено после ревью:
+### Что было исправлено после ревью (сессия 4):
 
 1. ✅ Добавлен WS auth middleware (был пропущен)
 2. ✅ Проверено, что broadcast channel per-room (не глобальный)
 3. ✅ Проверено, что нет `.await` внутри `parking_lot::RwLock` критических секций
 4. ✅ Создан `LOCAL_VERIFICATION_CHECKLIST.md` для локальной проверки
+5. ✅ **Убран дубликат `uuid` в `Cargo.toml`** — crate был указан дважды
+6. ✅ **`AiRouter::set_default_provider(&mut self)` → `&self`** через `std::sync::RwLock` — было невозможно вызвать через `Arc`
+7. ✅ **`AiCache::get/set/...` стали синхронными** — async был лишним, создавал риск удержания DashMap Ref через `.await`
+8. ✅ **`gen_code()` теперь всегда возвращает ровно 6 символов** — filter по буквам после `.take(6)` мог обрезать код
+9. ✅ **`ws_auth_middleware` извлекает `State<AppState>`**, а не `State<SessionCache>` — иначе Axum не сможет извлечь из AppState
+10. ✅ **Добавлен `use async_trait::async_trait`** в `services/ai/mod.rs`
+11. ✅ Добавлены frontend страницы: login, register, lobby, game room
+12. ✅ `AI_COMPILATION_PROMPT.md` обновлён блоком автоустановки Rust
 
 ### Что осталось не проверено:
 

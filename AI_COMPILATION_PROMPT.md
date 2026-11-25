@@ -43,6 +43,46 @@
 
 ---
 
+## 🔧 ПРЕДВАРИТЕЛЬНАЯ НАСТРОЙКА (выполни перед всеми этапами)
+
+Если в контейнере нет Rust toolchain — установи его первой командой:
+
+```bash
+# Проверь, установлен ли Rust
+if ! command -v cargo &>/dev/null; then
+    echo "Installing Rust toolchain..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    source "$HOME/.cargo/env"
+    echo 'source "$HOME/.cargo/env"' >> ~/.bashrc
+    
+    # Добавь нужные компоненты
+    rustup component add clippy rustfmt
+    
+    # Проверь установку
+    rustc --version
+    cargo --version
+    cargo clippy --version
+fi
+```
+
+Также убедись, что склонирован свежий `main`:
+
+```bash
+cd /path/to/ForgeBrainStorm
+git fetch origin
+git checkout main
+git reset --hard origin/main
+
+# Проверь, что файлы на месте
+ls rust-server/Cargo.toml
+ls rust-server/src/main.rs
+ls AI_COMPILATION_PROMPT.md
+```
+
+Если каких-то файлов нет — значит репозиторий склонирован со старой версии. Обязательно выполни `git reset --hard origin/main`.
+
+---
+
 ## 📝 ПЛАН ДЕЙСТВИЙ (СТРОГО ПО ПОРЯДКУ)
 
 ### Этап 1: Проверка Rust-кода

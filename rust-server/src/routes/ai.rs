@@ -41,11 +41,11 @@ struct SwitchProviderInput {
 }
 
 async fn switch_provider(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(input): Json<SwitchProviderInput>,
 ) -> AppResult<impl IntoResponse> {
     let success = state.ai_router.set_default_provider(&input.provider);
-    
+
     if success {
         Ok(Json(serde_json::json!({
             "ok": true,
@@ -60,8 +60,8 @@ async fn switch_provider(
 async fn cache_stats(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    let stats = state.ai_router.cache_stats().await;
-    
+    let stats = state.ai_router.cache_stats();
+
     Ok(Json(serde_json::json!({
         "ok": true,
         "cache": stats,
@@ -72,8 +72,8 @@ async fn cache_stats(
 async fn clear_cache(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    state.ai_router.clear_cache().await;
-    
+    state.ai_router.clear_cache();
+
     Ok(Json(serde_json::json!({
         "ok": true,
         "message": "AI cache cleared",

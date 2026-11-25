@@ -11,6 +11,7 @@ pub mod providers;
 pub mod router;
 pub mod cache;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
