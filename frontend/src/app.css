@@ -12,12 +12,22 @@
 	--border: #2a2d45;
 }
 
+* {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+	-webkit-text-size-adjust: 100%;
+}
+
 body {
 	background-color: var(--background);
 	color: var(--foreground);
-	font-family: 'Inter', system-ui, sans-serif;
+	font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	overflow-x: hidden;
 }
 
 /* Custom scrollbar */
@@ -57,20 +67,23 @@ body {
 }
 
 /* Smooth transitions */
-* {
+a,
+button,
+input,
+select,
+textarea {
 	transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
 	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 150ms;
 }
 
 /* Glow effect */
 .glow {
-	box-shadow: 0 0 20px rgba(59, 130, 246, 0.3),
-		0 0 60px rgba(59, 130, 246, 0.1);
+	box-shadow: 0 0 20px rgba(59, 130, 246, 0.3), 0 0 60px rgba(59, 130, 246, 0.1);
 }
 
 .glow-purple {
-	box-shadow: 0 0 20px rgba(139, 92, 246, 0.3),
-		0 0 60px rgba(139, 92, 246, 0.1);
+	box-shadow: 0 0 20px rgba(139, 92, 246, 0.3), 0 0 60px rgba(139, 92, 246, 0.1);
 }
 
 /* Gradient text */
@@ -86,8 +99,6 @@ input:focus,
 textarea:focus,
 select:focus {
 	outline: none;
-	ring: 2px;
-	ring-color: rgba(59, 130, 246, 0.5);
 }
 
 /* Button hover effects */
@@ -140,4 +151,29 @@ button:not(:disabled):active {
 :focus-visible {
 	outline: 2px solid rgba(59, 130, 246, 0.5);
 	outline-offset: 2px;
+}
+
+/* Responsive utilities */
+@media (max-width: 640px) {
+	html {
+		font-size: 14px;
+	}
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
+/* Print styles */
+@media print {
+	.no-print {
+		display: none !important;
+	}
 }
