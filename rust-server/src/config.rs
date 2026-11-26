@@ -142,26 +142,50 @@ impl Environment {
     }
 }
 
-fn default_environment() -> Environment { Environment::Development }
+fn default_environment() -> Environment {
+    Environment::Development
+}
 fn default_listen_addr() -> SocketAddr {
     "0.0.0.0:5000".parse().expect("valid default socket addr")
 }
-fn default_db_pool_size() -> u32 { 20 }
-fn default_true() -> bool { true }
-fn default_session_ttl() -> u64 { 86_400 }
-fn default_auth_rate_limit() -> u32 { 10 }
-fn default_auth_rate_window() -> u64 { 60 }
-fn default_max_rooms() -> usize { 200 }
-fn default_max_players() -> usize { 30 }
-fn default_grace_period() -> u64 { 30 }
-fn default_max_concurrent() -> usize { 4 }
-fn default_timeout() -> u64 { 30 }
+fn default_db_pool_size() -> u32 {
+    20
+}
+fn default_true() -> bool {
+    true
+}
+fn default_session_ttl() -> u64 {
+    86_400
+}
+fn default_auth_rate_limit() -> u32 {
+    10
+}
+fn default_auth_rate_window() -> u64 {
+    60
+}
+fn default_max_rooms() -> usize {
+    200
+}
+fn default_max_players() -> usize {
+    30
+}
+fn default_grace_period() -> u64 {
+    30
+}
+fn default_max_concurrent() -> usize {
+    4
+}
+fn default_timeout() -> u64 {
+    30
+}
 
 impl Settings {
     /// Load configuration from defaults, optional TOML file, and environment.
     pub fn load() -> Result<Self, ConfigError> {
+        // Embedded, not read from disk: the binary used to depend on being started
+        // from `rust-server/`, and silently lost SECRET_KEY when started elsewhere.
         let figment = Figment::new()
-            .merge(Toml::file("config/default.toml"))
+            .merge(Toml::string(include_str!("../config/default.toml")))
             .merge(Env::prefixed("BRAINSTORM_").split("__"));
 
         let mut settings: Self = figment.extract()?;
@@ -268,11 +292,17 @@ impl Settings {
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("configuration error: {0}")]
-    Figment(#[from] figment::Error),
+    Figment(Box<figment::Error>),
     #[error("missing required configuration: {0}")]
     Missing(&'static str),
     #[error("insecure configuration: {0}")]
     Insecure(&'static str),
+}
+
+impl From<figment::Error> for ConfigError {
+    fn from(error: figment::Error) -> Self {
+        ConfigError::Figment(Box::new(error))
+    }
 }
 
 #[cfg(test)]
@@ -339,7 +369,10 @@ mod tests {
             .merge(Toml::file("config/default.toml"))
             .extract()
             .expect("default.toml must deserialize");
-        assert!(parsed.ai_providers.iter().any(|p| p.provider_type == "openrouter"));
+        assert!(parsed
+            .ai_providers
+            .iter()
+            .any(|p| p.provider_type == "openrouter"));
         assert_eq!(parsed.default_ai_provider, "openrouter");
     }
 }

@@ -1,6 +1,6 @@
 //! Administration routes.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::middleware;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
@@ -19,7 +19,9 @@ pub fn routes(session_cache: SessionCache) -> Router<AppState> {
         .route("/unban", post(unban_user))
         .route("/reset_user", post(reset_user))
         .route("/audit_log", get(audit_log))
-        .route_layer(middleware::from_fn(crate::middleware::auth::admin_middleware));
+        .route_layer(middleware::from_fn(
+            crate::middleware::auth::admin_middleware,
+        ));
 
     Router::new()
         .route("/activate", post(activate))
@@ -138,7 +140,15 @@ async fn unban_user(
         .execute(state.db.pool())
         .await?;
 
-    audit::log(state.db.pool(), auth.user_id, &auth.username, "unban", &input.identifier, "").await?;
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        "unban",
+        &input.identifier,
+        "",
+    )
+    .await?;
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -160,7 +170,15 @@ async fn reset_user(
     .execute(state.db.pool())
     .await?;
 
-    audit::log(state.db.pool(), auth.user_id, &auth.username, "reset_stats", &input.username, "").await?;
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        "reset_stats",
+        &input.username,
+        "",
+    )
+    .await?;
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -168,7 +186,18 @@ async fn audit_log(
     Extension(_auth): Extension<AuthContext>,
     State(state): State<AppState>,
 ) -> AppResult<impl axum::response::IntoResponse> {
-    let rows = sqlx::query_as::<_, (i64, Option<i64>, String, String, String, String, chrono::DateTime<chrono::Utc>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            Option<i64>,
+            String,
+            String,
+            String,
+            String,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT id, actor_id, actor_name, action, target, reason, created_at
          FROM audit_log ORDER BY created_at DESC LIMIT 100",
     )

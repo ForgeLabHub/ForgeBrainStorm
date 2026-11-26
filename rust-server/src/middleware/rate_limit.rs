@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::{ConnectInfo, Request};
 use axum::middleware::Next;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use dashmap::DashMap;
 
 use crate::error::AppError;
@@ -43,10 +43,13 @@ impl RateLimiter {
         let now = Instant::now();
         self.evict_if_needed(now);
 
-        let mut entry = self.buckets.entry(key.to_string()).or_insert_with(|| Bucket {
-            tokens: self.limit,
-            updated: now,
-        });
+        let mut entry = self
+            .buckets
+            .entry(key.to_string())
+            .or_insert_with(|| Bucket {
+                tokens: self.limit,
+                updated: now,
+            });
 
         let elapsed = now.duration_since(entry.updated).as_secs_f64();
         let rate = self.limit / self.window.as_secs_f64();

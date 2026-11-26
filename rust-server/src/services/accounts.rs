@@ -1,7 +1,7 @@
 //! Account service: user lookup, stats update, coins.
 
-use sqlx::PgPool;
 use crate::error::AppResult;
+use sqlx::PgPool;
 
 /// Update a user's aggregate statistics after a game.
 pub async fn update_stats(

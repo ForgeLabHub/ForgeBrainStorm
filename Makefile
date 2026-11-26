@@ -13,7 +13,8 @@ PORT         ?= 5000
 BASE_URL     ?= http://localhost:$(PORT)
 
 .PHONY: help doctor install install-dev run test lint coverage build-image \
-        compose-up compose-down compose-logs smoke-test docs-check docs-pdf lock verify clean
+        compose-up compose-down compose-logs smoke-test docs-check docs-pdf lock verify clean \
+        rust-fmt rust-check rust-lint rust-test rust-verify frontend-check agent-verify agent-verify-all
 
 help: ## Список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -70,6 +71,33 @@ docs-check: ## Проверить документацию, переводы и 
 
 verify: lint test docs-check ## Локальная матрица
 	@echo "verify: ok (образ и compose проверяются в CI)"
+
+# --- Rust server (rust-server/) ---------------------------------------------
+RUST_DIR ?= rust-server
+CARGO    ?= cargo
+
+rust-fmt: ## rustfmt --check
+	cd $(RUST_DIR) && $(CARGO) fmt --all -- --check
+
+rust-check: ## cargo check --all-targets
+	cd $(RUST_DIR) && $(CARGO) check --all-targets --locked
+
+rust-lint: ## clippy, warnings are errors
+	cd $(RUST_DIR) && $(CARGO) clippy --all-targets --locked -- -D warnings
+
+rust-test: ## cargo test
+	cd $(RUST_DIR) && $(CARGO) test --locked
+
+rust-verify: rust-fmt rust-check rust-lint rust-test ## Rust matrix
+
+frontend-check: ## svelte-check + production build
+	cd frontend && npm run check && npm run build
+
+agent-verify: rust-verify ## Gate for AI agents: run before reporting success
+	@echo "agent-verify: rust ok (fmt, check, clippy -D warnings, tests)"
+
+agent-verify-all: agent-verify lint test frontend-check ## Everything an agent can break
+	@echo "agent-verify-all: python, rust and frontend are green"
 
 clean: ## Удалить артефакты
 	rm -rf .pytest_cache .coverage htmlcov

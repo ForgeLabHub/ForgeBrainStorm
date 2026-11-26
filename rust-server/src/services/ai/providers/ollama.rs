@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use super::{
     AiCapability, AiError, AiProvider, AiQuestion, GenerationRequest, GenerationResponse,
@@ -37,16 +37,6 @@ struct OllamaOptions {
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
     response: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OllamaTagsResponse {
-    models: Vec<OllamaModel>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OllamaModel {
-    name: String,
 }
 
 impl OllamaProvider {
@@ -152,23 +142,6 @@ impl AiProvider for OllamaProvider {
         &self.config.name
     }
 
-    async fn is_available(&self) -> bool {
-        // Check if Ollama is running and model is available
-        let url = format!("{}/api/tags", self.endpoint());
-        match self.client.get(&url).send().await {
-            Ok(response) => {
-                if !response.status().is_success() {
-                    return false;
-                }
-                match response.json::<OllamaTagsResponse>().await {
-                    Ok(tags) => tags.models.iter().any(|m| m.name == self.config.model),
-                    Err(_) => false,
-                }
-            }
-            Err(_) => false,
-        }
-    }
-
     fn capabilities(&self) -> &[AiCapability] {
         &self.config.capabilities
     }
@@ -211,9 +184,10 @@ impl AiProvider for OllamaProvider {
             return Err(AiError::InvalidResponse(format!("API error: {}", status)));
         }
 
-        let ollama_response: OllamaResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let ollama_response: OllamaResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         let questions = self.parse_questions(&ollama_response.response)?;
 
@@ -266,9 +240,10 @@ impl AiProvider for OllamaProvider {
             )));
         }
 
-        let ollama_response: OllamaResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let ollama_response: OllamaResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         Ok(ollama_response.response)
     }
@@ -309,9 +284,10 @@ impl AiProvider for OllamaProvider {
             )));
         }
 
-        let ollama_response: OllamaResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let ollama_response: OllamaResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         Ok(ollama_response.response)
     }

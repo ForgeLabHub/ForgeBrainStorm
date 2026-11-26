@@ -5,11 +5,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
-use super::{
-    AiCapability, AiError, AiProvider, AiQuestion, GenerationRequest, GenerationResponse,
-};
+use super::{AiCapability, AiError, AiProvider, AiQuestion, GenerationRequest, GenerationResponse};
 use crate::services::ai::providers::ProviderConfig;
 
 /// GigaChat API client.
@@ -102,7 +100,14 @@ impl GigaChatProvider {
             .header("Authorization", format!("Basic {}", credentials))
             .header("RqUID", uuid::Uuid::new_v4().to_string())
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .form(&[("scope", &self.config.api_endpoint.clone().unwrap_or_else(|| "GIGACHAT_API_PERS".to_string()))])
+            .form(&[(
+                "scope",
+                &self
+                    .config
+                    .api_endpoint
+                    .clone()
+                    .unwrap_or_else(|| "GIGACHAT_API_PERS".to_string()),
+            )])
             .send()
             .await
             .map_err(|e| AiError::Unavailable(format!("OAuth request failed: {}", e)))?;
@@ -215,10 +220,6 @@ impl AiProvider for GigaChatProvider {
         &self.config.name
     }
 
-    async fn is_available(&self) -> bool {
-        self.get_oauth_token().await.is_ok()
-    }
-
     fn capabilities(&self) -> &[AiCapability] {
         &self.config.capabilities
     }
@@ -237,7 +238,8 @@ impl AiProvider for GigaChatProvider {
             messages: vec![
                 GigaChatMessage {
                     role: "system".to_string(),
-                    content: "Ты — генератор вопросов для викторины. Отвечай только валидным JSON.".to_string(),
+                    content: "Ты — генератор вопросов для викторины. Отвечай только валидным JSON."
+                        .to_string(),
                 },
                 GigaChatMessage {
                     role: "user".to_string(),
@@ -264,15 +266,13 @@ impl AiProvider for GigaChatProvider {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             error!("GigaChat API error: {} - {}", status, body);
-            return Err(AiError::InvalidResponse(format!(
-                "API error: {}",
-                status
-            )));
+            return Err(AiError::InvalidResponse(format!("API error: {}", status)));
         }
 
-        let chat_response: GigaChatResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let chat_response: GigaChatResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         let content = chat_response
             .choices
@@ -333,9 +333,10 @@ impl AiProvider for GigaChatProvider {
             )));
         }
 
-        let chat_response: GigaChatResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let chat_response: GigaChatResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         chat_response
             .choices
@@ -386,9 +387,10 @@ impl AiProvider for GigaChatProvider {
             )));
         }
 
-        let chat_response: GigaChatResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let chat_response: GigaChatResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         chat_response
             .choices

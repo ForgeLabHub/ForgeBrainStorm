@@ -11,7 +11,19 @@ All notable changes to BrainStorm are documented here. The format is based on
   `frontend` (`npm ci`, `svelte-check`, `npm run build`). Nothing compiled them before.
 - README section describing the Flask monolith, the Axum server and the SvelteKit client
   side by side, in both languages.
+- `AGENTS.md`: rules for AI agents (atomic steps, `make agent-verify` before claiming
+  success, no `unwrap()`, two-strike stop rule, project map for all three stacks).
+- `make agent-verify` / `rust-verify` / `frontend-check`: fmt, `cargo check`, clippy with
+  `-D warnings`, tests and the frontend build as one gate; CI runs the same checks.
 - Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`.
+
+### Changed
+- `rust-server`: zero compiler and clippy warnings. `AppError` and `ConfigError` keep their
+  heavy payloads boxed (sqlx/figment), dead code removed, `tracing-opentelemetry` dropped.
+- `rust-server` reads `config/default.toml` with `include_str!`, so the binary no longer
+  silently loses `SECRET_KEY` when started outside `rust-server/`.
+- Rate limiting is compiled behind the `rate-limit` feature instead of sitting unused:
+  keying by `ConnectInfo` is wrong behind Caddy.
 
 ### Fixed
 - `./forge.sh verify` printed "локальная матрица пройдена" even when lint failed; it now

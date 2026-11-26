@@ -7,9 +7,9 @@
 //! - Response caching
 //! - Dynamic provider selection based on availability and cost
 
+pub mod cache;
 pub mod providers;
 pub mod router;
-pub mod cache;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -89,9 +89,6 @@ pub struct GenerationResponse {
 pub trait AiProvider: Send + Sync {
     /// Provider name.
     fn name(&self) -> &str;
-
-    /// Check if provider is available (health check).
-    async fn is_available(&self) -> bool;
 
     /// Get provider capabilities.
     fn capabilities(&self) -> &[AiCapability];

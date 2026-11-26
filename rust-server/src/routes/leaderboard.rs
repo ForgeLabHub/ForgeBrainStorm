@@ -24,7 +24,18 @@ async fn top_players(
     Query(query): Query<TopQuery>,
 ) -> AppResult<impl axum::response::IntoResponse> {
     let limit = query.limit.unwrap_or(50).min(200);
-    let rows = sqlx::query_as::<_, (i64, String, i64, i32, i32, i32, chrono::DateTime<chrono::Utc>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            i64,
+            i32,
+            i32,
+            i32,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT user_id, username, total_score, games_played, wins, rank::int, last_seen
          FROM leaderboard_ranked ORDER BY rank LIMIT $1",
     )

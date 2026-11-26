@@ -22,13 +22,14 @@ use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing::info;
+use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::Settings;
 use crate::domain::room::RoomRegistry;
 use crate::error::AppError;
 use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
+#[cfg(feature = "rate-limit")]
 use crate::middleware::rate_limit::RateLimiter;
 use crate::services::ai::router::AiRouter;
 use crate::services::ai::{AiCapability, ProviderConfig, ProviderType};
@@ -146,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Build router.
     let cors = middleware::cors::build_cors_layer(&settings);
+    #[cfg(feature = "rate-limit")]
     let rate_limiter = Arc::new(RateLimiter::new(
         settings.auth_rate_limit,
         settings.auth_rate_window,
@@ -161,10 +163,11 @@ async fn main() -> anyhow::Result<()> {
             )),
         )
         .layer(cors)
-        .layer(axum::Extension(rate_limiter))
         .layer(axum::Extension(session_cache.clone()))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
+    #[cfg(feature = "rate-limit")]
+    let app = app.layer(axum::Extension(rate_limiter));
 
     // Background: periodic room cleanup.
     let cleanup_rooms = rooms.clone();

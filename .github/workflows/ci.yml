@@ -72,11 +72,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-server
+      - name: Formatting
+        run: cargo fmt --all -- --check
       - name: Check all targets
         run: cargo check --all-targets --locked
+      - name: Clippy
+        # Крейт держим без предупреждений: `make agent-verify` проверяет то же самое.
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: Tests
         # Тесты, которым нужна живая база, помечены #[ignore] и требуют DATABASE_URL.
         run: cargo test --locked

@@ -1,9 +1,5 @@
 //! Integration test: health and readiness endpoints.
 
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
-use tower::ServiceExt;
-
 // Note: These tests require a running Postgres instance.
 // Run with: cargo test --test health -- --ignored
 // Or set up a test database via docker compose.

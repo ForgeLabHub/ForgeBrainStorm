@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use super::{
     AiCapability, AiError, AiProvider, AiQuestion, GenerationRequest, GenerationResponse,
@@ -137,13 +137,6 @@ impl AiProvider for OpenAIProvider {
         &self.config.name
     }
 
-    async fn is_available(&self) -> bool {
-        self.config
-            .api_key
-            .as_deref()
-            .is_some_and(|key| !key.trim().is_empty())
-    }
-
     fn capabilities(&self) -> &[AiCapability] {
         &self.config.capabilities
     }
@@ -154,9 +147,11 @@ impl AiProvider for OpenAIProvider {
     ) -> Result<GenerationResponse, AiError> {
         let start = std::time::Instant::now();
 
-        let api_key = self.config.api_key.as_ref().ok_or_else(|| {
-            AiError::Unavailable("OpenAI API key not configured".to_string())
-        })?;
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .ok_or_else(|| AiError::Unavailable("OpenAI API key not configured".to_string()))?;
 
         let prompt = self.build_prompt(request);
         let endpoint = self
@@ -170,7 +165,8 @@ impl AiProvider for OpenAIProvider {
             messages: vec![
                 OpenAIMessage {
                     role: "system".to_string(),
-                    content: "You are a quiz question generator. Respond only with valid JSON.".to_string(),
+                    content: "You are a quiz question generator. Respond only with valid JSON."
+                        .to_string(),
                 },
                 OpenAIMessage {
                     role: "user".to_string(),
@@ -204,9 +200,10 @@ impl AiProvider for OpenAIProvider {
             return Err(AiError::InvalidResponse(format!("API error: {}", status)));
         }
 
-        let chat_response: OpenAIResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let chat_response: OpenAIResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         let content = chat_response
             .choices
@@ -233,9 +230,11 @@ impl AiProvider for OpenAIProvider {
     }
 
     async fn generate_hint(&self, question: &str) -> Result<String, AiError> {
-        let api_key = self.config.api_key.as_ref().ok_or_else(|| {
-            AiError::Unavailable("OpenAI API key not configured".to_string())
-        })?;
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .ok_or_else(|| AiError::Unavailable("OpenAI API key not configured".to_string()))?;
 
         let endpoint = self
             .config
@@ -273,9 +272,10 @@ impl AiProvider for OpenAIProvider {
             )));
         }
 
-        let chat_response: OpenAIResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let chat_response: OpenAIResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         chat_response
             .choices
@@ -289,9 +289,11 @@ impl AiProvider for OpenAIProvider {
         question: &str,
         correct_answer: &str,
     ) -> Result<String, AiError> {
-        let api_key = self.config.api_key.as_ref().ok_or_else(|| {
-            AiError::Unavailable("OpenAI API key not configured".to_string())
-        })?;
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .ok_or_else(|| AiError::Unavailable("OpenAI API key not configured".to_string()))?;
 
         let endpoint = self
             .config
@@ -329,9 +331,10 @@ impl AiProvider for OpenAIProvider {
             )));
         }
 
-        let chat_response: OpenAIResponse = response.json().await.map_err(|e| {
-            AiError::InvalidResponse(format!("Failed to parse response: {}", e))
-        })?;
+        let chat_response: OpenAIResponse = response
+            .json()
+            .await
+            .map_err(|e| AiError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
         chat_response
             .choices

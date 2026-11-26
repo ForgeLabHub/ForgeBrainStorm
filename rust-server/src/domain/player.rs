@@ -2,8 +2,6 @@
 
 use std::time::Instant;
 
-use serde::Serialize;
-
 /// A player within a room.
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -29,7 +27,12 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(sid: String, display_name: String, user_id: Option<i64>, username: Option<String>) -> Self {
+    pub fn new(
+        sid: String,
+        display_name: String,
+        user_id: Option<i64>,
+        username: Option<String>,
+    ) -> Self {
         Self {
             sid,
             user_id,
@@ -56,17 +59,4 @@ impl Player {
     pub fn is_disconnected(&self) -> bool {
         self.disconnected_at.is_some()
     }
-}
-
-/// Serializable summary sent to clients.
-#[derive(Debug, Serialize)]
-pub struct PlayerSummary {
-    pub name: String,
-    pub score: i64,
-    pub streak: u32,
-    pub lives: u8,
-    pub is_host: bool,
-    pub is_ready: bool,
-    pub team: Option<u8>,
-    pub is_spectator: bool,
 }

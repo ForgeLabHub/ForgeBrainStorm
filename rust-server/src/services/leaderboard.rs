@@ -1,7 +1,7 @@
 //! Leaderboard service: update aggregates, fetch rankings.
 
-use sqlx::PgPool;
 use crate::error::AppResult;
+use sqlx::PgPool;
 
 /// Update the leaderboard materialised view after a game.
 pub async fn update_leaderboard(

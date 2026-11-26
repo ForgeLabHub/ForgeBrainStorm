@@ -28,9 +28,9 @@ use crate::services::ai::providers::{GigaChatProvider, OllamaProvider, OpenAIPro
 /// Circuit breaker state for a provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CircuitState {
-    Closed,    // Normal operation
-    Open,      // Failing, don't use
-    HalfOpen,  // Testing if recovered
+    Closed,   // Normal operation
+    Open,     // Failing, don't use
+    HalfOpen, // Testing if recovered
 }
 
 /// Circuit breaker for a provider.
@@ -77,7 +77,10 @@ impl CircuitBreaker {
         if self.failure_count >= 5 {
             // Too many failures, open circuit
             self.state = CircuitState::Open;
-            warn!("Circuit breaker opened after {} failures", self.failure_count);
+            warn!(
+                "Circuit breaker opened after {} failures",
+                self.failure_count
+            );
         }
     }
 
@@ -170,9 +173,7 @@ impl AiRouter {
         if default < self.providers.len() {
             let circuit = circuits.get(default)?;
             if circuit.is_available()
-                && self.providers[default]
-                    .capabilities()
-                    .contains(&capability)
+                && self.providers[default].capabilities().contains(&capability)
             {
                 return Some(default);
             }
@@ -211,16 +212,15 @@ impl AiRouter {
         }
 
         // Try providers with fallback
-        let mut last_error = None;
         let mut attempts = 0;
 
         loop {
-            let provider_idx = self.select_provider(AiCapability::QuestionGeneration).ok_or_else(
-                || {
+            let provider_idx = self
+                .select_provider(AiCapability::QuestionGeneration)
+                .ok_or_else(|| {
                     error!("No AI providers available");
                     AiError::NoProvidersAvailable
-                },
-            )?;
+                })?;
 
             let provider = &self.providers[provider_idx];
             info!(
@@ -265,18 +265,15 @@ impl AiRouter {
                         }
                     }
 
-                    last_error = Some(e);
                     attempts += 1;
 
-                    // Try next provider
+                    // Try next provider; the last failure is what the caller sees.
                     if attempts >= self.providers.len() {
-                        break;
+                        break Err(e);
                     }
                 }
             }
         }
-
-        Err(last_error.unwrap_or(AiError::NoProvidersAvailable))
     }
 
     /// Generate hint with automatic fallback.
@@ -311,7 +308,9 @@ impl AiRouter {
             .ok_or(AiError::NoProvidersAvailable)?;
 
         let provider = &self.providers[provider_idx];
-        provider.generate_explanation(question, correct_answer).await
+        provider
+            .generate_explanation(question, correct_answer)
+            .await
     }
 
     /// Get list of available providers.
@@ -322,7 +321,12 @@ impl AiRouter {
         self.providers
             .iter()
             .enumerate()
-            .filter(|(idx, _)| circuits.get(*idx).map(|c| c.is_available()).unwrap_or(false))
+            .filter(|(idx, _)| {
+                circuits
+                    .get(*idx)
+                    .map(|c| c.is_available())
+                    .unwrap_or(false)
+            })
             .map(|(_, p)| p.name().to_string())
             .collect()
     }

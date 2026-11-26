@@ -1,7 +1,7 @@
 //! Append-only audit log service.
 
-use sqlx::PgPool;
 use crate::error::AppResult;
+use sqlx::PgPool;
 
 /// Record an admin action in the audit log.
 pub async fn log(

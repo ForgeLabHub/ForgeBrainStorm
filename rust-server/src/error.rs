@@ -37,13 +37,25 @@ pub enum AppError {
     AiUnavailable(String),
 
     #[error("database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Database(Box<sqlx::Error>),
 
     #[error("configuration error: {0}")]
-    Config(#[from] crate::config::ConfigError),
+    Config(Box<crate::config::ConfigError>),
 
     #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(error: sqlx::Error) -> Self {
+        AppError::Database(Box::new(error))
+    }
+}
+
+impl From<crate::config::ConfigError> for AppError {
+    fn from(error: crate::config::ConfigError) -> Self {
+        AppError::Config(Box::new(error))
+    }
 }
 
 /// Field-level validation failure.
@@ -56,38 +68,29 @@ pub struct ValidationError {
 
 impl ValidationError {
     pub fn new(field: &'static str, message: impl Into<String>) -> Self {
-        Self { field, message: message.into() }
+        Self {
+            field,
+            message: message.into(),
+        }
     }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
-            AppError::Validation(e) => (
-                StatusCode::BAD_REQUEST,
-                "validation_error",
-                e.to_string(),
-            ),
+            AppError::Validation(e) => (StatusCode::BAD_REQUEST, "validation_error", e.to_string()),
             AppError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
                 "Требуется авторизация".to_string(),
             ),
-            AppError::Forbidden(reason) => (
-                StatusCode::FORBIDDEN,
-                "forbidden",
-                reason.to_string(),
-            ),
+            AppError::Forbidden(reason) => (StatusCode::FORBIDDEN, "forbidden", reason.to_string()),
             AppError::NotFound(what) => (
                 StatusCode::NOT_FOUND,
                 "not_found",
                 format!("Не найдено: {}", what),
             ),
-            AppError::Conflict(msg) => (
-                StatusCode::CONFLICT,
-                "conflict",
-                msg.clone(),
-            ),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg.clone()),
             AppError::RateLimited => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
@@ -98,11 +101,9 @@ impl IntoResponse for AppError {
                 "invalid_state",
                 "Комната не в нужном состоянии".to_string(),
             ),
-            AppError::AiUnavailable(msg) => (
-                StatusCode::BAD_GATEWAY,
-                "ai_unavailable",
-                msg.clone(),
-            ),
+            AppError::AiUnavailable(msg) => {
+                (StatusCode::BAD_GATEWAY, "ai_unavailable", msg.clone())
+            }
             AppError::Database(e) => {
                 error!(error = %e, "database error");
                 (

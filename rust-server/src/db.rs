@@ -12,8 +12,7 @@ pub async fn init_pool(settings: &Settings) -> Result<PgPool, AppError> {
         .max_connections(settings.db_pool_size)
         .acquire_timeout(std::time::Duration::from_secs(5))
         .connect(&settings.database_url)
-        .await
-        .map_err(AppError::Database)?;
+        .await?;
 
     info!("running database migrations");
     sqlx::migrate!("./migrations")
@@ -27,9 +26,6 @@ pub async fn init_pool(settings: &Settings) -> Result<PgPool, AppError> {
 
 /// Liveness probe: verify the database is reachable.
 pub async fn health_check(pool: &PgPool) -> Result<(), AppError> {
-    sqlx::query("SELECT 1")
-        .execute(pool)
-        .await
-        .map_err(AppError::Database)?;
+    sqlx::query("SELECT 1").execute(pool).await?;
     Ok(())
 }

@@ -1,18 +1,18 @@
 //! Authentication routes: register, login, logout, current user.
 
+use argon2::{PasswordHasher, PasswordVerifier};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use argon2::{PasswordHasher, PasswordVerifier};
-use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::Cookie;
+use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use validator::Validate;
 
 use crate::error::{AppError, AppResult, ValidationError};
-use crate::middleware::auth::{AuthContext, SessionCache, SESSION_COOKIE};
+use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
 use crate::AppState;
 
 pub fn routes(session_cache: SessionCache) -> Router<AppState> {
@@ -47,38 +47,37 @@ async fn register(
     jar: CookieJar,
     Json(input): Json<RegisterInput>,
 ) -> AppResult<impl IntoResponse> {
-    input.validate().map_err(|e| {
-        AppError::Validation(ValidationError::new("username", e.to_string()))
-    })?;
+    input
+        .validate()
+        .map_err(|e| AppError::Validation(ValidationError::new("username", e.to_string())))?;
 
-    let salt = argon2::password_hash::SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
+    let salt =
+        argon2::password_hash::SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let argon2_hasher = argon2::Argon2::default();
     let hash = argon2_hasher
         .hash_password(input.password.as_bytes(), &salt)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("hash error: {e}")))?
         .to_string();
 
-    let user_id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, pwd_hash) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(&input.username)
-    .bind(&hash)
-    .fetch_one(state.db.pool())
-    .await
-    .map_err(|e: sqlx::Error| {
-        if e.to_string().contains("duplicate") || e.to_string().contains("unique") {
-            AppError::Conflict("Пользователь с таким именем уже существует".into())
-        } else {
-            AppError::Database(e)
-        }
-    })?;
+    let user_id: i64 =
+        sqlx::query_scalar("INSERT INTO users (username, pwd_hash) VALUES ($1, $2) RETURNING id")
+            .bind(&input.username)
+            .bind(&hash)
+            .fetch_one(state.db.pool())
+            .await
+            .map_err(|e: sqlx::Error| {
+                if e.to_string().contains("duplicate") || e.to_string().contains("unique") {
+                    AppError::Conflict("Пользователь с таким именем уже существует".into())
+                } else {
+                    AppError::Database(Box::new(e))
+                }
+            })?;
 
     let token = create_session(state.db.pool(), user_id, false, false).await?;
     let jar = set_session_cookie(jar, &token, &state);
     let user = fetch_user_response(state.db.pool(), user_id).await?;
 
-    let mut response =
-        (jar, Json(serde_json::json!({"ok": true, "user": user}))).into_response();
+    let mut response = (jar, Json(serde_json::json!({"ok": true, "user": user}))).into_response();
     *response.status_mut() = StatusCode::CREATED;
     Ok(response)
 }
@@ -88,12 +87,11 @@ async fn login(
     jar: CookieJar,
     Json(input): Json<LoginInput>,
 ) -> AppResult<impl IntoResponse> {
-    let row = sqlx::query_as::<_, (i64, String)>(
-        "SELECT id, pwd_hash FROM users WHERE username = $1",
-    )
-    .bind(&input.username)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let row =
+        sqlx::query_as::<_, (i64, String)>("SELECT id, pwd_hash FROM users WHERE username = $1")
+            .bind(&input.username)
+            .fetch_optional(state.db.pool())
+            .await?;
 
     let (user_id, stored_hash) = match row {
         Some(r) => r,
@@ -116,10 +114,7 @@ async fn login(
     Ok((jar, Json(serde_json::json!({"ok": true, "user": user}))))
 }
 
-async fn logout(
-    State(state): State<AppState>,
-    jar: CookieJar,
-) -> impl IntoResponse {
+async fn logout(State(state): State<AppState>, jar: CookieJar) -> impl IntoResponse {
     if let Some(cookie) = jar.get(SESSION_COOKIE) {
         let token = cookie.value();
         let _ = sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE token = $1")
@@ -143,7 +138,9 @@ async fn me(
         .ok_or(AppError::Unauthorized)?;
     let ctx = cache.get_or_load(&token).await?;
     let user = fetch_user_response(state.db.pool(), ctx.user_id).await?;
-    Ok(Json(serde_json::json!({"ok": true, "logged_in": true, "user": user})))
+    Ok(Json(
+        serde_json::json!({"ok": true, "logged_in": true, "user": user}),
+    ))
 }
 
 // ── Helpers ─────────────────────────────────────────────────

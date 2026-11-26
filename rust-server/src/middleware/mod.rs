@@ -2,6 +2,5 @@
 
 pub mod auth;
 pub mod cors;
+#[cfg(feature = "rate-limit")]
 pub mod rate_limit;
-
-pub use cors::build_cors_layer;

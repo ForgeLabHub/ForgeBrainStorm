@@ -39,9 +39,15 @@ pub struct RoomSettings {
     pub difficulty: String,
 }
 
-fn default_question_count() -> usize { 10 }
-fn default_num_options() -> usize { 4 }
-fn default_timer() -> u64 { 30 }
+fn default_question_count() -> usize {
+    10
+}
+fn default_num_options() -> usize {
+    4
+}
+fn default_timer() -> u64 {
+    30
+}
 
 impl Default for RoomSettings {
     fn default() -> Self {
@@ -67,7 +73,17 @@ impl RoomSettings {
         if !["easy", "medium", "hard"].contains(&self.difficulty.as_str()) {
             self.difficulty = "medium".into();
         }
-        if !["classic", "ffa", "team", "lives", "coop", "svoyaigra", "sandbox"].contains(&self.mode.as_str()) {
+        if ![
+            "classic",
+            "ffa",
+            "team",
+            "lives",
+            "coop",
+            "svoyaigra",
+            "sandbox",
+        ]
+        .contains(&self.mode.as_str())
+        {
             self.mode = "classic".into();
         }
     }
@@ -136,7 +152,8 @@ impl Room {
     }
 
     pub fn all_answered(&self) -> bool {
-        self.players.values()
+        self.players
+            .values()
             .filter(|p| !p.is_spectator && !p.is_disconnected() && !p.instant_answer)
             .all(|p| p.answered)
     }
@@ -183,7 +200,12 @@ impl RoomRegistry {
         }
     }
 
-    pub fn create(&self, host_user_id: i64, host_name: &str, mut settings: RoomSettings) -> AppResult<RoomSnapshot> {
+    pub fn create(
+        &self,
+        host_user_id: i64,
+        host_name: &str,
+        mut settings: RoomSettings,
+    ) -> AppResult<RoomSnapshot> {
         settings.clamp();
         let mut rooms = self.rooms.write();
         if rooms.len() >= self.max_rooms {
@@ -213,7 +235,11 @@ impl RoomRegistry {
     }
 
     pub fn list_public(&self) -> Vec<RoomSnapshot> {
-        self.rooms.read().values().map(|r| RoomSnapshot::from_room(&r.read())).collect()
+        self.rooms
+            .read()
+            .values()
+            .map(|r| RoomSnapshot::from_room(&r.read()))
+            .collect()
     }
 
     pub fn remove(&self, code: &str) {
@@ -267,7 +293,6 @@ impl RoomSnapshot {
 /// be collision-resistant. The registry handles the atomic uniqueness
 /// check via `rooms.contains_key(&code)` with a single retry.
 fn gen_code() -> String {
-    use rand::Rng;
     let mut rng = rand::thread_rng();
     (0..6)
         .map(|_| {

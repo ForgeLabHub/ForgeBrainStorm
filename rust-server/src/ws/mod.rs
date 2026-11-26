@@ -101,9 +101,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         .players
                         .values()
                         .find(|player| player.user_id == Some(auth.user_id))
-                        .map(|player| (player.score, player.streak, player.total_correct, player.lives))
+                        .map(|player| {
+                            (
+                                player.score,
+                                player.streak,
+                                player.total_correct,
+                                player.lives,
+                            )
+                        })
                         .unwrap_or((0, 0, 0, 3));
-                    room.players.retain(|_, player| player.user_id != Some(auth.user_id));
+                    room.players
+                        .retain(|_, player| player.user_id != Some(auth.user_id));
                     let mut player = Player::new(
                         sid.clone(),
                         auth.username.clone(),
@@ -227,7 +235,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 let (first_question, players, token) = {
                     let mut room = room.write();
                     room.set_questions(questions, &source);
-                    (question_event(&room), players_event(&room), room.question_token)
+                    (
+                        question_event(&room),
+                        players_event(&room),
+                        room.question_token,
+                    )
                 };
 
                 let tx = room.read().tx.clone();
@@ -244,10 +256,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 };
                 let index = message["data"]["answer_index"].as_u64().unwrap_or(0) as usize;
 
-                let mut advance = false;
-                let mut token = 0;
-                let mut players = None;
-                {
+                let (advance, token, players) = {
                     let mut room = room.write();
                     if room.state != RoomState::Playing {
                         continue;
@@ -280,11 +289,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         }
                     }
 
-                    advance = room.all_answered();
-                    token = room.question_token;
+                    let advance = room.all_answered();
+                    let token = room.question_token;
                     room.touch();
-                    players = Some(players_event(&room));
-                }
+                    (advance, token, Some(players_event(&room)))
+                };
 
                 if let Some(event) = players {
                     let _ = room.read().tx.send(event);
@@ -298,8 +307,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 let Some(room) = room_arc.clone() else {
                     continue;
                 };
-                let mut players = None;
-                {
+                let players = {
                     let mut room = room.write();
                     if room.host_user_id != auth.user_id {
                         continue;
@@ -321,14 +329,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         player.lives = 3;
                     }
                     room.touch();
-                    players = Some(players_event(&room));
-                }
+                    Some(players_event(&room))
+                };
                 if let Some(event) = players {
                     let _ = room.read().tx.send(event);
                 }
             }
 
-            other => debug!(user_id = auth.user_id, kind = other, "ignoring unknown ws message"),
+            other => debug!(
+                user_id = auth.user_id,
+                kind = other,
+                "ignoring unknown ws message"
+            ),
         }
     }
 
@@ -411,13 +423,16 @@ fn question_event(room: &Room) -> Option<String> {
     )
 }
 
+/// Per-player results plus the metadata row written to `games`.
+type FinishedGame = (Vec<(i64, String, i64)>, history::GameInfo);
+
 /// Reveal the current answer, then move to the next question or finish.
 /// Idempotent per `token`: a stale timer (or a duplicate "all answered" call)
 /// sees a mismatched token and returns without advancing.
 async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<PgPool>) {
     let mut events: Vec<String> = Vec::new();
     let mut schedule_next: Option<u64> = None;
-    let mut finished: Option<(Vec<(i64, String, i64)>, history::GameInfo)> = None;
+    let finished: Option<FinishedGame>;
 
     {
         let mut room = room.write();
@@ -460,7 +475,7 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
                         .map(|id| (id, player.username.clone(), player.score))
                 })
                 .collect::<Vec<_>>();
-            results.sort_by(|a, b| b.2.cmp(&a.2));
+            results.sort_by_key(|entry| std::cmp::Reverse(entry.2));
             let duration = room
                 .started_at
                 .map(|started| started.elapsed().as_secs() as i32)
@@ -474,6 +489,7 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
             };
             finished = Some((results, info));
         } else {
+            finished = None;
             // Hold the result screen briefly before the next question so
             // players can read the correct answer.
             room.reset_answers();
@@ -522,12 +538,12 @@ fn spawn_timer(room: Arc<RwLock<Room>>, token: u64, pool: Option<PgPool>) {
 
 /// Write finished-game stats to Postgres: per-user totals, leaderboard row, coins
 /// and the game history rows that back the profile page.
-async fn persist_results(
-    pool: &PgPool,
-    results: Vec<(i64, String, i64)>,
-    info: history::GameInfo,
-) {
-    let best = results.iter().map(|(_, _, score)| *score).max().unwrap_or(0);
+async fn persist_results(pool: &PgPool, results: Vec<(i64, String, i64)>, info: history::GameInfo) {
+    let best = results
+        .iter()
+        .map(|(_, _, score)| *score)
+        .max()
+        .unwrap_or(0);
     let mut outcomes = Vec::with_capacity(results.len());
     for (index, (user_id, username, score)) in results.into_iter().enumerate() {
         let won = best > 0 && score == best;
@@ -535,9 +551,15 @@ async fn persist_results(
             warn!(user_id, %error, "failed to update user stats");
             continue;
         }
-        if let Err(error) =
-            leaderboard::update_leaderboard(pool, user_id, &username, score, won, info.duration_secs)
-                .await
+        if let Err(error) = leaderboard::update_leaderboard(
+            pool,
+            user_id,
+            &username,
+            score,
+            won,
+            info.duration_secs,
+        )
+        .await
         {
             warn!(user_id, %error, "failed to update leaderboard");
         }
