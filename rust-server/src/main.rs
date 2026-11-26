@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod domain;
 mod error;
+mod infrastructure;
 mod middleware;
 mod routes;
 mod security;
@@ -28,6 +29,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 use crate::config::Settings;
 use crate::domain::room::RoomRegistry;
 use crate::error::AppError;
+use crate::infrastructure::RedisClient;
 use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
 use crate::middleware::rate_limit::RateLimiter;
 use crate::services::ai::router::AiRouter;
@@ -41,6 +43,7 @@ pub struct AppState {
     pub rooms: RoomRegistry,
     pub ai_router: Arc<AiRouter>,
     pub session_cache: SessionCache,
+    pub redis: Arc<RedisClient>,
 }
 
 /// Database handle wrapper.
@@ -128,6 +131,20 @@ async fn main() -> anyhow::Result<()> {
 
     let ai_router = Arc::new(AiRouter::new(ai_configs));
 
+    // Initialize Redis client (optional — graceful degradation).
+    info!("initializing Redis client");
+    let redis_client = match RedisClient::new(&settings.redis_url).await {
+        Ok(client) => {
+            info!(connected = client.is_connected().await, "Redis client initialized");
+            client
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to initialize Redis client, running in local-only mode");
+            RedisClient::new("").await.expect("Empty URL should never fail")
+        }
+    };
+    let redis = Arc::new(redis_client);
+
     // Build shared state.
     let session_cache = SessionCache::new(Duration::from_secs(300), pool.clone());
     let rooms = RoomRegistry::new(settings.max_rooms);
@@ -138,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         rooms: rooms.clone(),
         ai_router,
         session_cache: session_cache.clone(),
+        redis,
     };
 
     // Build router.

@@ -72,8 +72,8 @@ trust_proxy = false
 session_cookie_secure = false
 session_ttl_secs = 86400
 
-# Redis URL (optional in dev, required in production for rate-limit/sessions).
-redis_url = ""
+# Redis URL (optional in dev, required in production for rate-limit/sessions/pub-sub).
+redis_url = "redis://127.0.0.1:6379"
 
 # Rate limiting.
 rate_limit_enabled = true

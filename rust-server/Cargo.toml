@@ -58,6 +58,10 @@ rand = "0.8"
 # Session / state
 dashmap = "6"
 
+# Distributed systems
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "aio"] }
+tokio-stream = "0.1"
+
 # Utilities
 base64 = "0.22"
 bytes = "1"

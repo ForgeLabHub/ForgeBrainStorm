@@ -24,14 +24,22 @@ async fn health() -> impl IntoResponse {
     }))
 }
 
-/// Readiness probe — verifies the database is reachable.
+/// Readiness probe — verifies the database and Redis are reachable.
 async fn ready(State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     state.db.health_check().await?;
+
+    let redis_status = if state.redis.is_connected().await {
+        "ok"
+    } else {
+        "local_only"
+    };
+
     Ok((
         StatusCode::OK,
         Json(json!({
             "status": "ready",
             "db": "ok",
+            "redis": redis_status,
         })),
     ))
 }
