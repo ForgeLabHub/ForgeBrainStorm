@@ -12,11 +12,6 @@
 	let mobileMenuOpen = $state(false);
 	let scrolled = $state(false);
 
-	<svelte:head>
-		<title>{$page.url.pathname === '/settings' ? 'Настройки ИИ · BrainStorm' : 'BrainStorm — интеллектуальная викторина'}</title>
-		<meta name="description" content={$page.url.pathname === '/settings' ? 'Управление провайдерами и кэшем генерации BrainStorm.' : 'Интерактивная викторина с ИИ-генерацией вопросов'} />
-	</svelte:head>
-
 	onMount(async () => {
 		try {
 			const response = await api.me();
@@ -40,6 +35,11 @@
 		mobileMenuOpen = false;
 	}
 </script>
+
+<svelte:head>
+	<title>{$page.url.pathname === '/settings' ? 'Настройки ИИ · BrainStorm' : 'BrainStorm — интеллектуальная викторина'}</title>
+	<meta name="description" content={$page.url.pathname === '/settings' ? 'Управление провайдерами и кэшем генерации BrainStorm.' : 'Интерактивная викторина с ИИ-генерацией вопросов'} />
+</svelte:head>
 
 <div class="min-h-screen bg-[#0a0a0f] text-slate-50 relative">
 	<!-- Background gradient effects -->

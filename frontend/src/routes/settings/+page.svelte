@@ -227,69 +227,110 @@
 		}
 	}
 
-	function getProviderInfo(name: string): { description: string } {
+	function getProviderInfo(name: string): { description: string; color: string; icon: string } {
 		const info: Record<string, any> = {
-			openrouter: { description: 'OpenRouter — доступ к GPT-4o-mini, Claude и другим моделям' },
-			gigachat: { description: 'Sber GigaChat — оптимизирован для русского языка' },
-			openai: { description: 'OpenAI GPT-4 — высочайшее качество генерации' },
-			ollama: { description: 'Ollama — локальная модель, бесплатно и приватно' },
-			anthropic: { description: 'Anthropic Claude — отличное качество и безопасность' },
+			openrouter: { 
+				description: 'OpenRouter — доступ к GPT-4o-mini, Claude и другим моделям',
+				color: 'from-orange-500/20 to-red-500/20 border-orange-500/30',
+				icon: 'M13 10V3L4 14h7v7l9-11h-7z'
+			},
+			gigachat: { 
+				description: 'Sber GigaChat — оптимизирован для русского языка',
+				color: 'from-blue-500/20 to-cyan-500/20 border-blue-500/30',
+				icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z'
+			},
+			openai: { 
+				description: 'OpenAI GPT-4 — высочайшее качество генерации',
+				color: 'from-green-500/20 to-emerald-500/20 border-green-500/30',
+				icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
+			},
+			ollama: { 
+				description: 'Ollama — локальная модель, бесплатно и приватно',
+				color: 'from-purple-500/20 to-pink-500/20 border-purple-500/30',
+				icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z'
+			},
+			anthropic: { 
+				description: 'Anthropic Claude — отличное качество и безопасность',
+				color: 'from-indigo-500/20 to-blue-500/20 border-indigo-500/30',
+				icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z'
+			},
 		};
-		return info[name] || { description: name };
+		return info[name] || { description: name, color: 'from-slate-500/20 to-slate-600/20 border-slate-500/30', icon: 'M13 10V3L4 14h7v7l9-11h-7z' };
 	}
 </script>
 
-<div class="mx-auto max-w-2xl">
+<div class="mx-auto max-w-3xl animate-fade-in">
+	<!-- Header -->
 	<div class="mb-8">
-		<h1 class="text-2xl font-bold text-white">Настройки AI</h1>
-		<p class="mt-2 text-sm text-slate-400">Управление AI-провайдерами</p>
+		<h1 class="text-3xl font-bold text-white">Настройки AI</h1>
+		<p class="mt-2 text-slate-400">Управление AI-провайдерами</p>
 	</div>
 
 	{#if loading}
-		<div class="space-y-3">
+		<div class="space-y-4">
 			{#each Array(3) as _}
-				<div class="h-20 animate-pulse rounded-xl bg-white/5"></div>
+				<div class="glass-card rounded-2xl p-6">
+					<div class="h-6 w-32 animate-pulse rounded-lg bg-white/5 mb-2"></div>
+					<div class="h-4 w-64 animate-pulse rounded-lg bg-white/5"></div>
+				</div>
 			{/each}
 		</div>
 	{:else}
 		<!-- Providers -->
 		<div class="mb-6">
-			<h2 class="mb-3 text-sm font-medium text-slate-300">Провайдеры</h2>
+			<h2 class="mb-4 text-sm font-semibold text-slate-300 uppercase tracking-wide">Провайдеры</h2>
 
 			{#if providers.length === 0}
-				<div class="rounded-xl border border-white/5 bg-white/[0.02] p-6 text-center">
-					<p class="text-slate-400">Нет доступных провайдеров</p>
+				<div class="glass-card rounded-2xl p-8 text-center">
+					<div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 border border-white/10">
+						<svg class="h-8 w-8 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+						</svg>
+					</div>
+					<p class="text-slate-400 font-medium">Нет доступных провайдеров</p>
 					<p class="mt-1 text-sm text-slate-500">Проверьте конфигурацию в .env</p>
 				</div>
 			{:else}
-				<div class="space-y-2">
-					{#each providers as provider}
+				<div class="space-y-3">
+					{#each providers as provider, i}
 						{@const info = getProviderInfo(provider)}
 						{@const isActive = provider === defaultProvider}
 
 						<button
 							onclick={() => switchProvider(provider)}
 							disabled={switching || isActive}
-							class="w-full rounded-xl border p-4 text-left transition {
+							class="glass-card group w-full rounded-2xl p-6 text-left transition-all hover:scale-[1.02] {
 								isActive
-									? 'border-white/20 bg-white/[0.05]'
-									: 'border-white/5 bg-white/[0.02] hover:border-white/20'
-							} {switching && !isActive ? 'cursor-wait opacity-50' : ''}"
+									? `bg-gradient-to-r ${info.color} shadow-xl`
+									: ''
+							} {switching && !isActive ? 'cursor-wait opacity-50' : ''} animate-fade-in"
+							style="animation-delay: {i * 100}ms"
 						>
 							<div class="flex items-center justify-between">
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center gap-2">
-										<span class="font-medium text-white">{provider}</span>
+								<div class="flex items-center gap-4 min-w-0 flex-1">
+									<div class="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 border border-white/10 group-hover:border-white/20 transition">
+										<svg class="h-6 w-6 text-slate-400 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={info.icon}/>
+										</svg>
 									</div>
-									<p class="mt-1 text-sm text-slate-400">{info.description}</p>
+									<div class="min-w-0 flex-1">
+										<div class="font-semibold text-white group-hover:text-blue-400 transition">
+											{provider}
+										</div>
+										<p class="mt-1 text-sm text-slate-400">{info.description}</p>
+									</div>
 								</div>
 								{#if isActive}
-									<div class="flex items-center gap-2 rounded-full bg-green-500/10 border border-green-500/20 px-2.5 py-1">
-										<svg class="h-3.5 w-3.5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+									<div class="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 px-4 py-2 shadow-lg">
+										<svg class="h-4 w-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
 											<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
 										</svg>
-										<span class="text-xs font-medium text-green-400">Активен</span>
+										<span class="text-sm font-semibold text-green-400">Активен</span>
 									</div>
+								{:else}
+									<svg class="h-5 w-5 text-slate-600 group-hover:text-white transition-all group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+									</svg>
 								{/if}
 							</div>
 						</button>
@@ -298,26 +339,41 @@
 			{/if}
 
 			{#if message}
-				<div class="mt-3 rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-sm text-green-400">
+				<div class="mt-4 flex items-center gap-2 rounded-xl bg-green-500/10 border border-green-500/20 px-4 py-3 text-sm text-green-400 animate-fade-in">
+					<svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+					</svg>
 					{message}
 				</div>
 			{/if}
 		</div>
 
 		<!-- Cache -->
-		<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+		<div class="glass-card rounded-2xl p-6">
 			<div class="flex items-center justify-between">
-				<div>
-					<h3 class="text-sm font-medium text-slate-300">Кэш</h3>
-					<p class="mt-1 text-xs text-slate-500">
-						{cacheStats?.questions_cached ?? 0} вопросов, {cacheStats?.hints_cached ?? 0} подсказок
-					</p>
+				<div class="flex items-center gap-4">
+					<div class="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
+						<svg class="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+						</svg>
+					</div>
+					<div>
+						<h3 class="font-semibold text-white">Кэш</h3>
+						<p class="mt-1 text-sm text-slate-400">
+							{cacheStats?.questions_cached ?? 0} вопросов, {cacheStats?.hints_cached ?? 0} подсказок
+						</p>
+					</div>
 				</div>
 				<button
 					onclick={clearCache}
-					class="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-300 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"
+					class="btn-secondary rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"
 				>
-					Очистить
+					<span class="flex items-center gap-2">
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+						</svg>
+						Очистить
+					</span>
 				</button>
 			</div>
 		</div>
