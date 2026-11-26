@@ -10,8 +10,8 @@
 	let joinError = $state('');
 	let joining = $state(false);
 
-	onMount(async () => {
-		await loadRooms();
+	onMount(() => {
+		void loadRooms();
 		const interval = setInterval(loadRooms, 5000);
 		return () => clearInterval(interval);
 	});

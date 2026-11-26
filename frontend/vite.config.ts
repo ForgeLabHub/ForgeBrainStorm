@@ -5,6 +5,7 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		port: 5173,
+		allowedHosts: [".e2b.app"],
 		proxy: {
 			'/api': {
 				target: 'http://localhost:5000',

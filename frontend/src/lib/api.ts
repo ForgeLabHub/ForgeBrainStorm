@@ -30,7 +30,7 @@ export interface ApiResponse<T> {
 	error?: string;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> {
+async function request<T, Response = ApiResponse<T>>(path: string, options?: RequestInit): Promise<Response> {
 	const response = await fetch(`${API_BASE}${path}`, {
 		credentials: 'include',
 		headers: {
@@ -90,7 +90,7 @@ export const api = {
 
 	// AI Providers
 	getAiProviders: () =>
-		request<{ providers: string[]; default: string }>('/api/ai/providers'),
+		request<never, { ok: boolean; providers: string[]; default: string }>('/api/ai/providers'),
 
 	switchAiProvider: (provider: string) =>
 		request<void>('/api/ai/providers/switch', {
@@ -99,7 +99,7 @@ export const api = {
 		}),
 
 	getAiCacheStats: () =>
-		request<{ questions_cached: number; hints_cached: number }>('/api/ai/cache/stats'),
+		request<never, { ok: boolean; cache: { questions_cached: number; hints_cached: number } }>('/api/ai/cache/stats'),
 
 	clearAiCache: () =>
 		request<void>('/api/ai/cache/clear', { method: 'POST' }),
