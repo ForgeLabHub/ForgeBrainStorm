@@ -8,8 +8,8 @@
 	let loading = $state(false);
 	let error = $state('');
 
-	$: passwordMatch = password === confirmPassword;
-	$: passwordStrength = checkPasswordStrength(password);
+	const passwordMatch = $derived(password === confirmPassword);
+	const passwordStrength = $derived(checkPasswordStrength(password));
 
 	function checkPasswordStrength(pwd: string): { score: number; label: string; color: string } {
 		let score = 0;

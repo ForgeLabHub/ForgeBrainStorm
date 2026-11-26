@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	let visible = $state(false);
 
-	$: if (typeof window !== 'undefined') {
-		setTimeout(() => (visible = true), 100);
-	}
+	onMount(() => {
+		const timer = setTimeout(() => (visible = true), 100);
+		return () => clearTimeout(timer);
+	});
 </script>
 
 <div class="flex min-h-[80vh] flex-col items-center justify-center px-4 text-center">
