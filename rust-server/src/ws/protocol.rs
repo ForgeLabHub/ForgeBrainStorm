@@ -58,7 +58,7 @@ pub struct RoomSettingsInput {
 }
 
 /// Server → Client messages.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Room created successfully.
@@ -142,7 +142,7 @@ pub enum ServerMessage {
 }
 
 /// Player information.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlayerInfo {
     pub user_id: i64,
     pub username: String,
@@ -154,7 +154,7 @@ pub struct PlayerInfo {
 }
 
 /// Question data sent to clients.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct QuestionData {
     pub question: String,
     pub options: Vec<String>,
@@ -162,7 +162,7 @@ pub struct QuestionData {
 }
 
 /// Player score in leaderboard.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlayerScore {
     pub user_id: i64,
     pub username: String,

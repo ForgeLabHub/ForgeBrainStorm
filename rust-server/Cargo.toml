@@ -68,6 +68,7 @@ bytes = "1"
 parking_lot = "0.12"
 async-trait = "0.1"
 dotenvy = "0.15"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
