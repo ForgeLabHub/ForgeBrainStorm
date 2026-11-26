@@ -7,7 +7,24 @@ All notable changes to BrainStorm are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- CI jobs for the newer stacks: `rust` (`cargo check --all-targets`, `cargo test`) and
+  `frontend` (`npm ci`, `svelte-check`, `npm run build`). Nothing compiled them before.
+- README section describing the Flask monolith, the Axum server and the SvelteKit client
+  side by side, in both languages.
 - Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`.
+
+### Fixed
+- `./forge.sh verify` printed "локальная матрица пройдена" even when lint failed; it now
+  stops at the first failing check.
+- `scripts/docs-check.sh` walked `node_modules/`, so a local run reported dozens of broken
+  links from third-party packages while CI (clean checkout) stayed green.
+- Secret scan gate: two false positives (the RFC 6455 sample WebSocket nonce and a test
+  fixture that looked like a key) turned the blocking gitleaks step red on every branch.
+  Build output is now allowlisted so a local `gitleaks dir .` is usable too.
+- Weak example credentials (`ADMIN_SECRET_KEY=1777`, `CHEAT_TESTER_CODE=19112009`) in
+  `.env.example` and `BUILD.md` replaced with placeholders; `1777` failed production
+  validation anyway.
+- README badges pointed at the upstream mirror and at a `tests.json` that does not exist.
 - GitHub issue forms (bug report, feature request) and a pull request template.
 - `.editorconfig` and `.gitattributes` for consistent cross-editor / cross-OS behaviour.
 

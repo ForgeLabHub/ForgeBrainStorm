@@ -723,7 +723,15 @@ cmd_lint() { say "Линт"; run_make lint; }
 
 cmd_build() { say "Образ"; run_make build-image; }
 
-cmd_verify() { run_make lint test docs-check; ok "локальная матрица пройдена"; }
+cmd_verify() {
+  # Без остановки на первой ошибке `verify` печатал «матрица пройдена» даже
+  # когда ruff падал: проверка, которая врёт, хуже отсутствия проверки.
+  local target
+  for target in lint test docs-check; do
+    run_make "$target" || die "проверка «$target» не прошла — вывод выше"
+  done
+  ok "локальная матрица пройдена"
+}
 
 cmd_db() {
   case "${1:-}" in

@@ -43,11 +43,16 @@ while IFS= read -r line; do
   case "$target" in http*|mailto:*|\#*|/*) continue ;; esac
   base="$(dirname "$file")"
   if [ ! -e "$base/$target" ] && [ ! -e "$target" ]; then bad "$file -> $target (битая ссылка)"; broken=$((broken+1)); fi
-done < <(grep -rnoE '\[[^]]*\]\([^)]+\)' --include='*.md' . 2>/dev/null)
+done < <(grep -rnoE '\[[^]]*\]\([^)]+\)' --include='*.md' \
+  --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=venv \
+  --exclude-dir=target --exclude-dir=.svelte-kit --exclude-dir=build \
+  --exclude-dir=dist --exclude-dir=.git . 2>/dev/null)
 [ "$broken" -eq 0 ] && ok "битых относительных ссылок нет"
 
 printf '\nОтладочные артефакты\n'
-stray="$(find . -type f \( -name '*.bak*' -o -name '*.fixbak' -o -name '*.orig' \) -not -path './.git/*' | head -5)"
+stray="$(find . -type f \( -name '*.bak*' -o -name '*.fixbak' -o -name '*.orig' \) \
+  -not -path './.git/*' -not -path './node_modules/*' -not -path '*/node_modules/*' \
+  -not -path './rust-server/target/*' -not -path './.venv/*' | head -5)"
 [ -z "$stray" ] && ok "временных копий в репозитории нет" || { bad "в репозитории лежат копии: $stray"; }
 
 printf '\n'
