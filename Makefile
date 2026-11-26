@@ -13,7 +13,7 @@ PORT         ?= 5000
 BASE_URL     ?= http://localhost:$(PORT)
 
 .PHONY: help doctor install install-dev run test lint coverage build-image \
-        compose-up compose-down compose-logs smoke-test docs-check docs-pdf lock verify clean
+        compose-up compose-down compose-logs smoke-test docs-check docs-pdf lock verify agent-verify clean
 
 help: ## Список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -70,6 +70,13 @@ docs-check: ## Проверить документацию, переводы и 
 
 verify: lint test docs-check ## Локальная матрица
 	@echo "verify: ok (образ и compose проверяются в CI)"
+
+agent-verify: ## Проверить Rust: форматирование, сборка, Clippy и тесты
+	cd rust-server && cargo fmt --all -- --check
+	cd rust-server && cargo check --all-targets
+	cd rust-server && cargo clippy --all-targets -- -D warnings
+	cd rust-server && cargo test --workspace
+	@echo "agent-verify: ok"
 
 clean: ## Удалить артефакты
 	rm -rf .pytest_cache .coverage htmlcov
