@@ -43,55 +43,57 @@
 	}
 
 	const difficulties = [
-		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих' },
-		{ value: 'medium', label: 'Средняя', desc: 'Для всех' },
-		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов' },
+		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих', color: 'from-green-500/20 to-green-600/20 border-green-500/30 text-green-400' },
+		{ value: 'medium', label: 'Средняя', desc: 'Для всех', color: 'from-yellow-500/20 to-yellow-600/20 border-yellow-500/30 text-yellow-400' },
+		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов', color: 'from-red-500/20 to-red-600/20 border-red-500/30 text-red-400' },
 	];
 
 	const modes = [
-		{ value: 'classic', label: 'Классика', desc: 'Все отвечают одновременно' },
-		{ value: 'ffa', label: 'Каждый за себя', desc: 'Кто быстрее ответит' },
-		{ value: 'team', label: 'Команды', desc: 'Игра командами' },
-		{ value: 'lives', label: 'На выживание', desc: '3 жизни' },
+		{ value: 'classic', label: 'Классика', desc: 'Все отвечают одновременно', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+		{ value: 'ffa', label: 'Каждый за себя', desc: 'Кто быстрее ответит', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+		{ value: 'team', label: 'Команды', desc: 'Игра командами', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+		{ value: 'lives', label: 'На выживание', desc: '3 жизни', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
 	];
 </script>
 
-<div class="mx-auto max-w-2xl">
+<div class="mx-auto max-w-3xl animate-fade-in">
+	<!-- Header -->
 	<div class="mb-8">
-		<h1 class="text-2xl font-bold text-white">Создать комнату</h1>
-		<p class="mt-2 text-sm text-slate-400">Настройте параметры викторины</p>
+		<h1 class="text-3xl font-bold text-white">Создать комнату</h1>
+		<p class="mt-2 text-slate-400">Настройте параметры викторины</p>
 	</div>
 
 	<form onsubmit={createRoom} class="space-y-6">
 		<!-- Topic -->
-		<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+		<div class="glass-card rounded-2xl p-6">
 			<label class="block">
-				<span class="mb-2 block text-sm font-medium text-slate-300">Тема викторины</span>
+				<span class="mb-3 block text-sm font-semibold text-slate-300 uppercase tracking-wide">Тема викторины</span>
 				<input
 					type="text"
 					bind:value={topic}
 					placeholder="Например: История, Космос, Литература"
 					maxlength="60"
-					class="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					class="input-modern w-full rounded-xl px-4 py-3 text-white placeholder-slate-600"
 				/>
-				<span class="mt-1 block text-xs text-slate-500">{topic.length}/60</span>
+				<span class="mt-2 block text-xs text-slate-500 text-right">{topic.length}/60</span>
 			</label>
 		</div>
 
 		<!-- Difficulty & Mode -->
 		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-			<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-				<h3 class="mb-3 text-sm font-medium text-slate-300">Сложность</h3>
+			<!-- Difficulty -->
+			<div class="glass-card rounded-2xl p-6">
+				<h3 class="mb-4 text-sm font-semibold text-slate-300 uppercase tracking-wide">Сложность</h3>
 				<div class="space-y-2">
 					{#each difficulties as d}
-						<label class="flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition {
+						<label class="flex cursor-pointer items-center gap-3 rounded-xl p-4 transition-all hover:scale-[1.02] {
 							difficulty === d.value
-								? 'border-white/20 bg-white/[0.05]'
-								: 'border-white/5 bg-white/[0.02] hover:border-white/20'
+								? `bg-gradient-to-r border ${d.color} shadow-lg`
+								: 'bg-white/[0.02] border border-white/5 hover:border-white/20'
 						}">
 							<input type="radio" bind:group={difficulty} value={d.value} class="sr-only" />
 							<div class="min-w-0 flex-1">
-								<div class="font-medium text-white">{d.label}</div>
+								<div class="font-semibold text-white">{d.label}</div>
 								<div class="text-xs text-slate-400">{d.desc}</div>
 							</div>
 							{#if difficulty === d.value}
@@ -104,18 +106,24 @@
 				</div>
 			</div>
 
-			<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-				<h3 class="mb-3 text-sm font-medium text-slate-300">Режим игры</h3>
+			<!-- Mode -->
+			<div class="glass-card rounded-2xl p-6">
+				<h3 class="mb-4 text-sm font-semibold text-slate-300 uppercase tracking-wide">Режим игры</h3>
 				<div class="space-y-2">
 					{#each modes as m}
-						<label class="flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition {
+						<label class="flex cursor-pointer items-center gap-3 rounded-xl p-4 transition-all hover:scale-[1.02] {
 							mode === m.value
-								? 'border-white/20 bg-white/[0.05]'
-								: 'border-white/5 bg-white/[0.02] hover:border-white/20'
+								? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 shadow-lg'
+								: 'bg-white/[0.02] border border-white/5 hover:border-white/20'
 						}">
 							<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
+							<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 border border-white/10">
+								<svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={m.icon}/>
+								</svg>
+							</div>
 							<div class="min-w-0 flex-1">
-								<div class="font-medium text-white">{m.label}</div>
+								<div class="font-semibold text-white">{m.label}</div>
 								<div class="text-xs text-slate-400">{m.desc}</div>
 							</div>
 							{#if mode === m.value}
@@ -130,49 +138,55 @@
 		</div>
 
 		<!-- Parameters -->
-		<div class="grid grid-cols-3 gap-3">
-			<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-				<label class="block">
-					<span class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Вопросов</span>
-					<input
-						type="number"
-						bind:value={questionCount}
-						min="5"
-						max="30"
-						class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-lg font-bold text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</label>
-			</div>
+		<div class="glass-card rounded-2xl p-6">
+			<h3 class="mb-4 text-sm font-semibold text-slate-300 uppercase tracking-wide">Параметры</h3>
+			<div class="grid grid-cols-3 gap-4">
+				<div>
+					<label class="block">
+						<span class="mb-2 block text-xs font-medium text-slate-400">Вопросов</span>
+						<input
+							type="number"
+							bind:value={questionCount}
+							min="5"
+							max="30"
+							class="input-modern w-full rounded-xl px-3 py-2.5 text-lg font-bold text-white text-center"
+						/>
+					</label>
+				</div>
 
-			<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-				<label class="block">
-					<span class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Вариантов</span>
-					<input
-						type="number"
-						bind:value={numOptions}
-						min="2"
-						max="6"
-						class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-lg font-bold text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</label>
-			</div>
+				<div>
+					<label class="block">
+						<span class="mb-2 block text-xs font-medium text-slate-400">Вариантов</span>
+						<input
+							type="number"
+							bind:value={numOptions}
+							min="2"
+							max="6"
+							class="input-modern w-full rounded-xl px-3 py-2.5 text-lg font-bold text-white text-center"
+						/>
+					</label>
+				</div>
 
-			<div class="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-				<label class="block">
-					<span class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Время (сек)</span>
-					<input
-						type="number"
-						bind:value={timerSeconds}
-						min="10"
-						max="120"
-						class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-lg font-bold text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</label>
+				<div>
+					<label class="block">
+						<span class="mb-2 block text-xs font-medium text-slate-400">Время (сек)</span>
+						<input
+							type="number"
+							bind:value={timerSeconds}
+							min="10"
+							max="120"
+							class="input-modern w-full rounded-xl px-3 py-2.5 text-lg font-bold text-white text-center"
+						/>
+					</label>
+				</div>
 			</div>
 		</div>
 
 		{#if error}
-			<div class="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+			<div class="flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">
+				<svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+				</svg>
 				{error}
 			</div>
 		{/if}
@@ -180,7 +194,7 @@
 		<button
 			type="submit"
 			disabled={creating || !topic.trim()}
-			class="w-full rounded-lg bg-blue-500 py-3 font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+			class="btn-primary w-full rounded-xl py-4 font-semibold text-white disabled:opacity-50"
 		>
 			{#if creating}
 				<span class="flex items-center justify-center gap-2">
@@ -191,7 +205,12 @@
 					Создание...
 				</span>
 			{:else}
-				Создать комнату
+				<span class="flex items-center justify-center gap-2">
+					Создать комнату
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+					</svg>
+				</span>
 			{/if}
 		</button>
 	</form>
