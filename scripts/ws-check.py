@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end check of the gameplay WebSocket protocol.
+"""End-to-end check of the gameplay WebSocket protocol with two players.
 
 Speaks the same protocol as the browser client against a running server, so it
 catches breakage that unit tests cannot see: a hand that is never dealt, an
@@ -9,10 +9,9 @@ event addressed to the wrong player, a wrong-answer path that never scores.
     python3 scripts/ws-check.py [--base http://127.0.0.1:5000]
 
 With AI providers configured the questions are generated, so their answers are
-unknown to this script: the score assertions are then skipped and only the
-protocol plumbing is checked. With AI disabled the questions come from the
-offline bank still, but the wording there changes over time, so the script
-matches the answer by option *text* and skips when the text is unknown.
+unknown to this script: score assertions are then skipped and only the protocol
+plumbing is checked. With AI disabled the questions come from the offline bank,
+whose wording it knows, so exact scores are asserted.
 """
 
 import argparse
@@ -32,24 +31,43 @@ KNOWN_ANSWERS = {
     "Столица России?": "Москва",
 }
 
-JAR = http.cookiejar.CookieJar()
-OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(JAR))
-COOKIE: list[str] = []
 BASE = "http://127.0.0.1:5000"
 FAILURES: list[str] = []
 
 
 class Client:
-    def __init__(self, cookie, ws_url):
+    def __init__(self, name, base):
+        self.name = name
         self.ws = websocket.create_connection(
-            ws_url, header=[f"Cookie: {cookie}"], timeout=120
+            base.replace("http://", "ws://").replace("https://", "wss://") + "/ws",
+            header=[f"Cookie: {self.session()}"],
+            timeout=120,
         )
         self.msgs = []
+
+    def session(self):
+        jar = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        creds = {"username": self.name, "password": "supersecret123"}
+        body = json.dumps(creds).encode()
+        for path in ("/api/auth/register", "/api/auth/login"):
+            request = urllib.request.Request(
+                BASE + path, data=body, headers={"content-type": "application/json"}
+            )
+            try:
+                opener.open(request, timeout=30).close()
+                break
+            except urllib.error.HTTPError:
+                if path == "/api/auth/login":
+                    raise
+        # The session cookie is `Secure`, and urllib will not resend it over
+        # plain http — which is exactly what this local check uses.
+        return "; ".join(f"{c.name}={c.value}" for c in jar)
 
     def send(self, kind, data):
         self.ws.send(json.dumps({"type": kind, "data": data}))
 
-    def wait(self, kind, timeout=120):
+    def wait(self, kind, timeout=30):
         for msg in list(self.msgs):
             if msg["type"] == kind:
                 self.msgs.remove(msg)
@@ -64,25 +82,36 @@ class Client:
             if msg["type"] == kind:
                 return msg
             self.msgs.append(msg)
-        raise AssertionError(f"no {kind!r}; buffered={[m['type'] for m in self.msgs]}")
+        raise AssertionError(
+            f"{self.name}: no {kind!r}; buffered={[m['type'] for m in self.msgs]}"
+        )
+
+    def silence(self, kind, seconds=3):
+        """Drain the socket for a while; True when `kind` never shows up."""
+        end = time.time() + seconds
+        while time.time() < end:
+            self.ws.settimeout(max(0.2, end - time.time()))
+            try:
+                msg = json.loads(self.ws.recv())
+            except websocket.WebSocketTimeoutException:
+                break
+            if msg["type"] == kind:
+                return False
+            self.msgs.append(msg)
+        return True
 
     def drain(self):
         self.msgs.clear()
 
 
-def api(path, payload=None):
-    body = json.dumps(payload).encode() if payload is not None else None
-    headers = {"content-type": "application/json"}
-    if COOKIE:
-        headers["cookie"] = COOKIE[0]
-    request = urllib.request.Request(BASE + path, data=body, headers=headers)
-    with OPENER.open(request, timeout=30) as response:
-        data = json.load(response)
-    # The session cookie is `Secure`, and urllib will not resend it over plain
-    # http — which is exactly what this local check uses.
-    COOKIE.clear()
-    COOKIE.append("; ".join(f"{c.name}={c.value}" for c in JAR))
-    return data
+def api(path, payload, cookie):
+    request = urllib.request.Request(
+        BASE + path,
+        data=json.dumps(payload).encode(),
+        headers={"content-type": "application/json", "cookie": cookie},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
 
 
 def check(label, condition, detail=""):
@@ -91,8 +120,16 @@ def check(label, condition, detail=""):
         FAILURES.append(label)
 
 
+def scores_of(client, timeout=30):
+    try:
+        players = client.wait("players_updated", timeout=timeout)["data"]["players"]
+    except AssertionError:
+        return None
+    return {p["name"]: p["score"] for p in players}
+
+
 def score_reaches(client, expected, timeout=30):
-    """Wait for the score to reach `expected`.
+    """Wait for a player's score to reach `expected`.
 
     A snapshot from the start of the round is always in flight, so the first
     `players_updated` after an answer can still carry the old score.
@@ -100,33 +137,30 @@ def score_reaches(client, expected, timeout=30):
     end = time.time() + timeout
     seen = []
     while time.time() < end:
-        try:
-            players = client.wait("players_updated", timeout=max(1, end - time.time()))["data"]["players"]
-        except AssertionError:
+        scores = scores_of(client, timeout=max(1, end - time.time()))
+        if scores is None:
             break
-        seen.append(players[0]["score"])
-        if players[0]["score"] == expected:
+        seen.append(scores.get(client.name))
+        if scores.get(client.name) == expected:
             return True, seen
     return False, seen
+
+
+def answer_index(question):
+    text = KNOWN_ANSWERS.get(question["question"])
+    if text and text in question["options"]:
+        return question["options"].index(text)
+    return None
 
 
 def main():
     global BASE
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=BASE)
-    parser.add_argument("--user", default="wscheck")
-    parser.add_argument("--password", default="supersecret123")
     args = parser.parse_args()
-
     BASE = args.base.rstrip("/")
-    ws_url = BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
 
-    creds = {"username": args.user, "password": args.password}
-    try:
-        api("/api/auth/register", creds)
-    except urllib.error.HTTPError:
-        api("/api/auth/login", creds)
-
+    host = Client("wscheck", BASE)
     room = api(
         "/api/rooms",
         {
@@ -137,81 +171,116 @@ def main():
             "difficulty": "easy",
             "mode": "classic",
         },
+        cookie=host.session(),
     )
     code = room["room"]["code"]
     print(f"room {code}")
 
-    client = Client(COOKIE[0], ws_url)
-    client.send("join_room", {"code": code})
-    client.wait("room_joined")
-    hand = client.wait("power_ups")["data"]["items"]
-    check("hand is empty before the game", hand == [], hand)
+    host.send("join_room", {"code": code})
+    host.wait("room_joined")
+    check("hand is empty before the game", host.wait("power_ups")["data"]["items"] == [])
 
-    client.send("start_game", {})
-    client.wait("game_preparing")
-    hand = client.wait("power_ups")["data"]["items"]
+    guest = Client("wscheck2", BASE)
+    guest.send("join_room", {"code": code})
+    check(
+        "guest joins as a non-host",
+        guest.wait("room_joined")["data"]["is_host"] is False,
+    )
+    check(
+        "guest gets no hand before the game",
+        guest.wait("power_ups")["data"]["items"] == [],
+    )
+    players, deadline = [], time.time() + 15
+    while time.time() < deadline:
+        players = host.wait("players_updated")["data"]["players"]
+        if len(players) == 2:
+            break
+    check(
+        "host sees both players",
+        sorted(p["name"] for p in players) == ["wscheck", "wscheck2"],
+        players,
+    )
+
+    # ── Only the host may start ──
+    guest.send("start_game", {})
+    error = guest.wait("error")["data"]["message"]
+    check("guest cannot start the game", "хост" in error.lower(), error)
+
+    host.send("start_game", {})
+    host.wait("game_preparing")
+    hand = host.wait("power_ups")["data"]["items"]
     check(
         "a full hand is dealt at start",
         sorted(hand) == ["double_points", "freeze_time", "remove_two_options"],
         hand,
     )
+    check(
+        "guest gets its own hand",
+        sorted(guest.wait("power_ups")["data"]["items"])
+        == ["double_points", "freeze_time", "remove_two_options"],
+    )
 
-    # ── 1. DoublePoints ──
-    first = client.wait("question_emitted", timeout=180)["data"]
+    # ── 1. DoublePoints, with the hand kept per player ──
+    first = host.wait("question_emitted", timeout=60)["data"]
     question, source = first["question"], first.get("source", "")
-    client.drain()
-    client.send("use_power_up", {"power_up": "double_points"})
-    used = client.wait("power_up_used")["data"]
-    check("double_points is announced", used["power_up"] == "double_points", used)
-    hand = client.wait("power_ups")["data"]["items"]
-    check("double_points left the hand", "double_points" not in hand, hand)
+    guest.wait("question_emitted")
+    host.drain()
+    host.send("use_power_up", {"power_up": "double_points"})
+    used = host.wait("power_up_used")["data"]
+    check(
+        "double_points is announced",
+        used["player"] == "wscheck" and used["power_up"] == "double_points",
+        used,
+    )
+    check("double_points left the hand", "double_points" not in host.wait("power_ups")["data"]["items"])
+    # Hands are private: the guest sees the announcement, never the host's deck.
+    check("the guest sees the announcement", guest.wait("power_up_used")["data"]["player"] == "wscheck")
+    check("the host's hand never reaches the guest", guest.silence("power_ups", seconds=2))
 
-    answer_text = KNOWN_ANSWERS.get(question["question"])
-    if answer_text and answer_text in question["options"]:
-        index = question["options"].index(answer_text)
-        client.send("submit_answer", {"answer_index": index})
-        result = client.wait("question_result")["data"]
+    index = answer_index(question)
+    if index is None:
+        print(f"  [skip] score assertions: answer unknown (source={source!r})")
+    else:
+        host.send("submit_answer", {"answer_index": index})
+        result = host.wait("question_result")["data"]
         reported = result.get("correct_index", result.get("correctIndex"))
         check("answer accepted as correct", reported == index, f"sent={index} got={reported}")
-        ok, seen = score_reaches(client, 200)
+        ok, seen = score_reaches(host, 200)
         check("correct answer doubled to 200", ok, f"seen={seen}")
-    else:
-        print(f"  [skip] score assertions: answer unknown (source={source!r})")
-    client.drain()
+    host.drain()
 
-    # ── 2. RemoveTwoOptions ──
-    second = client.wait("question_emitted", timeout=60)["data"]
-    question = second["question"]
-    client.drain()
-    client.send("use_power_up", {"power_up": "remove_two_options"})
-    hidden = client.wait("options_hidden")["data"]["indexes"]
+    # ── 2. RemoveTwoOptions is visible only to the player who paid ──
+    second = host.wait("question_emitted", timeout=60)["data"]["question"]
+    guest.wait("question_emitted")
+    host.drain()
+    host.send("use_power_up", {"power_up": "remove_two_options"})
+    hidden = host.wait("options_hidden")["data"]["indexes"]
     check("exactly two options hidden", len(hidden) == 2 and len(set(hidden)) == 2, hidden)
     check(
         "hidden indexes are inside the option list",
-        all(0 <= i < len(question["options"]) for i in hidden),
+        all(0 <= i < len(second["options"]) for i in hidden),
         hidden,
     )
-    answer_text = KNOWN_ANSWERS.get(question["question"])
-    if answer_text and answer_text in question["options"]:
-        index = question["options"].index(answer_text)
+    check("the guest never sees the hidden options", guest.silence("options_hidden", seconds=3))
+    index = answer_index(second)
+    if index is not None:
         check("the correct option is not hidden", index not in hidden, (index, hidden))
-        client.send("submit_answer", {"answer_index": index})
-        ok, seen = score_reaches(client, 300)
+        host.send("submit_answer", {"answer_index": index})
+        ok, seen = score_reaches(host, 300)
         check("a normal correct answer adds 100", ok, f"seen={seen}")
-    client.drain()
+    host.drain()
 
-    # ── 3. FreezeTime ──
-    client.wait("question_emitted", timeout=60)
-    client.drain()
-    client.send("use_power_up", {"power_up": "freeze_time"})
-    used = client.wait("power_up_used")["data"]
+    # ── 3. FreezeTime, and the hand empties ──
+    host.wait("question_emitted", timeout=60)
+    host.drain()
+    host.send("use_power_up", {"power_up": "freeze_time"})
+    used = host.wait("power_up_used")["data"]
     check("freeze adds 10 seconds", used["seconds"] == 10, used)
-    hand = client.wait("power_ups")["data"]["items"]
-    check("hand is empty after three uses", hand == [], hand)
+    check("hand is empty after three uses", host.wait("power_ups")["data"]["items"] == [])
 
     # ── 4. Spending an empty hand ──
-    client.send("use_power_up", {"power_up": "freeze_time"})
-    error = client.wait("error")["data"]["message"]
+    host.send("use_power_up", {"power_up": "freeze_time"})
+    error = host.wait("error")["data"]["message"]
     check("spending an empty hand is refused", "нет в запасе" in error, error)
 
     if FAILURES:
