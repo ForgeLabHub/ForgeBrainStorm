@@ -8,8 +8,13 @@
 	let loading = $state(false);
 	let error = $state('');
 
+<<<<<<< HEAD
 	const passwordMatch = $derived(password === confirmPassword);
 	const passwordStrength = $derived(checkPasswordStrength(password));
+=======
+	$: passwordMatch = password === confirmPassword;
+	$: passwordStrength = checkPasswordStrength(password);
+>>>>>>> 4808142 (Merge pull request #15 from ForgeLabHub/arena/ca3aa14f-forgebrainstorm)
 
 	function checkPasswordStrength(pwd: string): { score: number; label: string; color: string } {
 		let score = 0;

@@ -3,7 +3,11 @@
 	import { api, ws } from '$lib/api';
 	import { onMount, onDestroy } from 'svelte';
 
+<<<<<<< HEAD
 	const roomCode = $derived(($page.params.code ?? '').toUpperCase());
+=======
+	$: roomCode = $page.params.code.toUpperCase();
+>>>>>>> 4808142 (Merge pull request #15 from ForgeLabHub/arena/ca3aa14f-forgebrainstorm)
 
 	type Player = {
 		name: string;
