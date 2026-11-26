@@ -165,9 +165,9 @@ def main():
         "/api/rooms",
         {
             "topic": "Общие знания",
-            "questions": 5,
+            "question_count": 5,
             "options": 4,
-            "time": 20,
+            "timer_seconds": 20,
             "difficulty": "easy",
             "mode": "classic",
         },

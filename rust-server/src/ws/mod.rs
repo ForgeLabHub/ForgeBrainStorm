@@ -250,6 +250,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     }
                 };
 
+                let questions = fit_count(questions, count);
+
                 let (first_question, players, token, hands) = {
                     let mut room = room.write();
                     room.set_questions(questions, &source);
@@ -648,6 +650,16 @@ fn spawn_timer(room: Arc<RwLock<Room>>, token: u64, pool: Option<PgPool>) {
     });
 }
 
+/// A provider answers with as many questions as it likes; the room plays the
+/// number the host asked for. Trimming here keeps the round count and the
+/// "question 3 of 5" label honest even when a provider ignores `count`.
+fn fit_count(mut questions: Vec<Value>, count: usize) -> Vec<Value> {
+    if questions.len() > count {
+        questions.truncate(count);
+    }
+    questions
+}
+
 /// Write finished-game stats to Postgres: per-user totals, leaderboard row, coins
 /// and the game history rows that back the profile page.
 async fn persist_results(pool: &PgPool, results: Vec<(i64, String, i64)>, info: history::GameInfo) {
@@ -688,5 +700,34 @@ async fn persist_results(pool: &PgPool, results: Vec<(i64, String, i64)>, info: 
 
     if let Err(error) = history::save_game(pool, &info, &outcomes).await {
         warn!(room = %info.room_code, %error, "failed to save game history");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fit_count;
+    use serde_json::{json, Value};
+
+    fn questions(count: usize) -> Vec<Value> {
+        (0..count)
+            .map(|i| json!({"question": format!("q{i}"), "options": ["a", "b"]}))
+            .collect()
+    }
+
+    #[test]
+    fn provider_overdelivery_is_trimmed_to_the_requested_count() {
+        assert_eq!(fit_count(questions(10), 5).len(), 5);
+    }
+
+    #[test]
+    fn a_shorter_answer_is_left_alone() {
+        assert_eq!(fit_count(questions(3), 5).len(), 3);
+    }
+
+    #[test]
+    fn trimming_keeps_the_first_questions() {
+        let trimmed = fit_count(questions(4), 2);
+        let first = trimmed[0]["question"].as_str().unwrap();
+        assert_eq!(first, "q0");
     }
 }
