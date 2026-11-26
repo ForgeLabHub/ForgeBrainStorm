@@ -11,6 +11,13 @@ All notable changes to BrainStorm are documented here. The format is based on
   `frontend` (`npm ci`, `svelte-check`, `npm run build`). Nothing compiled them before.
 - README section describing the Flask monolith, the Axum server and the SvelteKit client
   side by side, in both languages.
+- Power-ups (`double_points`, `freeze_time`, `remove_two_options`): every player gets a
+  three-card hand at game start, spends it over the WebSocket protocol and sees private
+  events (their own hand, the two crossed-out options) that other players cannot read.
+  Scoring moved to `Player::award`, so the "correct answer = 100, doubled = 200" rule is
+  unit-tested instead of living in the socket handler.
+- `make ws-check` / `scripts/ws-check.py`: drives the real WebSocket protocol against a
+  running instance (hand dealt, double points scored, options hidden, empty hand refused).
 - `AGENTS.md`: rules for AI agents (atomic steps, `make agent-verify` before claiming
   success, no `unwrap()`, two-strike stop rule, project map for all three stacks).
 - `make agent-verify` / `rust-verify` / `frontend-check`: fmt, `cargo check`, clippy with

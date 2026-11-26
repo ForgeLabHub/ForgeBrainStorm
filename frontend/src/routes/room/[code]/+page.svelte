@@ -14,6 +14,14 @@
 		username?: string;
 	};
 
+	type PowerUpKind = 'double_points' | 'freeze_time' | 'remove_two_options';
+
+	const POWER_UP_META: Record<PowerUpKind, { icon: string; label: string }> = {
+		double_points: { icon: '⚡', label: '×2 очки' },
+		freeze_time: { icon: '⏳', label: '+10 сек' },
+		remove_two_options: { icon: '✂️', label: '−2 варианта' },
+	};
+
 	type Question = {
 		question: string;
 		options: string[];
@@ -34,6 +42,8 @@
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 	let lastResult: { correct: boolean; correctIndex: number; explanation: string; player_answers?: any[] } | null = $state(null);
 	let finalLeaderboard: any[] | null = $state(null);
+	let powerUps: PowerUpKind[] = $state([]);
+	let hiddenOptions: number[] = $state([]);
 
 	onMount(() => {
 		ws.connect();
@@ -79,6 +89,18 @@
 		ws.on('player_left', (data: any) => {
 			players = players.filter(p => p.name !== (data?.name ?? data?.username));
 		});
+		ws.on('power_ups', (data: any) => {
+			powerUps = Array.isArray(data?.items) ? data.items : [];
+		});
+		ws.on('options_hidden', (data: any) => {
+			hiddenOptions = Array.isArray(data?.indexes) ? data.indexes : [];
+		});
+		ws.on('power_up_used', (data: any) => {
+			// The server owns the clock; mirror its extension locally.
+			if (data?.power_up === 'freeze_time' && typeof data.seconds === 'number') {
+				timeLeft += data.seconds;
+			}
+		});
 		ws.on('game_preparing', () => {
 			gamePhase = 'preparing';
 			lastResult = null;
@@ -90,6 +112,7 @@
 			questionSource = typeof data.source === 'string' ? data.source : '';
 			timeLeft = data.time_limit || 30;
 			selectedAnswer = null;
+			hiddenOptions = [];
 			gamePhase = 'playing';
 			startTimer();
 		});
@@ -153,6 +176,11 @@
 		if (selectedAnswer !== null || gamePhase !== 'playing') return;
 		selectedAnswer = index;
 		ws.send('submit_answer', { answer_index: index });
+	}
+
+	function usePowerUp(kind: PowerUpKind) {
+		if (gamePhase !== 'playing' || !powerUps.includes(kind)) return;
+		ws.send('use_power_up', { power_up: kind });
 	}
 
 	function startGame() {
@@ -269,6 +297,21 @@
 						</div>
 					</div>
 
+					<!-- Power-ups: the hand is private to this player -->
+					{#if powerUps.length > 0}
+						<div class="flex flex-wrap gap-2">
+							{#each powerUps as kind (kind)}
+								<button
+									onclick={() => usePowerUp(kind)}
+									class="flex items-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-300 transition-all hover:border-purple-400/50 hover:bg-purple-500/20"
+								>
+									<span>{POWER_UP_META[kind].icon}</span>
+									<span>{POWER_UP_META[kind].label}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
+
 					<!-- Question -->
 					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm">
 						<div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5"></div>
@@ -291,11 +334,14 @@
 					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						{#each question.options as option, i}
 							{@const isSelected = selectedAnswer === i}
+							{@const isHidden = hiddenOptions.includes(i)}
 							<button
 								onclick={() => submitAnswer(i)}
-								disabled={selectedAnswer !== null}
+								disabled={selectedAnswer !== null || isHidden}
 								class="group relative overflow-hidden rounded-xl border p-5 text-left transition-all {
-									isSelected
+									isHidden
+										? 'border-white/5 bg-white/[0.01] opacity-30 line-through'
+										: isSelected
 										? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10'
 										: selectedAnswer !== null
 											? 'border-white/5 bg-white/[0.02] opacity-50'

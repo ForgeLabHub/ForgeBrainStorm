@@ -4,6 +4,8 @@
 //!   * `join_room`     `{ code }`
 //!   * `start_game`    `{}`                 (host only)
 //!   * `submit_answer` `{ answer_index }`
+//!   * `use_power_up`  `{ power_up }`       (one of `double_points`,
+//!     `freeze_time`, `remove_two_options`)
 //!   * `play_again`    `{}`                 (host only)
 //!
 //! Server → client uses the same envelope. Per-socket writer and per-room
@@ -24,6 +26,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::domain::player::Player;
+use crate::domain::power_up::{self, PowerUp, FREEZE_SECS};
 use crate::domain::room::{Room, RoomState};
 use crate::middleware::auth::AuthContext;
 use crate::services::ai::{AiCapability, GenerationRequest};
@@ -107,9 +110,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 player.streak,
                                 player.total_correct,
                                 player.lives,
+                                player.power_ups.clone(),
+                                player.double_points,
                             )
                         })
-                        .unwrap_or((0, 0, 0, 3));
+                        .unwrap_or((0, 0, 0, 3, Vec::new(), false));
                     room.players
                         .retain(|_, player| player.user_id != Some(auth.user_id));
                     let mut player = Player::new(
@@ -122,6 +127,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     player.streak = carried.1;
                     player.total_correct = carried.2;
                     player.lives = carried.3;
+                    player.power_ups = carried.4;
+                    player.double_points = carried.5;
+                    player.outbox = Some(out_tx.clone());
                     room.players.insert(sid.clone(), player);
                     room.touch();
                     (
@@ -144,6 +152,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         "type": "room_joined",
                         "data": { "code": code, "is_host": is_host, "topic": topic }
                     }),
+                );
+                let hand = room
+                    .read()
+                    .players
+                    .get(&sid)
+                    .map(|player| player.power_ups.clone())
+                    .unwrap_or_default();
+                send_json(
+                    &out_tx,
+                    json!({"type": "power_ups", "data": {"items": hand.iter().map(|kind| kind.as_str()).collect::<Vec<_>>()}}),
                 );
                 let _ = room.read().tx.send(players);
             }
@@ -232,22 +250,120 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     }
                 };
 
-                let (first_question, players, token) = {
+                let (first_question, players, token, hands) = {
                     let mut room = room.write();
                     room.set_questions(questions, &source);
+                    let mut hands = Vec::new();
+                    for player in room.players.values_mut() {
+                        player.power_ups = PowerUp::STARTING_HAND.to_vec();
+                        player.double_points = false;
+                        if let Some(outbox) = player.outbox.as_ref() {
+                            hands.push((outbox.clone(), power_ups_event(&player.power_ups)));
+                        }
+                    }
                     (
                         question_event(&room),
                         players_event(&room),
                         room.question_token,
+                        hands,
                     )
                 };
 
                 let tx = room.read().tx.clone();
+                for (outbox, event) in hands {
+                    let _ = outbox.send(event);
+                }
                 if let Some(event) = first_question {
                     let _ = tx.send(event);
                 }
                 let _ = tx.send(players);
                 spawn_timer(room, token, pool.clone());
+            }
+
+            "use_power_up" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+                let Some(kind) = message["data"]["power_up"]
+                    .as_str()
+                    .and_then(PowerUp::parse)
+                else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Неизвестное усиление"}}),
+                    );
+                    continue;
+                };
+
+                let mut room = room.write();
+                if room.state != RoomState::Playing {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Усиления работают только в игре"}}),
+                    );
+                    continue;
+                }
+
+                // Needs the question, not the hand: compute before borrowing the player.
+                let mut hidden: Vec<usize> = Vec::new();
+                if kind == PowerUp::RemoveTwoOptions {
+                    if let Some(question) = room.questions.get(room.current_q) {
+                        hidden = power_up::wrong_options(question);
+                    }
+                }
+
+                let (name, hand) = {
+                    let Some(player) = room.players.get_mut(&sid) else {
+                        continue;
+                    };
+                    if !player.spend(kind) {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Этого усиления нет в запасе"}}),
+                        );
+                        continue;
+                    }
+                    if kind == PowerUp::DoublePoints {
+                        player.double_points = true;
+                    }
+                    (
+                        player.display_name.clone(),
+                        power_ups_event(&player.power_ups),
+                    )
+                };
+
+                if kind == PowerUp::FreezeTime {
+                    if let Some(deadline) = room.deadline {
+                        room.deadline = Some(deadline + Duration::from_secs(FREEZE_SECS));
+                    }
+                }
+                room.touch();
+
+                let seconds = if kind == PowerUp::FreezeTime {
+                    FREEZE_SECS
+                } else {
+                    0
+                };
+                let _ = room.tx.send(
+                    json!({
+                        "type": "power_up_used",
+                        "data": { "player": name, "power_up": kind.as_str(), "seconds": seconds }
+                    })
+                    .to_string(),
+                );
+                if let Some(outbox) = room.players.get(&sid).and_then(|p| p.outbox.clone()) {
+                    let _ = outbox.send(hand);
+                    if kind == PowerUp::RemoveTwoOptions {
+                        let _ = outbox.send(
+                            json!({"type": "options_hidden", "data": {"indexes": hidden}})
+                                .to_string(),
+                        );
+                    }
+                }
             }
 
             "submit_answer" => {
@@ -276,16 +392,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             player.answered = true;
                             player.answer_index = Some(index);
                             player.answer_time = Some(Instant::now());
-                            if index == correct {
-                                player.score += 100;
-                                player.streak += 1;
-                                player.total_correct += 1;
-                            } else {
-                                player.streak = 0;
-                                if lives_mode {
-                                    player.lives = player.lives.saturating_sub(1);
-                                }
-                            }
+                            player.award(index == correct, lives_mode);
                         }
                     }
 
@@ -320,13 +427,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     room.question_token += 1;
                     room.deadline = None;
                     for player in room.players.values_mut() {
-                        player.score = 0;
-                        player.streak = 0;
-                        player.total_correct = 0;
-                        player.answered = false;
-                        player.answer_index = None;
-                        player.answer_time = None;
-                        player.lives = 3;
+                        player.reset_for_new_game();
+                        if let Some(outbox) = player.outbox.as_ref() {
+                            let _ = outbox.send(power_ups_event(&player.power_ups));
+                        }
                     }
                     room.touch();
                     Some(players_event(&room))
@@ -383,6 +487,14 @@ fn spawn_forwarder(
             }
         }
     })
+}
+
+fn power_ups_event(hand: &[PowerUp]) -> String {
+    json!({
+        "type": "power_ups",
+        "data": { "items": hand.iter().map(|kind| kind.as_str()).collect::<Vec<_>>() }
+    })
+    .to_string()
 }
 
 fn players_event(room: &Room) -> String {
