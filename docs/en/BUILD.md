@@ -48,7 +48,7 @@ CI starts the container and polls `/health` (`ci.yml`, job `docker`). Locally:
 ```bash
 make build-image
 docker run -d -p 5000:5000 -e SECRET_KEY=dev-secret-key-that-is-long-enough \
-  -e ADMIN_SECRET_KEY=1777 -e CHEAT_TESTER_CODE=19112009 brainstorm:local
+  -e ADMIN_SECRET_KEY=change-me-admin-secret-key -e CHEAT_TESTER_CODE=change-me-cheat-code brainstorm:local
 ./scripts/smoke-test.sh http://localhost:5000
 ```
 

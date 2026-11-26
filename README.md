@@ -5,13 +5,12 @@
 **Realtime AI-powered quiz platform — build a game on any topic and play with friends from any device.**
 **Платформа интерактивных викторин в реальном времени: играй с друзьями с любого устройства, а вопросы генерирует GigaChat.**
 
-[![CI](https://github.com/geff1778/Brainstorm-test/actions/workflows/ci.yml/badge.svg)](https://github.com/geff1778/Brainstorm-test/actions/workflows/ci.yml)
+[![CI](https://github.com/ForgeLabHub/ForgeBrainStorm/actions/workflows/ci.yml/badge.svg)](https://github.com/ForgeLabHub/ForgeBrainStorm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.x-000000?logo=flask)
 ![Socket.IO](https://img.shields.io/badge/Socket.IO-realtime-010101?logo=socket.io)
 ![GigaChat](https://img.shields.io/badge/GigaChat-AI-21A038)
-![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/geff1778/Brainstorm-test/main/.github/badges/tests.json)
 
 **Topics:** `flask` · `socketio` · `realtime` · `quiz` · `gigachat` · `python` · `education` · `pwa`
 
@@ -92,6 +91,24 @@ app/http_api/*     app/realtime/*  app/services/*      app/domain/*
 **Layering rule:** `domain` has no I/O, `services` depend on `domain` + `db`,
 `http_api`/`realtime` are thin adapters over `services`. `config`, `security`,
 `errors`, `validation` and `logging_setup` are cross-cutting.
+
+### Three stacks, one repository
+
+The Flask application above is the original monolith. Two newer parts live next to it and
+are **not** documented by the diagrams below:
+
+| Path | What it is | Entry point |
+|---|---|---|
+| `app/`, `templates/`, `static/`, `run.py`, `wsgi.py` | Flask + Socket.IO monolith, SQLite (`*.db`) — the UI served on Render | `python run.py`, or `gunicorn -c gunicorn.conf.py wsgi:app` |
+| `rust-server/` | Axum + Tokio + sqlx/PostgreSQL realtime server: rooms, WebSocket game loop, auth, leaderboard, AI providers (OpenAI, OpenRouter, GigaChat, Ollama) | `cd rust-server && cargo run` (listens on `:5000`, migrations run on start) |
+| `frontend/` | SvelteKit UI (Svelte 5 runes, Tailwind, adapter-node) for the Rust server: `/api/*` for REST, `/ws` for gameplay | `cd frontend && npm ci && npm run dev` |
+
+`deploy/Caddyfile` is the glue for the new stack: `/api/*` and `/ws*` go to the Rust server,
+everything else to the SvelteKit build. Both backends read the same AI keys from `.env`
+(see `docs/security/secrets.md`).
+
+CI covers all three: `backend` (ruff + pytest), `rust` (`cargo check` + `cargo test`),
+`frontend` (`svelte-check` + `npm run build`), plus `secrets` (gitleaks) and `docs`.
 
 ### Project layout
 
@@ -278,6 +295,24 @@ and notable changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 **Правило слоёв:** `domain` не делает I/O; `services` зависят от `domain` и `db`;
 `http_api` и `realtime` — тонкие адаптеры над `services`. `config`, `security`, `errors`,
 `validation`, `logging_setup` — сквозные модули.
+
+### Три стека в одном репозитории
+
+Flask-приложение выше — исходный монолит. Рядом лежат две более новые части, которых нет на
+схеме:
+
+| Путь | Что это | Запуск |
+|---|---|---|
+| `app/`, `templates/`, `static/`, `run.py`, `wsgi.py` | монолит Flask + Socket.IO, SQLite (`*.db`) — его UI отдаётся на Render | `python run.py` или `gunicorn -c gunicorn.conf.py wsgi:app` |
+| `rust-server/` | realtime-сервер на Axum + Tokio + sqlx/PostgreSQL: комнаты, WebSocket-игровой цикл, авторизация, лидерборд, провайдеры ИИ (OpenAI, OpenRouter, GigaChat, Ollama) | `cd rust-server && cargo run` (слушает `:5000`, миграции применяются при старте) |
+| `frontend/` | UI на SvelteKit (руны Svelte 5, Tailwind, adapter-node) для Rust-сервера: `/api/*` — REST, `/ws` — игровой канал | `cd frontend && npm ci && npm run dev` |
+
+`deploy/Caddyfile` связывает новый стек: `/api/*` и `/ws*` уходят на Rust-сервер, всё остальное —
+на сборку SvelteKit. Оба бэкенда читают одни и те же ключи ИИ из `.env`
+(см. `docs/security/secrets.md`).
+
+CI проверяет все три части: `backend` (ruff + pytest), `rust` (`cargo check` + `cargo test`),
+`frontend` (`svelte-check` + `npm run build`), плюс `secrets` (gitleaks) и `docs`.
 
 ### Локальный запуск
 

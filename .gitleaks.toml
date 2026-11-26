@@ -15,6 +15,15 @@ paths = [
   '''.env\.example''',
   '''tests/''',
   '''docs/''',
+  # Сборочный мусор содержит случайные base64-подобные строки. Локальный запуск
+  # `gitleaks dir .` иначе тонет в ложных срабатываниях; в CI этих каталогов нет.
+  '''^rust-server/target/''',
+  '''^node_modules/''',
+  '''^frontend/node_modules/''',
+  '''^frontend/build/''',
+  '''^frontend/\.svelte-kit/''',
+  '''^\.venv/''',
+  '''^dist/''',
 ]
 regexes = [
   '''YOUR_BASE64_CREDENTIALS_HERE''',

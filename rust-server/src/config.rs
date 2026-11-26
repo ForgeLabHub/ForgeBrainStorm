@@ -283,7 +283,7 @@ mod tests {
         Settings {
             env: Environment::Development,
             listen: default_listen_addr(),
-            secret_key: "test-secret-at-least-32-bytes-long-ok".into(),
+            secret_key: "test-secret-key-at-least-32-bytes".into(),
             admin_secret_key: String::new(),
             database_url: "postgres://localhost/brainstorm".into(),
             db_pool_size: 5,

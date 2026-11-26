@@ -99,7 +99,7 @@ curl http://localhost:5000/readyz
 
 ```bash
 # Без cookie — должен вернуть 401
-curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" http://localhost:5000/ws
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $(openssl rand -base64 16)" http://localhost:5000/ws
 
 # С валидной сессией — должен upgrade
 # (нужно сначала получить сессию через /api/auth/login)
