@@ -95,15 +95,26 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
 
                 let (topic, is_host, players, subscription) = {
                     let mut room = room.write();
-                    room.players.insert(
+                    // A reload opens a new socket for the same account: carry the score over
+                    // instead of leaving a ghost player behind.
+                    let carried = room
+                        .players
+                        .values()
+                        .find(|player| player.user_id == Some(auth.user_id))
+                        .map(|player| (player.score, player.streak, player.total_correct, player.lives))
+                        .unwrap_or((0, 0, 0, 3));
+                    room.players.retain(|_, player| player.user_id != Some(auth.user_id));
+                    let mut player = Player::new(
                         sid.clone(),
-                        Player::new(
-                            sid.clone(),
-                            auth.username.clone(),
-                            Some(auth.user_id),
-                            Some(auth.username.clone()),
-                        ),
+                        auth.username.clone(),
+                        Some(auth.user_id),
+                        Some(auth.username.clone()),
                     );
+                    player.score = carried.0;
+                    player.streak = carried.1;
+                    player.total_correct = carried.2;
+                    player.lives = carried.3;
+                    room.players.insert(sid.clone(), player);
                     room.touch();
                     (
                         room.settings.topic.clone(),

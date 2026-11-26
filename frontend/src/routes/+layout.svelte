@@ -1,122 +1,195 @@
 <script lang="ts">
 	import '../app.css';
+	import { api } from '$lib/api';
+	import { onMount } from 'svelte';
+
+	let { children } = $props();
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
-	import Icon from '$lib/components/Icon.svelte';
-	import { currentUser, authChecked, refreshAuth, logout } from '$lib/stores/auth';
-	import { initial } from '$lib/ui';
+	import { afterNavigate } from '$app/navigation';
 
-	const nav = [
-		{ href: '/lobby', label: 'Комнаты', icon: 'users' },
-		{ href: '/leaderboard', label: 'Лидеры', icon: 'trophy' },
-		{ href: '/settings', label: 'Настройки', icon: 'sliders' }
-	];
+	let isLoggedIn = $state(false);
+	let username = $state('');
+	let userLevel = $state(1);
+	let userXp = $state(0);
+	let userCoins = $state(0);
+	let mobileMenuOpen = $state(false);
 
-	$: path = $page.url.pathname;
-	// The room screen renders its own shell so the game gets the whole viewport.
-	$: isGame = /^\/room\/(?!create$)[^/]+$/.test(path);
-	$: if (path) refreshAuth();
-
-	function isActive(href: string): boolean {
-		return path === href || path.startsWith(href + '/');
+	async function loadUser() {
+		try {
+			const response = await api.me();
+			if (response.user) {
+				isLoggedIn = true;
+				username = response.user.username;
+				userLevel = response.user.level || 1;
+				userXp = response.user.xp || 0;
+				userCoins = response.user.coins || 0;
+				return;
+			}
+		} catch {
+			// Not logged in
+		}
+		isLoggedIn = false;
 	}
 
-	async function handleLogout() {
-		await logout();
-		await goto('/auth/login');
+	onMount(loadUser);
+	afterNavigate(loadUser);
+
+	function closeMobileMenu() {
+		mobileMenuOpen = false;
 	}
 </script>
 
-<div class="flex min-h-[100dvh] flex-col">
-	{#if !isGame}
-		<header class="sticky top-0 z-30 border-b border-line/60 bg-ink-950/80 backdrop-blur-md">
-			<div class="mx-auto flex h-14 w-full max-w-5xl items-center gap-2 px-4 sm:h-16 sm:px-6">
-				<a href="/" class="flex items-center gap-2.5 rounded-lg py-1 pr-2">
-					<span
-						class="grid h-8 w-8 place-items-center rounded-[11px] bg-amber font-display text-[17px] font-bold leading-none text-ink-950"
-					>
-						?
-					</span>
-					<span class="font-display text-[15px] font-semibold tracking-tight text-chalk sm:text-base">
-						BrainStorm
-					</span>
+<div class="min-h-screen bg-[#0a0b1a] text-slate-50">
+	<!-- Animated background -->
+	<div class="fixed inset-0 overflow-hidden pointer-events-none">
+		<div class="absolute -top-40 -right-40 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse"></div>
+		<div class="absolute top-1/2 -left-40 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s"></div>
+		<div class="absolute -bottom-20 right-1/3 w-72 h-72 bg-cyan-500/8 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s"></div>
+	</div>
+
+	<!-- Header -->
+	<header class="relative z-50 border-b border-white/5 bg-[#0a0b1a]/80 backdrop-blur-xl sticky top-0">
+		<nav class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+			<!-- Logo -->
+			<a href="/" class="flex items-center gap-3 group" onclick={closeMobileMenu}>
+				<div class="relative">
+					<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur-md opacity-50 group-hover:opacity-80 transition-opacity"></div>
+					<div class="relative flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-lg sm:text-xl">
+						🧠
+					</div>
+				</div>
+				<span class="hidden sm:block text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+					BrainStorm
+				</span>
+			</a>
+
+			<!-- Desktop nav -->
+			<div class="hidden md:flex items-center gap-3">
+				<a href="/lobby" class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+					Комнаты
 				</a>
 
-				<nav class="ml-3 hidden items-center gap-1 md:flex" aria-label="Основная навигация">
-					{#each nav as item}
-						<a
-							href={item.href}
-							aria-current={isActive(item.href) ? 'page' : undefined}
-							class="rounded-[11px] px-3 py-2 text-sm transition-colors {isActive(item.href)
-								? 'bg-ink-800 text-chalk'
-								: 'text-dim hover:bg-ink-900 hover:text-chalk'}"
-						>
-							{item.label}
-						</a>
-					{/each}
-				</nav>
+				<a href="/settings" class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+					AI
+				</a>
 
-				<div class="ml-auto flex items-center gap-1.5">
-					{#if !$authChecked}
-						<span class="h-9 w-24 animate-pulse rounded-[11px] bg-ink-800"></span>
-					{:else if $currentUser}
-						<a
-							href="/profile"
-							class="flex min-h-[40px] items-center gap-2 rounded-[11px] py-1 pl-1 pr-2.5 transition-colors hover:bg-ink-900"
-							title="Профиль"
-						>
-							<span class="grid h-8 w-8 place-items-center rounded-full bg-ink-700 text-sm font-semibold text-chalk">
-								{initial($currentUser.username)}
-							</span>
-							<span class="hidden max-w-[9rem] truncate text-sm font-medium text-chalk sm:block">
-								{$currentUser.username}
-							</span>
-						</a>
-						<button
-							on:click={handleLogout}
-							class="btn-icon hidden sm:inline-flex"
-							title="Выйти"
-							aria-label="Выйти"
-						>
-							<Icon name="logout" size={18} />
-						</button>
+				{#if isLoggedIn}
+					<a href="/profile" class="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2 hover:bg-white/10 hover:border-white/20 transition-all group">
+						<div class="relative">
+							<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg blur-sm opacity-0 group-hover:opacity-50 transition-opacity"></div>
+							<div class="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-bold text-white">
+								{username.charAt(0).toUpperCase()}
+							</div>
+						</div>
+						<div class="flex flex-col">
+							<span class="text-sm font-medium text-white leading-tight">{username}</span>
+							<span class="text-xs text-slate-400 leading-tight">Ур. {userLevel} · 🪙 {userCoins}</span>
+						</div>
+					</a>
+				{:else}
+					<a href="/auth/login" class="relative group">
+						<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur-md opacity-50 group-hover:opacity-80 transition-opacity"></div>
+						<div class="relative rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-2 text-sm font-semibold text-white shadow-lg">
+							Войти
+						</div>
+					</a>
+				{/if}
+			</div>
+
+			<!-- Mobile menu button -->
+			<div class="flex items-center gap-3 md:hidden">
+				{#if isLoggedIn}
+					<a href="/profile" class="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-bold text-white">
+						{username.charAt(0).toUpperCase()}
+					</a>
+				{:else}
+					<a href="/auth/login" class="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white">
+						Войти
+					</a>
+				{/if}
+
+				<button
+					onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
+					class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-white"
+				>
+					{#if mobileMenuOpen}
+						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
 					{:else}
-						<a href="/auth/login" class="btn btn-primary h-10 min-h-[40px] px-4 text-sm">Войти</a>
+						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+						</svg>
+					{/if}
+				</button>
+			</div>
+		</nav>
+
+		<!-- Mobile menu -->
+		{#if mobileMenuOpen}
+			<div class="md:hidden border-t border-white/5 bg-[#0a0b1a]/95 backdrop-blur-xl">
+				<div class="mx-auto max-w-7xl px-4 py-4 space-y-2">
+					<a
+						href="/lobby"
+						onclick={closeMobileMenu}
+						class="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-300 hover:bg-white/5 transition-all"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+						Комнаты
+					</a>
+					<a
+						href="/settings"
+						onclick={closeMobileMenu}
+						class="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-300 hover:bg-white/5 transition-all"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+						Настройки AI
+					</a>
+					{#if isLoggedIn}
+						<div class="border-t border-white/5 pt-2 mt-2">
+							<div class="flex items-center gap-3 px-4 py-2">
+								<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-bold text-white">
+									{username.charAt(0).toUpperCase()}
+								</div>
+								<div>
+									<div class="text-sm font-medium text-white">{username}</div>
+									<div class="text-xs text-slate-400">Ур. {userLevel} · 🪙 {userCoins} · XP {userXp}</div>
+								</div>
+							</div>
+						</div>
 					{/if}
 				</div>
 			</div>
-		</header>
-	{/if}
+		{/if}
+	</header>
 
-	<main class="w-full flex-1 {isGame ? '' : 'mx-auto max-w-5xl px-4 pb-28 pt-5 sm:px-6 sm:pb-10 sm:pt-8'}">
-		<slot />
+	<!-- Main content -->
+	<main class="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+		{@render children()}
 	</main>
 
-	{#if !isGame}
-		<footer class="hidden border-t border-line/60 px-6 py-6 text-center text-xs text-dim md:block">
-			BrainStorm — викторина с вопросами от AI
-		</footer>
-
-		<nav
-			class="fixed inset-x-0 bottom-0 z-40 border-t border-line/70 bg-ink-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
-			aria-label="Навигация"
-		>
-			<div class="mx-auto grid max-w-md grid-cols-3">
-				{#each nav as item}
-					<a
-						href={item.href}
-						aria-current={isActive(item.href) ? 'page' : undefined}
-						class="flex min-h-[58px] flex-col items-center justify-center gap-1 text-[11px] transition-colors {isActive(
-							item.href
-						)
-							? 'text-amber'
-							: 'text-dim'}"
-					>
-						<Icon name={item.icon} size={22} />
-						{item.label}
-					</a>
-				{/each}
+	<!-- Footer -->
+	<footer class="relative z-10 border-t border-white/5 bg-[#0a0b1a]/80 backdrop-blur-xl px-4 py-6 sm:px-6">
+		<div class="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
+			<p class="text-sm text-slate-500">
+				BrainStorm — интеллектуальная викторина с AI
+			</p>
+			<div class="flex items-center gap-4 text-sm text-slate-500">
+				<span>v0.2.0</span>
+				<span class="flex items-center gap-1">
+					<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+					Online
+				</span>
 			</div>
-		</nav>
-	{/if}
+		</div>
+	</footer>
 </div>
+
+<style>
+	@keyframes float {
+		0%, 100% { transform: translateY(0px); }
+		50% { transform: translateY(-10px); }
+	}
+</style>

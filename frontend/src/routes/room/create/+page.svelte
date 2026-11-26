@@ -2,250 +2,281 @@
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { MODES } from '$lib/ui';
 
-	const suggestions = ['Космос', 'История России', 'Кино', 'Музыка', 'Спорт', 'Наука', 'География', 'IT'];
-	const difficulties = [
-		{ value: 'easy', label: 'Лёгкая' },
-		{ value: 'medium', label: 'Средняя' },
-		{ value: 'hard', label: 'Сложная' }
-	];
-	const questionPresets = [5, 10, 15, 20];
-	const optionPresets = [3, 4, 6];
-	const timerPresets = [15, 30, 60];
+	let topic = $state('');
+	let difficulty = $state('medium');
+	let mode = $state('classic');
+	let questionCount = $state(10);
+	let numOptions = $state(4);
+	let timerSeconds = $state(30);
+	let creating = $state(false);
+	let error = $state('');
+	let visible = $state(false);
 
-	let topic = '';
-	let difficulty = 'medium';
-	let mode = 'classic';
-	let questionCount = 10;
-	let numOptions = 4;
-	let timerSeconds = 30;
-	let creating = false;
-	let error = '';
+	let aiProviders: string[] = $state([]);
+	let selectedProvider = $state('');
 
-	let providers: string[] = [];
-	let selectedProvider = '';
+	onMount(() => {
+		const timer = setTimeout(() => (visible = true), 100);
+		return () => clearTimeout(timer);
+	});
 
 	onMount(async () => {
 		try {
 			const response = await api.getAiProviders();
-			providers = response.providers || [];
-			selectedProvider = response.default || providers[0] || '';
-		} catch {
-			providers = [];
+			aiProviders = response.providers || [];
+			selectedProvider = response.default || aiProviders[0] || '';
+		} catch (e) {
+			console.error('Failed to load AI providers:', e);
 		}
 	});
 
-	async function createRoom() {
+	async function createRoom(e: Event) {
+		e.preventDefault();
 		if (!topic.trim()) {
-			error = 'Напишите тему — по ней AI составит вопросы';
+			error = 'Введите тему викторины';
 			return;
 		}
-
 		creating = true;
 		error = '';
-
 		try {
 			const response = await api.createRoom({
 				topic: topic.trim(),
-				difficulty,
 				mode,
+				difficulty,
 				question_count: questionCount,
 				num_options: numOptions,
-				timer_seconds: timerSeconds,
-				ai_provider: selectedProvider || undefined
+				timer_seconds: timerSeconds
 			});
-
 			if (response.ok && response.room) {
 				goto(`/room/${response.room.code}`);
 			} else {
 				error = response.error || 'Не удалось создать комнату';
 			}
-		} catch (e: any) {
-			error = e.message || 'Сервер не отвечает. Попробуйте ещё раз.';
+		} catch (e) {
+			error = 'Ошибка соединения с сервером';
 		} finally {
 			creating = false;
 		}
 	}
+
+	const difficulties = [
+		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих', icon: '🌱', color: 'from-green-500 to-emerald-500' },
+		{ value: 'medium', label: 'Средняя', desc: 'Для всех', icon: '⚡', color: 'from-blue-500 to-cyan-500' },
+		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов', icon: '🔥', color: 'from-red-500 to-orange-500' },
+	];
+
+	const modes = [
+		{ value: 'classic', label: 'Классика', desc: 'Все отвечают одновременно', icon: '🎯' },
+		{ value: 'ffa', label: 'Каждый за себя', desc: 'Кто быстрее ответит', icon: '⚔️' },
+		{ value: 'team', label: 'Команды', desc: 'Игра командами', icon: '👥' },
+		{ value: 'lives', label: 'На выживание', desc: '3 жизни — кто выживет', icon: '❤️' },
+	];
 </script>
 
-<div class="mx-auto w-full max-w-2xl">
-	<div class="mb-6">
-		<a href="/lobby" class="mb-3 inline-flex items-center gap-1.5 text-sm text-dim hover:text-chalk">
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-				<path d="M14.5 5.5 8 12l6.5 6.5" />
-			</svg>
-			Комнаты
-		</a>
-		<h1 class="font-display text-[26px] tracking-tight text-chalk sm:text-3xl">Новая комната</h1>
-		<p class="mt-1 text-sm text-dim">Настройте игру — изменить код потом нельзя, но перезапустить можно.</p>
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+	<!-- Header -->
+	<div class="mb-8 transition-all duration-700 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
+		<div class="flex items-center gap-3">
+			<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-xl">
+				🎮
+			</div>
+			<div>
+				<h1 class="text-2xl font-bold text-white sm:text-3xl">Создать комнату</h1>
+				<p class="text-sm text-slate-400">Настройте параметры викторины</p>
+			</div>
+		</div>
 	</div>
 
-	<form on:submit|preventDefault={createRoom} class="space-y-4">
-		<section class="card card-pad">
-			<label for="topic" class="label">Тема вопросов</label>
-			<input
-				id="topic"
-				type="text"
-				bind:value={topic}
-				maxlength="60"
-				placeholder="Например: космос и планеты"
-				class="field"
-				autocomplete="off"
-			/>
-			<div class="mt-3 flex flex-wrap gap-1.5">
-				{#each suggestions as suggestion}
-					<button
-						type="button"
-						on:click={() => (topic = suggestion)}
-						class="chip min-h-[36px] px-3 text-[13px] transition-colors hover:border-amber/50 hover:text-chalk"
-					>
-						{suggestion}
-					</button>
-				{/each}
+	<form onsubmit={createRoom} class="space-y-6">
+		<!-- Topic -->
+		<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm transition-all duration-700 delay-100 sm:p-6 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
+			<div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent"></div>
+			<div class="relative z-10">
+				<label class="block">
+					<span class="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-400">
+						<span>Тема викторины</span>
+						<span class="{topic.length > 55 ? 'text-orange-400' : 'text-slate-500'} normal-case tracking-normal">
+							{topic.length}/60
+						</span>
+					</span>
+					<input
+						type="text"
+						bind:value={topic}
+						placeholder="Например: История России, Космос, Литература..."
+						maxlength="60"
+						class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-lg text-white placeholder-slate-500 backdrop-blur-sm transition focus:border-blue-500/50 focus:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+					/>
+				</label>
 			</div>
-			{#if providers.length === 0}
-				<p class="mt-3 text-xs leading-relaxed text-dim">
-					AI-ключ не настроен, поэтому вопросы возьмутся из встроенного набора по теме. Играть это не мешает.
-				</p>
-			{/if}
-		</section>
-
-		<section class="card card-pad">
-			<span class="label">Сложность</span>
-			<div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Сложность">
-				{#each difficulties as item}
-					<button
-						type="button"
-						on:click={() => (difficulty = item.value)}
-						aria-pressed={difficulty === item.value}
-						class="min-h-[44px] rounded-[12px] border px-2 text-sm font-medium transition-colors {difficulty ===
-						item.value
-							? 'border-amber bg-ink-800 text-amber'
-							: 'border-line text-dim hover:text-chalk'}"
-					>
-						{item.label}
-					</button>
-				{/each}
-			</div>
-		</section>
-
-		<div class="grid gap-4 sm:grid-cols-2">
-			<section class="card card-pad">
-				<span class="label">Сколько вопросов</span>
-				<div class="grid grid-cols-4 gap-1.5" role="group" aria-label="Количество вопросов">
-					{#each questionPresets as count}
-						<button
-							type="button"
-							on:click={() => (questionCount = count)}
-							aria-pressed={questionCount === count}
-							class="min-h-[44px] rounded-[12px] border text-sm font-medium transition-colors {questionCount === count
-								? 'border-amber bg-ink-800 text-amber'
-								: 'border-line text-dim hover:text-chalk'}"
-						>
-							{count}
-						</button>
-					{/each}
-				</div>
-			</section>
-
-			<section class="card card-pad">
-				<span class="label">Время на вопрос</span>
-				<div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Время на вопрос">
-					{#each timerPresets as seconds}
-						<button
-							type="button"
-							on:click={() => (timerSeconds = seconds)}
-							aria-pressed={timerSeconds === seconds}
-							class="min-h-[44px] rounded-[12px] border text-sm font-medium transition-colors {timerSeconds === seconds
-								? 'border-amber bg-ink-800 text-amber'
-								: 'border-line text-dim hover:text-chalk'}"
-						>
-							{seconds} с
-						</button>
-					{/each}
-				</div>
-			</section>
 		</div>
 
-		<section class="card card-pad">
-			<span class="label">Вариантов ответа</span>
-			<div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Количество вариантов ответа">
-				{#each optionPresets as count}
-					<button
-						type="button"
-						on:click={() => (numOptions = count)}
-						aria-pressed={numOptions === count}
-						class="min-h-[44px] rounded-[12px] border text-sm font-medium transition-colors {numOptions === count
-							? 'border-amber bg-ink-800 text-amber'
-							: 'border-line text-dim hover:text-chalk'}"
-					>
-						{count}
-					</button>
-				{/each}
+		<!-- Difficulty & Mode -->
+		<div class="grid grid-cols-1 gap-6 md:grid-cols-2 transition-all duration-700 delay-200 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
+			<!-- Difficulty -->
+			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm sm:p-6">
+				<div class="absolute inset-0 bg-gradient-to-br from-green-500/3 to-transparent"></div>
+				<div class="relative z-10">
+					<h3 class="mb-4 flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-slate-400">
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+						</svg>
+						Сложность
+					</h3>
+					<div class="space-y-2">
+						{#each difficulties as d}
+							<label class="group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all {
+								difficulty === d.value
+									? 'border-white/20 bg-white/[0.05]'
+									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+							}">
+								<input type="radio" bind:group={difficulty} value={d.value} class="sr-only" />
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {difficulty === d.value ? `bg-gradient-to-br ${d.color}` : 'bg-white/5'} text-lg transition-transform group-hover:scale-110">
+									{d.icon}
+								</div>
+								<div class="min-w-0 flex-1">
+									<div class="font-medium text-white">{d.label}</div>
+									<div class="text-xs text-slate-400">{d.desc}</div>
+								</div>
+								{#if difficulty === d.value}
+									<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+									</svg>
+								{/if}
+							</label>
+						{/each}
+					</div>
+				</div>
 			</div>
-		</section>
 
-		<section class="card card-pad">
-			<span class="label">Режим</span>
-			<div class="space-y-1.5">
-				{#each Object.entries(MODES) as [value, meta]}
-					<button
-						type="button"
-						on:click={() => (mode = value)}
-						aria-pressed={mode === value}
-						class="flex w-full items-center gap-3 rounded-[12px] border px-3.5 py-3 text-left transition-colors {mode ===
-						value
-							? 'border-amber bg-ink-800'
-							: 'border-line hover:bg-ink-800'}"
-					>
-						<span
-							class="grid h-5 w-5 shrink-0 place-items-center rounded-full border {mode === value
-								? 'border-amber'
-								: 'border-line'}"
-						>
-							{#if mode === value}
-								<span class="h-2.5 w-2.5 rounded-full bg-amber"></span>
-							{/if}
-						</span>
-						<span class="min-w-0">
-							<span class="block text-sm font-medium text-chalk">{meta.label}</span>
-							<span class="block text-xs text-dim">{meta.hint}</span>
-						</span>
-					</button>
-				{/each}
+			<!-- Mode -->
+			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm sm:p-6">
+				<div class="absolute inset-0 bg-gradient-to-br from-purple-500/3 to-transparent"></div>
+				<div class="relative z-10">
+					<h3 class="mb-4 flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-slate-400">
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+						Режим игры
+					</h3>
+					<div class="space-y-2">
+						{#each modes as m}
+							<label class="group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all {
+								mode === m.value
+									? 'border-white/20 bg-white/[0.05]'
+									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+							}">
+								<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-white/5'} text-lg transition-transform group-hover:scale-110">
+									{m.icon}
+								</div>
+								<div class="min-w-0 flex-1">
+									<div class="font-medium text-white">{m.label}</div>
+									<div class="text-xs text-slate-400">{m.desc}</div>
+								</div>
+								{#if mode === m.value}
+									<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+									</svg>
+								{/if}
+							</label>
+						{/each}
+					</div>
+				</div>
 			</div>
-		</section>
+		</div>
 
-		{#if providers.length > 0}
-			<section class="card card-pad">
-				<label for="provider" class="label">Провайдер вопросов</label>
-				<select id="provider" bind:value={selectedProvider} class="field appearance-none">
-					{#each providers as provider}
-						<option value={provider}>{provider}</option>
-					{/each}
-				</select>
-			</section>
-		{/if}
+		<!-- Parameters -->
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3 transition-all duration-700 delay-300 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
+			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-sm sm:p-5">
+				<div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent"></div>
+				<div class="relative z-10">
+					<label class="block">
+						<span class="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">Вопросов</span>
+						<input
+							type="number"
+							bind:value={questionCount}
+							min="5"
+							max="30"
+							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+						/>
+						<span class="mt-1 block text-xs text-slate-500">5–30</span>
+					</label>
+				</div>
+			</div>
 
+			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-sm sm:p-5">
+				<div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent"></div>
+				<div class="relative z-10">
+					<label class="block">
+						<span class="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">Вариантов</span>
+						<input
+							type="number"
+							bind:value={numOptions}
+							min="2"
+							max="6"
+							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+						/>
+						<span class="mt-1 block text-xs text-slate-500">2–6</span>
+					</label>
+				</div>
+			</div>
+
+			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-sm sm:p-5">
+				<div class="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent"></div>
+				<div class="relative z-10">
+					<label class="block">
+						<span class="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">Время (сек)</span>
+						<input
+							type="number"
+							bind:value={timerSeconds}
+							min="10"
+							max="120"
+							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+						/>
+						<span class="mt-1 block text-xs text-slate-500">10–120</span>
+					</label>
+				</div>
+			</div>
+		</div>
+
+		<!-- Error -->
 		{#if error}
-			<p class="rounded-[12px] border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral" role="alert">
+			<div class="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
+				<svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
 				{error}
-			</p>
+			</div>
 		{/if}
 
-		<div class="pt-1">
-			<button type="submit" disabled={creating || !topic.trim()} class="btn btn-primary w-full">
+		<!-- Submit -->
+		<button
+			type="submit"
+			disabled={creating || !topic.trim()}
+			class="group relative w-full overflow-hidden rounded-2xl py-4 text-lg font-semibold text-white shadow-lg transition-all disabled:cursor-not-allowed disabled:opacity-50"
+		>
+			<div class="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500 transition-transform group-hover:scale-105"></div>
+			<div class="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500 opacity-0 blur-xl transition-opacity group-hover:opacity-70"></div>
+			<div class="relative flex items-center justify-center gap-3">
 				{#if creating}
-					<span class="h-4 w-4 animate-spin rounded-full border-2 border-ink-950/40 border-t-ink-950"></span>
-					Создаём комнату…
+					<svg class="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					<span>Создание комнаты...</span>
 				{:else}
-					Создать комнату
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<span>Создать комнату</span>
+					<svg class="h-5 w-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+					</svg>
 				{/if}
-			</button>
-			<p class="mt-2 text-center text-xs text-dim">
-				После создания вы получите код — отправьте его друзьям.
-			</p>
-		</div>
+			</div>
+		</button>
 	</form>
 </div>

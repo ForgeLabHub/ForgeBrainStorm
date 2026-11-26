@@ -1,23 +1,18 @@
 <script lang="ts">
-	import { api, type Room } from '$lib/api';
+	import { api } from '$lib/api';
+	import type { Room } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import Icon from '$lib/components/Icon.svelte';
-	import { currentUser } from '$lib/stores/auth';
-	import { modeLabel } from '$lib/ui';
 
-	let rooms: Room[] = [];
-	let loading = true;
-	let loadError = '';
-	let joinCode = '';
-	let joinError = '';
-	let joining = false;
+	let rooms: Room[] = $state([]);
+	let loading = $state(true);
+	let joinCode = $state('');
+	let joinError = $state('');
+	let joining = $state(false);
 
 	onMount(() => {
 		loadRooms();
-		const interval = setInterval(() => {
-			if (!document.hidden) loadRooms();
-		}, 5000);
+		const interval = setInterval(loadRooms, 5000);
 		return () => clearInterval(interval);
 	});
 
@@ -25,29 +20,19 @@
 		try {
 			const response = await api.listRooms();
 			rooms = response.rooms || [];
-			loadError = '';
-		} catch {
-			loadError = 'Не удалось загрузить список комнат';
+		} catch (e) {
+			console.error('Failed to load rooms:', e);
 		} finally {
 			loading = false;
 		}
 	}
 
-	function normalizeCode(value: string) {
-		joinCode = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6);
-	}
-
 	async function joinRoom() {
 		const code = joinCode.trim().toUpperCase();
 		if (code.length !== 6) {
-			joinError = 'В коде ровно 6 символов';
+			joinError = 'Код комнаты — 6 символов';
 			return;
 		}
-		if (!$currentUser) {
-			goto('/auth/login');
-			return;
-		}
-
 		joining = true;
 		joinError = '';
 		try {
@@ -55,119 +40,181 @@
 			if (response.ok && response.room) {
 				goto(`/room/${code}`);
 			} else {
-				joinError = 'Комнаты с таким кодом нет';
+				joinError = 'Комната не найдена';
 			}
-		} catch {
-			joinError = 'Комнаты с таким кодом нет';
+		} catch (e) {
+			joinError = 'Ошибка соединения с сервером';
 		} finally {
 			joining = false;
 		}
 	}
+
+	function getModeLabel(mode: string): string {
+		const labels: Record<string, string> = {
+			classic: '🎯 Классика',
+			ffa: '⚔️ Каждый за себя',
+			team: '👥 Команды',
+			lives: '❤️ На выживание',
+			coop: '🤝 Кооператив',
+			svoyaigra: '🎲 Своя Игра',
+		};
+		return labels[mode] || mode;
+	}
+
+	function getModeColor(mode: string): string {
+		const colors: Record<string, string> = {
+			classic: 'from-blue-500 to-cyan-500',
+			ffa: 'from-orange-500 to-red-500',
+			team: 'from-purple-500 to-pink-500',
+			lives: 'from-red-500 to-rose-500',
+			coop: 'from-green-500 to-emerald-500',
+			svoyaigra: 'from-yellow-500 to-amber-500',
+		};
+		return colors[mode] || 'from-slate-500 to-slate-600';
+	}
+
+	function getModeBadge(mode: string): string {
+		const badges: Record<string, string> = {
+			classic: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+			ffa: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+			team: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+			lives: 'bg-red-500/10 text-red-400 border-red-500/20',
+			coop: 'bg-green-500/10 text-green-400 border-green-500/20',
+			svoyaigra: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+		};
+		return badges[mode] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+	}
 </script>
 
-<div class="mb-6 flex items-start justify-between gap-4">
-	<div>
-		<h1 class="font-display text-[26px] tracking-tight text-chalk sm:text-3xl">Комнаты</h1>
-		<p class="mt-1 text-sm text-dim">Зайдите по коду или начните свою игру.</p>
-	</div>
-	<a href="/room/create" class="btn btn-primary shrink-0 px-4 text-sm sm:px-5">
-		<Icon name="plus" size={16} />
-		<span class="hidden sm:inline">Создать комнату</span>
-		<span class="sm:hidden">Создать</span>
-	</a>
-</div>
-
-{#if !$currentUser}
-	<p class="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[14px] border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-chalk">
-		Чтобы играть, нужен аккаунт.
-		<a href="/auth/login" class="font-semibold underline decoration-amber/60 underline-offset-4">Войти</a>
-		<span class="text-dim">или</span>
-		<a href="/auth/register" class="font-semibold underline decoration-amber/60 underline-offset-4">зарегистрироваться</a>
-	</p>
-{/if}
-
-<section class="card card-pad mb-6">
-	<h2 class="section-title mb-1">Войти по коду</h2>
-	<p class="mb-4 text-sm text-dim">Код комнаты покажет хост — шесть букв или цифр.</p>
-
-	<form on:submit|preventDefault={joinRoom} class="flex flex-col gap-2.5 sm:flex-row">
-		<label class="sr-only" for="room-code">Код комнаты</label>
-		<input
-			id="room-code"
-			type="text"
-			inputmode="text"
-			autocapitalize="characters"
-			autocomplete="off"
-			spellcheck="false"
-			maxlength="6"
-			value={joinCode}
-			on:input={(event) => normalizeCode(event.currentTarget.value)}
-			placeholder="ABC123"
-			class="field flex-1 text-center font-display text-lg tracking-[0.28em] uppercase placeholder:tracking-[0.28em]"
-		/>
-		<button
-			type="submit"
-			disabled={joining || joinCode.length !== 6}
-			class="btn sm:w-36 {joinCode.length === 6 ? 'btn-primary' : 'btn-quiet opacity-60'}"
-		>
-			{joining ? 'Проверяем…' : 'Войти'}
-		</button>
-	</form>
-
-	{#if joinError}
-		<p class="mt-2.5 text-sm text-coral" role="alert">{joinError}</p>
-	{/if}
-</section>
-
-<section>
-	<div class="mb-3 flex items-baseline justify-between">
-		<h2 class="section-title">Открытые комнаты</h2>
-		<span class="text-sm text-dim">{rooms.length}</span>
+<div class="mx-auto max-w-7xl px-6 py-8">
+	<!-- Header -->
+	<div class="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+		<div>
+			<h1 class="text-3xl font-bold text-white">Игровые комнаты</h1>
+			<p class="mt-1 text-slate-400">Присоединитесь к игре или создайте свою</p>
+		</div>
+		<a href="/room/create" class="relative group">
+			<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur-md opacity-40 group-hover:opacity-70 transition-opacity"></div>
+			<div class="relative flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-2.5 font-semibold text-white shadow-lg">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+				Создать комнату
+			</div>
+		</a>
 	</div>
 
-	{#if loading}
-		<div class="space-y-2">
-			{#each [0, 1, 2] as row}
-				<div class="h-[74px] animate-pulse rounded-[16px] border border-line/50 bg-ink-850" class:opacity-60={row > 0}></div>
-			{/each}
-		</div>
-	{:else if loadError}
-		<p class="rounded-[14px] border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">{loadError}</p>
-	{:else if rooms.length === 0}
-		<div class="card card-pad text-center">
-			<p class="font-medium text-chalk">Пока никто не играет</p>
-			<p class="mx-auto mt-1 max-w-[38ch] text-sm text-dim">
-				Создайте комнату — она сразу появится здесь, и друзьям будет достаточно ввести код.
-			</p>
-			<a href="/room/create" class="btn btn-primary mt-4 w-full sm:w-auto sm:px-6">Создать комнату</a>
-		</div>
-	{:else}
-		<ul class="space-y-2">
-			{#each rooms as room (room.code)}
-				<li>
-					<a
-						href="/room/{room.code}"
-						class="flex items-center gap-3 rounded-[16px] border border-line/70 bg-ink-850 px-3.5 py-3 transition-colors hover:border-line hover:bg-ink-800 sm:gap-4 sm:px-4"
-					>
-						<span class="digits shrink-0 rounded-[10px] bg-ink-900 px-2.5 py-1.5 text-[12px] tracking-[0.12em] text-dim">
-							{room.code}
+	<!-- Join room -->
+	<div class="mb-8 relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm">
+		<div class="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent"></div>
+		<div class="relative z-10">
+			<h2 class="mb-4 text-lg font-semibold text-white flex items-center gap-2">
+				<svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+				Присоединиться по коду
+			</h2>
+			<form onsubmit={(e) => { e.preventDefault(); joinRoom(); }} class="flex gap-3">
+				<input
+					type="text"
+					bind:value={joinCode}
+					placeholder="ABCDEF"
+					maxlength="6"
+					class="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center font-mono text-lg tracking-[0.3em] text-white uppercase placeholder-slate-600 focus:border-green-500/50 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+				/>
+				<button
+					type="submit"
+					disabled={joining || joinCode.length !== 6}
+					class="rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-3 font-semibold text-white shadow-lg transition-all hover:shadow-green-500/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+				>
+					{#if joining}
+						<span class="flex items-center gap-2">
+							<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+							Поиск...
 						</span>
+					{:else}
+						Войти
+					{/if}
+				</button>
+			</form>
+			{#if joinError}
+				<div class="mt-3 flex items-center gap-2 text-sm text-red-400">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+					{joinError}
+				</div>
+			{/if}
+		</div>
+	</div>
 
-						<div class="min-w-0 flex-1">
-							<p class="truncate font-medium text-chalk">{room.topic || 'Без темы'}</p>
-							<div class="mt-1 flex flex-wrap items-center gap-1.5">
-								<span class="chip">{modeLabel(room.mode)}</span>
-								<span class="text-xs text-dim">Хост {room.host}</span>
+	<!-- Rooms list -->
+	<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm">
+		<div class="absolute inset-0 bg-gradient-to-br from-blue-500/3 to-transparent"></div>
+		<div class="relative z-10">
+			<div class="mb-6 flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-white flex items-center gap-2">
+					<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+					Доступные комнаты
+					<span class="ml-2 rounded-full bg-white/10 px-2.5 py-0.5 text-sm font-normal text-slate-300">{rooms.length}</span>
+				</h2>
+				{#if !loading && rooms.length > 0}
+					<div class="flex items-center gap-2 text-xs text-slate-500">
+						<span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+						Обновляется автоматически
+					</div>
+				{/if}
+			</div>
+
+			{#if loading}
+				<div class="py-16 text-center">
+					<div class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-blue-500/30 border-t-blue-500"></div>
+					<p class="mt-4 text-slate-500">Загрузка комнат...</p>
+				</div>
+			{:else if rooms.length === 0}
+				<div class="py-16 text-center">
+					<div class="mb-4 text-5xl">🎮</div>
+					<p class="text-lg text-slate-300">Пока нет активных комнат</p>
+					<p class="mt-2 text-sm text-slate-500">Создайте свою и пригласите друзей!</p>
+				</div>
+			{:else}
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+					{#each rooms as room}
+						<a
+							href="/room/{room.code}"
+							class="group relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:border-white/20 hover:bg-white/[0.05] hover:scale-[1.02]"
+						>
+							<!-- Gradient accent -->
+							<div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r {getModeColor(room.mode)} opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+							<div class="flex items-start justify-between mb-3">
+								<div>
+									<div class="font-mono text-xs text-slate-500 tracking-wider">{room.code}</div>
+									<div class="mt-1 font-semibold text-white group-hover:text-blue-300 transition-colors">
+										{room.topic || 'Без темы'}
+									</div>
+								</div>
+								<div class="opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+									<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+								</div>
 							</div>
-						</div>
 
-						<span class="flex shrink-0 items-center gap-1.5 text-sm text-dim">
-							<Icon name="users" size={16} />
-							{room.player_count ?? 0}
-						</span>
-					</a>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+							<div class="flex items-center justify-between">
+								<span class="inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium {getModeBadge(room.mode)}">
+									{getModeLabel(room.mode)}
+								</span>
+								<span class="flex items-center gap-1.5 text-sm text-slate-400">
+									<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+										<path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+									</svg>
+									{room.player_count || 0}
+								</span>
+							</div>
+
+							<div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+								<div class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-[10px] font-bold text-white">
+									{room.host?.charAt(0).toUpperCase() || '?'}
+								</div>
+								<span>{room.host || 'Unknown'}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+</div>
