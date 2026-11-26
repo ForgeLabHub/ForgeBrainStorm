@@ -29,7 +29,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 use crate::config::Settings;
 use crate::domain::room::RoomRegistry;
 use crate::error::AppError;
-use crate::infrastructure::RedisClient;
+use crate::infrastructure::{generate_instance_id, PubSubManager, RedisClient};
 use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
 use crate::middleware::rate_limit::RateLimiter;
 use crate::services::ai::router::AiRouter;
@@ -44,6 +44,7 @@ pub struct AppState {
     pub ai_router: Arc<AiRouter>,
     pub session_cache: SessionCache,
     pub redis: Arc<RedisClient>,
+    pub pubsub: Arc<PubSubManager>,
 }
 
 /// Database handle wrapper.
@@ -145,6 +146,11 @@ async fn main() -> anyhow::Result<()> {
     };
     let redis = Arc::new(redis_client);
 
+    // Initialize Pub/Sub manager for distributed room synchronization.
+    let instance_id = generate_instance_id();
+    info!(instance_id, "initializing Pub/Sub manager");
+    let pubsub = Arc::new(PubSubManager::new(instance_id.clone(), redis.clone()));
+
     // Build shared state.
     let session_cache = SessionCache::new(Duration::from_secs(300), pool.clone());
     let rooms = RoomRegistry::new(settings.max_rooms);
@@ -156,6 +162,7 @@ async fn main() -> anyhow::Result<()> {
         ai_router,
         session_cache: session_cache.clone(),
         redis,
+        pubsub,
     };
 
     // Build router.

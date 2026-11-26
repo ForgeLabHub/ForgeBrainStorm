@@ -34,12 +34,19 @@ async fn ready(State(state): State<AppState>) -> AppResult<impl IntoResponse> {
         "local_only"
     };
 
+    let pubsub_subscriptions = state.pubsub.subscription_count().await;
+    let instance_id = state.pubsub.instance_id().to_string();
+
     Ok((
         StatusCode::OK,
         Json(json!({
             "status": "ready",
             "db": "ok",
             "redis": redis_status,
+            "pubsub": {
+                "instance_id": instance_id,
+                "subscriptions": pubsub_subscriptions,
+            },
         })),
     ))
 }
