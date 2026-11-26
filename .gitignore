@@ -43,3 +43,11 @@ frontend/build/
 
 # OpenHands agent memory
 .openhands/
+
+# Локальный рантайм
+.run/
+frontend/.svelte-kit/
+frontend/build/
+frontend/node_modules/
+rust-server/target/
+deploy/.env.production

@@ -1,0 +1,16 @@
+# TLS + reverse proxy. Caddy obtains a Let's Encrypt certificate automatically.
+{$DOMAIN} {
+encode zstd gzip
+
+# API and WebSocket live on the backend.
+handle /api/* {
+reverse_proxy backend:5000
+}
+handle /ws* {
+reverse_proxy backend:5000
+}
+# Everything else is the SvelteKit app.
+handle {
+reverse_proxy frontend:3000
+}
+}

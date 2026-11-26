@@ -1,0 +1,85 @@
+# Production stack: PostgreSQL + Rust backend + SvelteKit + Caddy (TLS, WebSocket).
+#
+#   cp deploy/.env.production.example deploy/.env.production   # fill in the values
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
+#
+# Every service has `restart: unless-stopped`: a crashed or rebooted container comes back by itself.
+name: brainstorm
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-brainstorm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-brainstorm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brainstorm} -d ${POSTGRES_DB:-brainstorm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../rust-server
+    restart: unless-stopped
+    environment:
+      BRAINSTORM_ENV: production
+      BRAINSTORM_LISTEN: 0.0.0.0:5000
+      BRAINSTORM_DATABASE_URL: postgres://${POSTGRES_USER:-brainstorm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-brainstorm}
+      BRAINSTORM_SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (>= 32 bytes)}
+      BRAINSTORM_ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-}
+      BRAINSTORM_CORS_ORIGINS: '["https://${DOMAIN:?set DOMAIN}"]'
+      BRAINSTORM_SESSION_COOKIE_SECURE: "true"
+      BRAINSTORM_TRUST_PROXY: "true"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      RUST_LOG: brainstorm=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../deploy/frontend.Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      HOST: 0.0.0.0
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
