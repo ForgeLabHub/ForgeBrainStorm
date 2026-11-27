@@ -124,6 +124,34 @@ class TestGameLoop:
         ack = host_buffer.wait("answer_ack")
         assert ack is not None and "correct" in ack
 
+    @pytest.mark.parametrize(("mode", "limit"), [("classic", 45), ("blitz", 10)])
+    def test_question_timer_and_rejoin(self, two_clients, mode, limit):
+        from app.domain.registry import registry
+
+        host, guest = two_clients
+        buffer = EventBuffer(host)
+        host.emit("create_room", {"player_name": "Host"})
+        code = buffer.wait("room_created")["room_code"]
+        guest.emit("join_room", {"room_code": code, "player_name": "Guest"})
+        assert EventBuffer(guest).wait("room_joined")
+        host.emit("update_settings", {"question_count": 2, "game_mode": mode, "timer": 45})
+        host.emit("start_game", {})
+        question = buffer.wait("new_question")
+        assert question["mode"] == mode
+        assert question["time_limit"] == limit
+
+        room = registry.get(code)
+        room.q_start_time = time.time() - 4.2
+        host.emit("rejoin_room", {"room_code": code, "player_name": "Host"})
+        resumed = buffer.wait("new_question")
+        assert resumed["rejoin"] is True
+        assert resumed["time_limit"] == limit - 4
+
+        if mode == "blitz":
+            room.q_start_time = time.time() - limit - 1
+            guest.emit("submit_answer", {"answer_index": room.current_question["correct"]})
+            assert not next(player for player in room.players.values() if player.name == "Guest").answered
+
     def test_chat_round_trip(self, two_clients):
         host, guest = two_clients
         host_buffer = EventBuffer(host)

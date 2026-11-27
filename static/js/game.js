@@ -116,6 +116,7 @@ const LETTERS      = ["A","B","C","D","E","F"];
 const MODE_DESCS   = {
   classic:   "🏆 Классика — каждый за себя.",
   ffa:       "⚡ FFA — только первый правильный ответ!",
+  blitz:     "⏱ Блиц — 10 секунд на вопрос, отвечают все игроки.",
   team:      "🤝 Командный — лидеры набирают команды.",
   lives:     "❤️ На вылет — 3 жизни.",
   coop:      "🌟 Кооп — общая победа!",
@@ -188,8 +189,9 @@ const Theme = (function(){
 /* ════════════ NEURAL NETWORK BACKGROUND ════════════ */
 const NeuralBg = (function(){
   const cv  = document.getElementById("neural-canvas");
-  if(!cv) return { pulse:()=>{} };
+  if(!cv || matchMedia("(max-width: 700px), (pointer: coarse), (prefers-reduced-motion: reduce)").matches) return { pulse:()=>{} };
   const ctx = cv.getContext("2d");
+  if(!ctx) return { pulse:()=>{} };
   let W, H, nodes=[], raf;
 
   // Цвета нейронов
@@ -1475,7 +1477,7 @@ function applyGuestSettings(s){
   if($("gs-topic")) $("gs-topic").textContent=s.topic||"—";
   if($("gs-count")) $("gs-count").textContent=s.question_count||"—";
   if($("gs-diff"))  $("gs-diff").textContent={easy:"Лёгкая",medium:"Средняя",hard:"Сложная"}[s.difficulty]||s.difficulty||"—";
-  if($("gs-mode"))  $("gs-mode").textContent={classic:"Классика",ffa:"FFA",team:"Командный",lives:"На вылет",coop:"Кооп",svoyaigra:"Своя игра"}[s.game_mode]||s.game_mode||"—";
+  if($("gs-mode"))  $("gs-mode").textContent={classic:"Классика",ffa:"FFA",blitz:"Блиц",team:"Командный",lives:"На вылет",coop:"Кооп",svoyaigra:"Своя игра"}[s.game_mode]||s.game_mode||"—";
   if($("teams-panel")) $("teams-panel").style.display=s.game_mode==="team"?"":"none";
 }
 
@@ -1667,17 +1669,25 @@ function renderSiScores(scores, players){
 }
 
 /* ════════════ GAME TIMER ════════════ */
-function startTimer(secs){
-  clearInterval(timerInterval); timerSec=secs;
-  const el=$("g-timer"); const pEl=$("pres-timer"); if(!el)return;
-  [el,pEl].forEach(e=>e&&(e.textContent=timerSec,e.className=e===el?"g-timer":"pres-timer"));
-  timerInterval=setInterval(()=>{
-    timerSec--; [el,pEl].forEach(e=>e&&(e.textContent=timerSec));
-    if(timerSec<=5){ [el,pEl].forEach(e=>e&&(e.className=e===el?"g-timer danger":"pres-timer danger")); Sounds.timer_5(); }
-    else if(timerSec<=10){ [el,pEl].forEach(e=>e&&(e.className+=" warning")); Sounds.timer_warn(); }
-    else Sounds.tick();
-    if(timerSec<=0) clearInterval(timerInterval);
-  },1000);
+function startTimer(deadline){
+  clearInterval(timerInterval);
+  const el=$("g-timer"), pEl=$("pres-timer");
+  if(!el)return;
+  function render(withSound){
+    const remaining=Math.max(0,Math.ceil((deadline-performance.now())/1000));
+    if(withSound && remaining===timerSec)return;
+    timerSec=remaining;
+    const state=remaining<=5 ? " danger" : remaining<=10 ? " warning" : "";
+    [el,pEl].forEach(e=>{if(e){e.textContent=remaining;e.className=(e===el?"g-timer":"pres-timer")+state;}});
+    if(withSound && remaining>0){
+      if(remaining<=5) Sounds.timer_5();
+      else if(remaining<=10) Sounds.timer_warn();
+      else Sounds.tick();
+    }
+    if(remaining===0)clearInterval(timerInterval);
+  }
+  render(false);
+  if(timerSec>0)timerInterval=setInterval(()=>render(true),250);
 }
 function stopTimer(){ clearInterval(timerInterval); }
 
@@ -1685,22 +1695,23 @@ function stopTimer(){ clearInterval(timerInterval); }
 function renderQuestion(data){
   currentQ=data; rephraseUsed=false;
   const q=data.question;
+  const deadline=performance.now()+(data.time_limit??30)*1000;
 
   // Сначала — межвопросный переход
-  if(animationsOn && data.question_number>1){
+  if(animationsOn && !data.rejoin && data.mode!=="blitz" && data.question_number>1 && !matchMedia("(pointer: coarse), (prefers-reduced-motion: reduce)").matches){
     const rt=$("round-transition"); if(rt){
       const fact=RT_FACTS[Math.floor(Math.random()*RT_FACTS.length)];
       if($("rt-qnum")) $("rt-qnum").textContent=`Вопрос ${data.question_number} / ${data.total_questions}`;
       if($("rt-fact"))  $("rt-fact").textContent=fact;
       rt.style.display="flex";
-      setTimeout(()=>{ rt.style.display="none"; _showQuestion(data,q); },1800);
+      setTimeout(()=>{ rt.style.display="none"; if(currentQ===data) _showQuestion(data,q,deadline); },1800);
       return;
     }
   }
-  _showQuestion(data,q);
+  if(currentQ===data) _showQuestion(data,q,deadline);
 }
 
-function _showQuestion(data,q){
+function _showQuestion(data,q,deadline){
   if($("g-qnum"))     $("g-qnum").textContent=`Вопрос ${data.question_number} / ${data.total_questions}`;
   if($("g-progress")) $("g-progress").style.width=(data.question_number/data.total_questions*100)+"%";
   if($("g-question")) $("g-question").textContent=q.question;
@@ -1737,14 +1748,21 @@ function _showQuestion(data,q){
     btn.onclick=()=>submitAnswer(i);
     grid.appendChild(btn);
 
-    // Обновляем презентационный оверлей
-    if($("pres-question-text")) $("pres-question-text").textContent=q.question;
-    const pOpts=$("pres-options"); if(pOpts){
-      pOpts.innerHTML=q.options.map((o,j)=>`<div class="pres-option" data-idx="${j}" onclick="submitAnswer(${j})">${LETTERS[j]}. ${o}</div>`).join("");
-    }
   });
 
-  startTimer(data.time_limit||30); if($("btn-joker")) $("btn-joker").disabled=false;
+  const presentationText=$("pres-question-text"), presentationOptions=$("pres-options");
+  if(presentationText) presentationText.textContent=q.question;
+  if(presentationOptions) presentationOptions.replaceChildren(...q.options.map((option, index)=>{
+    const item=document.createElement("button");
+    item.type="button";
+    item.className="pres-option";
+    item.dataset.idx=index;
+    item.textContent=`${LETTERS[index]}. ${option}`;
+    item.onclick=()=>submitAnswer(index);
+    return item;
+  }));
+
+  startTimer(deadline); if($("btn-joker")) $("btn-joker").disabled=false;
 }
 
 function renderTeamBoard(scores,names){
@@ -1890,7 +1908,7 @@ function initSocket(){
     myScore=0;
     if($("g-score")) $("g-score").textContent=0;
     teamsData={}; if(data.teams) data.teams.forEach(t=>teamsData[t.id]=t);
-    const mn={classic:"🏆 Классика",ffa:"⚡ FFA",team:"🤝 Команды",lives:"❤️ На вылет",coop:"🌟 Кооп"};
+    const mn={classic:"🏆 Классика",ffa:"⚡ FFA",blitz:"⏱ Блиц",team:"🤝 Команды",lives:"❤️ На вылет",coop:"🌟 Кооп"};
     if($("g-mode-badge")){$("g-mode-badge").textContent=mn[data.mode]||data.mode;$("g-mode-badge").style.display="";}
     if(data.mode==="team"&&data.your_team){
       const tn=data.team_names?.[data.your_team]||("Команда "+data.your_team);

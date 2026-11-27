@@ -35,6 +35,7 @@ Server → client::
 
 from __future__ import annotations
 
+import math
 import time
 
 from flask import request
@@ -56,6 +57,7 @@ from .chat import chat_store
 logger = get_logger(__name__)
 
 TIME_PER_Q = 30
+BLITZ_TIME_PER_Q = 10
 SI_ROWS = 5
 SI_COLS = 3
 SI_VALUES = [100, 200, 300, 400, 500]
@@ -131,7 +133,14 @@ def _emit_to_all(room: Room, event: str, payload: dict) -> None:
 # ─────────────────────────────────────────────────────────────
 def _question_time(room: Room) -> int:
     """Per-question time limit, honouring the host's ``timer`` setting."""
+    if room.mode == "blitz":
+        return BLITZ_TIME_PER_Q
     return clamp(as_int(room.settings.get("timer", TIME_PER_Q), default=TIME_PER_Q), 10, 120)
+
+
+def _remaining_question_time(room: Room) -> int:
+    elapsed = max(0.0, time.time() - room.q_start_time)
+    return max(0, math.ceil(_question_time(room) - elapsed))
 
 
 def _emit_question(room: Room) -> None:
@@ -163,7 +172,8 @@ def _emit_question(room: Room) -> None:
         if player.instant_answer:
             payload["instant_answer"] = True
         _socketio.emit("new_question", payload, room=sid)
-    scheduler.spawn_after(time_limit + 1, _timeout_question, room.code, room.current_q)
+    grace = 0 if room.mode == "blitz" else 1
+    scheduler.spawn_after(time_limit + grace, _timeout_question, room.code, room.current_q)
 
 
 def _timeout_question(code: str, question_index: int) -> None:
@@ -408,7 +418,7 @@ def register_handlers(socketio, gigachat_code: str) -> None:
                 payload = {
                     "question": {"question": question["question"], "options": question["options"]},
                     "question_number": room.current_q + 1,
-                    "total_questions": room.total_questions, "time_limit": TIME_PER_Q,
+                    "total_questions": room.total_questions, "time_limit": _remaining_question_time(room),
                     "difficulty": room.current_difficulty, "mode": room.mode,
                     "is_bonus": bool(question.get("bonus")), "rejoin": True,
                     "team_scores": room.team_scores(),
@@ -490,7 +500,7 @@ def register_handlers(socketio, gigachat_code: str) -> None:
             payload = {
                 "question": {"question": question["question"], "options": question["options"]},
                 "question_number": room.current_q + 1, "total_questions": room.total_questions,
-                "time_limit": TIME_PER_Q, "difficulty": room.current_difficulty,
+                "time_limit": _remaining_question_time(room), "difficulty": room.current_difficulty,
                 "mode": room.mode, "is_bonus": bool(question.get("bonus")), "rejoin": True,
             }
             if player.is_cheat:
@@ -860,12 +870,15 @@ def register_handlers(socketio, gigachat_code: str) -> None:
         question = room.current_question
         if not question:
             return
+        now = time.time()
+        if room.mode == "blitz" and now - room.q_start_time >= _question_time(room):
+            return
         room.touch()
         answer = as_int(data.get("answer_index", -1), default=-1)
         is_correct = answer == question["correct"]
         player.answered = True
         player.answer_index = answer
-        player.answer_time = time.time()
+        player.answer_time = now
 
         if is_correct:
             points = room.award_point(request.sid)
