@@ -22,6 +22,19 @@ All notable changes to BrainStorm are documented here. The format is based on
 - `scripts/e2e-modes.py`: plays real games over the HTTP + WebSocket API and asserts the
   mode rules — team seating and totals, elimination at zero lives, the forced blitz clock,
   and that a training game leaves `games_played` untouched.
+- Roles on the account, not the session: a registration password can be an ordinary
+  password or one of the two role codes (`19112009` → `admin`, `1778` → `cheater`).
+  The server owns that policy, and `/admin` (players, rooms, audit log, broadcast, AI
+  provider switch, question-cache flush) is closed to everyone else.
+- Cheater powers over the existing WebSocket protocol: reveal the correct answer (3),
+  freeze the clock for ten seconds (2), steal points from the leader (1), double your
+  own score for the round (2). Every power is private to the cheater who spent it.
+- «Внезапная смерть» (`sudden`) and «Марафон» (`marathon`) are selectable in the room
+  picker, so the UI finally offers all ten modes the backend knows about; the marathon
+  round is locked to 30 questions of 20 seconds each.
+- Prometheus metrics at `/metrics` (`brainstorm_*`): active sockets, games started per
+  mode, answers by correctness, AI generation latency per provider, HTTP duration by
+  matched route, and live room count.
 
 ### Changed
 - `README.md` rewritten for the stack that actually ships (Rust/axum + SvelteKit +
@@ -66,14 +79,16 @@ All notable changes to BrainStorm are documented here. The format is based on
 - `make agent-verify` / `rust-verify` / `frontend-check`: fmt, `cargo check`, clippy with
   `-D warnings`, tests and the frontend build as one gate; CI runs the same checks.
 - Community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`.
-
-### Changed
 - `rust-server`: zero compiler and clippy warnings. `AppError` and `ConfigError` keep their
   heavy payloads boxed (sqlx/figment), dead code removed, `tracing-opentelemetry` dropped.
 - `rust-server` reads `config/default.toml` with `include_str!`, so the binary no longer
   silently loses `SECRET_KEY` when started outside `rust-server/`.
 - Rate limiting is compiled behind the `rate-limit` feature instead of sitting unused:
   keying by `ConnectInfo` is wrong behind Caddy.
+- Every branch (`arena/408d4c14-forgebrainstorm`, `arena/993c968d-forgebrainstorm`) is
+  merged into `main` and deleted, so the default branch is the only one left.
+- CI is one job per concern again: the duplicated `rust`/`frontend` keys made every run
+  fail in under a second.
 
 ### Fixed
 - Profile «Средний счёт» divides total points by games played; it used to show the
@@ -99,6 +114,13 @@ All notable changes to BrainStorm are documented here. The format is based on
 - README badges pointed at the upstream mirror and at a `tests.json` that does not exist.
 - GitHub issue forms (bug report, feature request) and a pull request template.
 - `.editorconfig` and `.gitattributes` for consistent cross-editor / cross-OS behaviour.
+- Signing up with a role code was impossible from the UI: the form refused anything
+  shorter than twelve characters before the server ever saw it. The client now only
+  checks that the two passwords match and leaves the length rule to the API.
+- The player list drew three hearts in every mode; hearts now appear only in the
+  life-based modes.
+- `/livez` and `/metrics` answered 404 because `Cargo.toml` declared a second
+  `[[bin]]` (`brainstorm-server`) that shadowed the real binary.
 
 ## [2.0.0] — 2026-10-07
 
