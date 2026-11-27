@@ -60,7 +60,7 @@
 					</div>
 					<h3 class="mb-2 text-xl font-bold text-white">6 режимов игры</h3>
 					<p class="text-slate-400 text-sm leading-relaxed">
-						Classic, FFA, Team, Lives, Coop, Своя Игра — каждый найдёт свой стиль
+						Classic, FFA, Team, Lives, Blitz, Sandbox — каждый найдёт свой стиль
 					</p>
 				</div>
 			</div>
@@ -74,7 +74,7 @@
 					</div>
 					<h3 class="mb-2 text-xl font-bold text-white">AI-вопросы</h3>
 					<p class="text-slate-400 text-sm leading-relaxed">
-						GPT-4o-mini генерирует уникальные вопросы на любую тему в реальном времени
+						Вопросы на любую тему пишет ИИ (OpenRouter, GigaChat); без ключа игра идёт на офлайн-банке
 					</p>
 				</div>
 			</div>

@@ -14,6 +14,11 @@ All notable changes to BrainStorm are documented here. The format is based on
   nothing written to the leaderboard, history or XP). `POST /api/rooms` validates the mode
   and lists the accepted values in the error; legacy aliases (`survival`, `teams`,
   `practice`) still work.
+- `frontend/src/lib/Icon.svelte`: stroke icons for modes, difficulties, power-ups and
+  results. Emoji were the icon set before, and they disappear entirely on systems
+  without a colour-emoji font (the room then showed empty boxes instead of «Правильно!»).
+- Dev proxy also forwards `/health` and `/readyz`, so the probes answer on the same
+  origin the browser uses.
 - `scripts/e2e-modes.py`: plays real games over the HTTP + WebSocket API and asserts the
   mode rules — team seating and totals, elimination at zero lives, the forced blitz clock,
   and that a training game leaves `games_played` untouched.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '$lib/Icon.svelte';
 	import { api } from '$lib/api';
 	import type { Room } from '$lib/api';
 	import { onMount } from 'svelte';
@@ -51,12 +52,12 @@
 
 	function getModeLabel(mode: string): string {
 		const labels: Record<string, string> = {
-			classic: '🎯 Классика',
-			ffa: '⚔️ Каждый за себя',
-			team: '👥 Команды',
-			lives: '❤️ На выживание',
-			blitz: '⚡ Блиц',
-			sandbox: '🎓 Тренировка',
+			classic: 'Классика',
+			ffa: 'Каждый за себя',
+			team: 'Команды',
+			lives: 'На выживание',
+			blitz: 'Блиц',
+			sandbox: 'Тренировка',
 		};
 		return labels[mode] || mode;
 	}
@@ -167,7 +168,7 @@
 				</div>
 			{:else if rooms.length === 0}
 				<div class="py-16 text-center">
-					<div class="mb-4 text-5xl">🎮</div>
+					<div class="mb-4 flex justify-center text-blue-400"><Icon name="gamepad" class="h-12 w-12" /></div>
 					<p class="text-lg text-slate-300">Пока нет активных комнат</p>
 					<p class="mt-2 text-sm text-slate-500">Создайте свою и пригласите друзей!</p>
 				</div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '$lib/Icon.svelte';
 	import { api } from '$lib/api';
 	import type { User, RecentGame } from '$lib/api';
 	import { onMount } from 'svelte';
@@ -34,10 +35,10 @@
 	});
 
 	function placeLabel(game: RecentGame): string {
-		if (game.players < 2) return '🎯';
-		if (game.place === 1) return '🥇';
-		if (game.place === 2) return '🥈';
-		if (game.place === 3) return '🥉';
+		if (game.players < 2) return '—';
+		if (game.place === 1) return '1-е';
+		if (game.place === 2) return '2-е';
+		if (game.place === 3) return '3-е';
 		return `#${game.place}`;
 	}
 
@@ -72,11 +73,11 @@
 	}
 
 	function getRankTitle(level: number): string {
-		if (level >= 20) return '🏆 Мастер';
-		if (level >= 15) return '💎 Алмаз';
-		if (level >= 10) return '🥇 Золото';
-		if (level >= 5) return '🥈 Серебро';
-		return '🥉 Новичок';
+		if (level >= 20) return 'Мастер';
+		if (level >= 15) return 'Алмаз';
+		if (level >= 10) return 'Золото';
+		if (level >= 5) return 'Серебро';
+		return 'Новичок';
 	}
 
 	function getRankGradient(level: number): string {
@@ -278,7 +279,7 @@
 				<div class="flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 p-4">
 					<div class="flex items-center gap-3">
 						<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10 text-lg">
-							🏆
+							<Icon name="trophy" class="h-5 w-5 text-green-400" />
 						</div>
 						<div>
 							<div class="text-sm font-medium text-white">Побед</div>
@@ -373,7 +374,7 @@
 				<div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
 				<div class="relative flex items-center gap-4">
 					<div class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-2xl transition-transform group-hover:scale-110">
-						🎮
+						<Icon name="gamepad" class="h-6 w-6 text-blue-400" />
 					</div>
 					<div>
 						<div class="font-semibold text-white">В лобби</div>

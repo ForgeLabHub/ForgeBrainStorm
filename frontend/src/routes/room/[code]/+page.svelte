@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon, { type IconName } from '$lib/Icon.svelte';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
         import { ws } from '$lib/ws';
@@ -24,10 +25,10 @@
 
 	type PowerUpKind = 'double_points' | 'freeze_time' | 'remove_two_options';
 
-	const POWER_UP_META: Record<PowerUpKind, { icon: string; label: string }> = {
-		double_points: { icon: '⚡', label: '×2 очки' },
-		freeze_time: { icon: '⏳', label: '+10 сек' },
-		remove_two_options: { icon: '✂️', label: '−2 варианта' },
+	const POWER_UP_META: Record<PowerUpKind, { icon: IconName; label: string }> = {
+		double_points: { icon: 'bolt', label: '×2 очки' },
+		freeze_time: { icon: 'hourglass', label: '+10 сек' },
+		remove_two_options: { icon: 'scissors', label: '−2 варианта' },
 	};
 
 	type Question = {
@@ -253,12 +254,12 @@
 
 	function getModeLabel(m: string): string {
 		const labels: Record<string, string> = {
-			classic: '🎯 Классика',
-			ffa: '⚔️ Каждый за себя',
-			team: '👥 Команды',
-			lives: '❤️ На выживание',
-			blitz: '⚡ Блиц',
-			sandbox: '🎓 Тренировка',
+			classic: 'Классика',
+			ffa: 'Каждый за себя',
+			team: 'Команды',
+			lives: 'На выживание',
+			blitz: 'Блиц',
+			sandbox: 'Тренировка',
 		};
 		return labels[m] || m;
 	}
@@ -298,7 +299,7 @@
 				<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-12 text-center backdrop-blur-sm">
 					<div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
 					<div class="relative z-10">
-						<div class="mb-6 text-6xl">⏳</div>
+						<div class="mb-6 flex justify-center text-blue-400"><Icon name="clock" class="h-14 w-14" /></div>
 						<h2 class="mb-2 text-2xl font-bold text-white">Ожидание игроков</h2>
 						<p class="mb-6 text-slate-400">Поделитесь кодом комнаты: <span class="font-mono text-blue-400">{roomCode}</span></p>
 
@@ -357,7 +358,7 @@
 									onclick={() => usePowerUp(kind)}
 									class="flex items-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-300 transition-all hover:border-purple-400/50 hover:bg-purple-500/20"
 								>
-									<span>{POWER_UP_META[kind].icon}</span>
+									<Icon name={POWER_UP_META[kind].icon} class="h-4 w-4" />
 									<span>{POWER_UP_META[kind].label}</span>
 								</button>
 							{/each}
@@ -428,7 +429,7 @@
 					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm">
 						<div class="absolute inset-0 {lastResult?.correct ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/5' : 'bg-gradient-to-br from-red-500/10 to-rose-500/5'}"></div>
 						<div class="relative z-10 text-center">
-							<div class="mb-4 text-5xl">{lastResult?.correct ? '✅' : '❌'}</div>
+							<div class="mb-4 flex justify-center {lastResult?.correct ? 'text-green-400' : 'text-red-400'}"><Icon name={lastResult?.correct ? 'check' : 'cross'} class="h-12 w-12" /></div>
 							<h2 class="text-2xl font-bold {lastResult?.correct ? 'text-green-400' : 'text-red-400'}">
 								{lastResult?.correct ? 'Правильно!' : 'Неправильно'}
 							</h2>
@@ -468,7 +469,7 @@
 				<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-12 text-center backdrop-blur-sm">
 					<div class="absolute inset-0 bg-gradient-to-br from-yellow-500/10 to-orange-500/5"></div>
 					<div class="relative z-10">
-						<div class="mb-6 text-6xl">🏆</div>
+						<div class="mb-6 flex justify-center text-yellow-400"><Icon name="trophy" class="h-14 w-14" /></div>
 						<h2 class="mb-2 text-3xl font-bold text-white">Игра окончена!</h2>
 						{#if mode === 'team' && teamScores.length > 0}
 							<p class="text-slate-400">
@@ -499,8 +500,8 @@
 							{#each ranked.slice(0, 5) as player, i}
 								<div class="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4 {i === 0 ? 'ring-2 ring-yellow-500/30' : ''}">
 									<div class="flex items-center gap-4">
-										<span class="text-2xl">
-											{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+										<span class="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold {i === 0 ? 'bg-yellow-500/20 text-yellow-300' : i === 1 ? 'bg-slate-400/20 text-slate-200' : i === 2 ? 'bg-orange-500/20 text-orange-300' : 'bg-white/5 text-slate-400'}">
+											{i + 1}
 										</span>
 										<span class="font-semibold text-white">{player.name}</span>
 										{#if player.eliminated}
@@ -583,7 +584,7 @@
 							{#if !player.infinite_lives && typeof player.lives === 'number'}
 								<div class="mb-1 text-right text-xs tracking-tight">
 									{#each Array(3) as _, i}
-										<span class={i < (player.lives ?? 0) ? 'text-red-400' : 'text-slate-700'}>{i < (player.lives ?? 0) ? '❤' : '♡'}</span>
+										<Icon name="heart" class="h-3.5 w-3.5 {i < (player.lives ?? 0) ? 'text-red-400' : 'text-slate-700'}" />
 									{/each}
 								</div>
 							{/if}

@@ -17,7 +17,11 @@ export default defineConfig({
 			'/ws': {
 				target: 'ws://localhost:5000',
 				ws: true
-			}
+			},
+			// Probes live at the root of the API, not under /api: the runtime and
+			// deploy/ health checks ask for them there.
+			'/health': 'http://localhost:5000',
+			'/readyz': 'http://localhost:5000'
 		}
 	}
 });

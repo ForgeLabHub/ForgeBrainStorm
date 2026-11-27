@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon, { type IconName } from '$lib/Icon.svelte';
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -61,19 +62,19 @@
 		}
 	}
 
-	const difficulties = [
-		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих', icon: '🌱', color: 'from-green-500 to-emerald-500' },
-		{ value: 'medium', label: 'Средняя', desc: 'Для всех', icon: '⚡', color: 'from-blue-500 to-cyan-500' },
-		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов', icon: '🔥', color: 'from-red-500 to-orange-500' },
+	const difficulties: { value: string; label: string; desc: string; icon: IconName; color: string }[] = [
+		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих', icon: 'seedling', color: 'from-green-500 to-emerald-500' },
+		{ value: 'medium', label: 'Средняя', desc: 'Для всех', icon: 'bolt', color: 'from-blue-500 to-cyan-500' },
+		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов', icon: 'flame', color: 'from-red-500 to-orange-500' },
 	];
 
-	const modes = [
-		{ value: 'classic', label: 'Классика', desc: '100 очков за верный ответ', icon: '🎯' },
-		{ value: 'ffa', label: 'Каждый за себя', desc: 'Чем быстрее ответ, тем больше очков', icon: '⚔️' },
-		{ value: 'lives', label: 'На выживание', desc: '3 жизни — ошибка их отнимает', icon: '❤️' },
-		{ value: 'blitz', label: 'Блиц', desc: '10 секунд на вопрос, серия умножает очки', icon: '⚡' },
-		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', icon: '👥' },
-		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', icon: '🎓' },
+	const modes: { value: string; label: string; desc: string; icon: IconName }[] = [
+		{ value: 'classic', label: 'Классика', desc: '100 очков за верный ответ', icon: 'target' },
+		{ value: 'ffa', label: 'Каждый за себя', desc: 'Чем быстрее ответ, тем больше очков', icon: 'swords' },
+		{ value: 'lives', label: 'На выживание', desc: '3 жизни — ошибка их отнимает', icon: 'heart' },
+		{ value: 'blitz', label: 'Блиц', desc: '10 секунд на вопрос, серия умножает очки', icon: 'bolt' },
+		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', icon: 'users' },
+		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', icon: 'cap' },
 	];
 
 	const BLITZ_TIMER = 10;
@@ -83,8 +84,8 @@
 	<!-- Header -->
 	<div class="mb-8 transition-all duration-700 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
 		<div class="flex items-center gap-3">
-			<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-xl">
-				🎮
+			<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+				<Icon name="gamepad" class="h-5 w-5" />
 			</div>
 			<div>
 				<h1 class="text-2xl font-bold text-white sm:text-3xl">Создать комнату</h1>
@@ -136,8 +137,8 @@
 									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
 							}">
 								<input type="radio" bind:group={difficulty} value={d.value} class="sr-only" />
-								<div class="flex h-10 w-10 items-center justify-center rounded-lg {difficulty === d.value ? `bg-gradient-to-br ${d.color}` : 'bg-white/5'} text-lg transition-transform group-hover:scale-110">
-									{d.icon}
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {difficulty === d.value ? `bg-gradient-to-br ${d.color} text-white` : 'bg-white/5 text-slate-300'} transition-transform group-hover:scale-110">
+									<Icon name={d.icon} />
 								</div>
 								<div class="min-w-0 flex-1">
 									<div class="font-medium text-white">{d.label}</div>
@@ -173,8 +174,8 @@
 									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
 							}">
 								<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
-								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-white/5'} text-lg transition-transform group-hover:scale-110">
-									{m.icon}
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white' : 'bg-white/5 text-slate-300'} transition-transform group-hover:scale-110">
+									<Icon name={m.icon} />
 								</div>
 								<div class="min-w-0 flex-1">
 									<div class="font-medium text-white">{m.label}</div>
