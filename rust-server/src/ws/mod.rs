@@ -25,7 +25,8 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::domain::player::{Player, PLAYER_LIVES};
+use crate::domain::mode::{GameMode, TEAM_NAMES};
+use crate::domain::player::Player;
 use crate::domain::power_up::{self, PowerUp, FREEZE_SECS};
 use crate::domain::room::{Room, RoomState};
 use crate::middleware::auth::AuthContext;
@@ -138,7 +139,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     room.touch();
                     (
                         room.settings.topic.clone(),
-                        room.settings.mode.clone(),
+                        room.settings.mode.as_str().to_string(),
                         room.host_user_id == auth.user_id,
                         players_event(&room),
                         room.tx.subscribe(),
@@ -155,7 +156,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     &out_tx,
                     json!({
                         "type": "room_joined",
-                        "data": { "code": code, "is_host": is_host, "topic": topic, "mode": mode }
+                        "data": {
+                            "code": code,
+                            "is_host": is_host,
+                            "topic": topic,
+                            "mode": mode,
+                            "mode_title": GameMode::parse(&mode)
+                                .map(|parsed| parsed.title())
+                                .unwrap_or("Классика"),
+                        }
                     }),
                 );
                 let (replay, hand) = {
@@ -270,14 +279,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 let (first_question, players, token, hands) = {
                     let mut room = room.write();
                     room.set_questions(questions, &source);
+                    room.assign_teams();
+                    let mode = room.settings.mode;
                     let mut hands = Vec::new();
-                    let lives_mode = room.settings.mode == "lives";
                     for player in room.players.values_mut() {
                         player.power_ups = PowerUp::STARTING_HAND.to_vec();
                         player.double_points = false;
                         player.is_spectator = false;
-                        player.lives = PLAYER_LIVES;
-                        player.infinite_lives = !lives_mode;
+                        player.lives = mode.lives().unwrap_or(1);
+                        player.infinite_lives = mode.lives().is_none();
                         if let Some(outbox) = player.outbox.as_ref() {
                             hands.push((outbox.clone(), power_ups_event(&player.power_ups)));
                         }
@@ -406,7 +416,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     else {
                         continue;
                     };
-                    let lives_mode = room.settings.mode == "lives";
+                    let mode = room.settings.mode;
+                    let speed = room.speed_ratio();
 
                     let mut knocked_out = false;
                     let mut eliminated = false;
@@ -416,8 +427,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             player.answered = true;
                             player.answer_index = Some(index);
                             player.answer_time = Some(Instant::now());
-                            player.award(index == correct, lives_mode);
-                            if lives_mode && player.lives == 0 {
+                            player.award(index == correct, mode, speed);
+                            if mode.lives().is_some() && player.lives == 0 {
                                 player.is_spectator = true;
                                 player.instant_answer = false;
                                 knocked_out = true;
@@ -555,11 +566,41 @@ fn game_over_event(room: &Room) -> String {
                 "name": player.display_name,
                 "score": player.score,
                 "lives": player.lives,
+                "team": player.team,
                 "eliminated": player.is_spectator,
             })
         })
         .collect();
-    json!({"type": "game_over", "data": {"scores": scores}}).to_string()
+    let mut data = json!({
+        "scores": scores,
+        "mode": room.settings.mode.as_str(),
+        "persisted": room.settings.mode.persists(),
+    });
+    if let Some(teams) = team_standings(room) {
+        data["teams"] = teams;
+    }
+    json!({"type": "game_over", "data": data}).to_string()
+}
+
+/// Team totals for team mode, ordered by score; `None` for other modes.
+fn team_standings(room: &Room) -> Option<Value> {
+    if !room.settings.mode.is_team() {
+        return None;
+    }
+    let mut totals = [0_i64; TEAM_NAMES.len()];
+    for player in room.players.values() {
+        if let Some(team) = player.team {
+            if let Some(total) = totals.get_mut(team as usize) {
+                *total += player.score;
+            }
+        }
+    }
+    let teams: Vec<Value> = TEAM_NAMES
+        .iter()
+        .enumerate()
+        .map(|(index, name)| json!({"team": index, "name": name, "score": totals[index]}))
+        .collect();
+    Some(Value::Array(teams))
 }
 
 fn players_event(room: &Room) -> String {
@@ -572,6 +613,8 @@ fn players_event(room: &Room) -> String {
                 "score": player.score,
                 "lives": player.lives,
                 "infinite_lives": player.infinite_lives,
+                "team": player.team,
+                "streak": player.streak,
                 "eliminated": player.is_spectator,
                 "disconnected": player.is_disconnected(),
                 "is_host": player.user_id == Some(room.host_user_id),
@@ -598,6 +641,7 @@ fn question_event(room: &Room) -> Option<String> {
                 "index": room.current_q,
                 "total": room.questions.len(),
                 "source": room.question_source,
+                "mode": room.settings.mode.as_str(),
             }
         })
         .to_string(),
@@ -637,7 +681,7 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
         room.question_token += 1;
 
         // In survival mode the last player standing ends the game early.
-        let out_of_lives = room.settings.mode == "lives"
+        let out_of_lives = room.settings.mode.lives().is_some()
             && room
                 .players
                 .values()
@@ -666,11 +710,12 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
             let info = history::GameInfo {
                 room_code: room.code.clone(),
                 topic: room.settings.topic.clone(),
-                mode: room.settings.mode.clone(),
+                mode: room.settings.mode.as_str().to_string(),
                 players: room.players.len() as i32,
                 duration_secs: duration,
             };
-            finished = Some((results, info));
+            // Sandbox is a practice room: it must not move the leaderboard.
+            finished = room.settings.mode.persists().then_some((results, info));
         } else {
             finished = None;
             // Hold the result screen briefly before the next question so

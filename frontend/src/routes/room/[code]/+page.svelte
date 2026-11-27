@@ -11,12 +11,16 @@
 		score: number;
 		lives?: number;
 		infinite_lives?: boolean;
+		team?: number | null;
+		streak?: number;
 		eliminated?: boolean;
 		disconnected?: boolean;
 		is_host: boolean;
 		is_ready: boolean;
 		username?: string;
 	};
+
+	type TeamScore = { team: number; name: string; score: number };
 
 	type PowerUpKind = 'double_points' | 'freeze_time' | 'remove_two_options';
 
@@ -49,6 +53,20 @@
 	let powerUps: PowerUpKind[] = $state([]);
 	let hiddenOptions: number[] = $state([]);
 	let eliminated = $state(false);
+	let modeTitle = $state('');
+	let persisted = $state(true);
+
+	// Sorting `players` in place inside markup mutates state during render;
+	// every view reads this derived copy instead.
+	let ranked = $derived([...players].sort((a, b) => b.score - a.score));
+	let teamScores = $derived<TeamScore[]>(
+		mode === 'team'
+			? [
+					{ team: 0, name: 'Синие', score: players.filter((p) => p.team === 0).reduce((sum, p) => sum + p.score, 0) },
+					{ team: 1, name: 'Красные', score: players.filter((p) => p.team === 1).reduce((sum, p) => sum + p.score, 0) }
+				].sort((a, b) => b.score - a.score)
+			: []
+	);
 
 	onMount(() => {
 		ws.connect();
@@ -59,12 +77,15 @@
 			isHost = data.is_host;
 			topic = data.topic || '';
 			mode = data.mode || 'classic';
+			modeTitle = data.mode_title || '';
 			if (data.players) {
 				players = data.players.map((p: any) => ({
 					name: p.name ?? p.display_name ?? p.username,
 					score: p.score || 0,
 					lives: p.lives,
 					infinite_lives: p.infinite_lives,
+					team: p.team ?? null,
+					streak: p.streak ?? 0,
 					eliminated: p.eliminated || false,
 					is_host: p.is_host || false,
 					is_ready: p.is_ready || false,
@@ -93,6 +114,8 @@
 					score: data.player.score || 0,
 					lives: data.player.lives,
 					infinite_lives: data.player.infinite_lives,
+					team: data.player.team ?? null,
+					streak: data.player.streak ?? 0,
 					eliminated: data.player.eliminated || false,
 					is_host: data.player.is_host || false,
 					is_ready: data.player.is_ready || false,
@@ -149,12 +172,16 @@
 		ws.on('game_over', (data: any) => {
 			gamePhase = 'finished';
 			stopTimer();
+			persisted = data?.persisted !== false;
 			const board = data?.final_leaderboard ?? data?.scores;
 			if (board) {
 				finalLeaderboard = board;
 				players = board.map((p: any) => ({
 					name: p.name ?? p.username,
 					score: p.score,
+					lives: p.lives,
+					team: p.team ?? null,
+					eliminated: p.eliminated ?? false,
 					is_host: false,
 					is_ready: true,
 					username: p.name ?? p.username,
@@ -227,11 +254,11 @@
 	function getModeLabel(m: string): string {
 		const labels: Record<string, string> = {
 			classic: '🎯 Классика',
-			ffa: '⚔️ FFA',
+			ffa: '⚔️ Каждый за себя',
 			team: '👥 Команды',
 			lives: '❤️ На выживание',
-			coop: '🤝 Кооператив',
-			svoyaigra: '🎲 Своя Игра',
+			blitz: '⚡ Блиц',
+			sandbox: '🎓 Тренировка',
 		};
 		return labels[m] || m;
 	}
@@ -244,7 +271,7 @@
 			<div class="flex items-center gap-3">
 				<div class="font-mono text-sm text-slate-500 tracking-wider bg-white/5 rounded-lg px-3 py-1 border border-white/10">{roomCode}</div>
 				{#if mode}
-					<span class="text-sm text-slate-400">{getModeLabel(mode)}</span>
+					<span class="text-sm text-slate-400">{modeTitle || getModeLabel(mode)}</span>
 				{/if}
 			</div>
 			<h1 class="mt-2 text-2xl font-bold text-white">{topic || 'Без темы'}</h1>
@@ -422,7 +449,7 @@
 					<div class="rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-sm">
 						<h3 class="mb-4 text-lg font-semibold text-white">Таблица лидеров</h3>
 						<div class="space-y-2">
-							{#each players.sort((a, b) => b.score - a.score) as player, i}
+							{#each ranked as player, i}
 								<div class="flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 p-3">
 									<div class="flex items-center gap-3">
 										<span class="flex h-8 w-8 items-center justify-center rounded-lg {i === 0 ? 'bg-yellow-500/20 text-yellow-400' : i === 1 ? 'bg-slate-400/20 text-slate-300' : i === 2 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-slate-500'} font-bold text-sm">
@@ -443,7 +470,16 @@
 					<div class="relative z-10">
 						<div class="mb-6 text-6xl">🏆</div>
 						<h2 class="mb-2 text-3xl font-bold text-white">Игра окончена!</h2>
-						{#if players.length > 0}
+						{#if mode === 'team' && teamScores.length > 0}
+							<p class="text-slate-400">
+								{#if teamScores[0].score === teamScores[1].score}
+									Ничья: обе команды набрали {teamScores[0].score}
+								{:else}
+									Победитель: <span class="font-semibold text-yellow-400">{teamScores[0].name}</span>
+									<span class="text-slate-500">({teamScores[0].score} против {teamScores[1].score})</span>
+								{/if}
+							</p>
+						{:else if players.length > 0}
 							<p class="text-slate-400">
 								{#if players.every(p => p.eliminated)}
 									Никто не дожил до конца
@@ -452,10 +488,15 @@
 								{/if}
 							</p>
 						{/if}
+						{#if !persisted}
+							<p class="mt-3 inline-block rounded-lg bg-blue-500/10 px-3 py-1.5 text-xs text-blue-300">
+								Тренировка: результат не попал в рейтинг и историю
+							</p>
+						{/if}
 
 						<!-- Final leaderboard -->
 						<div class="mt-8 space-y-3">
-							{#each players.sort((a, b) => b.score - a.score).slice(0, 5) as player, i}
+							{#each ranked.slice(0, 5) as player, i}
 								<div class="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4 {i === 0 ? 'ring-2 ring-yellow-500/30' : ''}">
 									<div class="flex items-center gap-4">
 										<span class="text-2xl">
@@ -464,6 +505,14 @@
 										<span class="font-semibold text-white">{player.name}</span>
 										{#if player.eliminated}
 											<span class="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-400">ВЫБЫЛ</span>
+										{/if}
+										{#if mode === 'team' && player.team !== null && player.team !== undefined}
+											<span class="rounded px-1.5 py-0.5 text-[10px] font-bold {player.team === 0 ? 'bg-blue-500/20 text-blue-300' : 'bg-rose-500/20 text-rose-300'}">
+												{player.team === 0 ? 'СИНИЕ' : 'КРАСНЫЕ'}
+											</span>
+										{/if}
+										{#if (player.streak ?? 0) > 1}
+											<span class="rounded bg-orange-500/20 px-1.5 py-0.5 text-[10px] font-bold text-orange-300">×{player.streak} серия</span>
 										{/if}
 									</div>
 									<span class="text-xl font-bold text-white">{player.score} <span class="text-sm text-slate-400">pts</span></span>
@@ -494,9 +543,23 @@
 		<!-- Sidebar: Players -->
 		<div>
 			<div class="sticky top-24 rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm">
+				{#if mode === 'team' && teamScores.length > 0}
+					<div class="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+						<div class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Счёт команд</div>
+						{#each teamScores as team, index}
+							<div class="flex items-center justify-between py-1">
+								<span class="flex items-center gap-2 text-sm {team.team === 0 ? 'text-blue-300' : 'text-rose-300'}">
+									<span class="h-2 w-2 rounded-full {team.team === 0 ? 'bg-blue-400' : 'bg-rose-400'}"></span>
+									{index === 0 && team.score > 0 ? '👑 ' : ''}{team.name}
+								</span>
+								<span class="text-sm font-bold text-white">{team.score}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">Игроки</h3>
 				<div class="space-y-2">
-					{#each players.sort((a, b) => b.score - a.score) as player}
+					{#each ranked as player}
 						<div class="flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 p-3 transition-all hover:bg-white/[0.05] {player.disconnected ? 'opacity-50' : ''}">
 							<div class="flex items-center gap-3">
 								<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-bold text-white">

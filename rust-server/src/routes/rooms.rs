@@ -9,6 +9,7 @@ use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use validator::Validate;
 
+use crate::domain::mode::GameMode;
 use crate::domain::room::RoomSettings;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::middleware::auth::{auth_middleware, AuthContext};
@@ -51,9 +52,26 @@ async fn create_room(
         .validate()
         .map_err(|e| AppError::Validation(ValidationError::new("topic", e.to_string())))?;
 
+    let mode = match input.mode.as_deref() {
+        None => GameMode::Classic,
+        Some(raw) => GameMode::parse(raw).ok_or_else(|| {
+            AppError::Validation(ValidationError::new(
+                "mode",
+                format!(
+                    "Неизвестный режим «{raw}». Доступны: {}",
+                    GameMode::ALL
+                        .iter()
+                        .map(|mode| mode.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ))
+        })?,
+    };
+
     let mut settings = RoomSettings {
         topic: input.topic.unwrap_or_else(|| "Общие знания".into()),
-        mode: input.mode.unwrap_or_else(|| "classic".into()),
+        mode,
         max_players: input.max_players.unwrap_or(state.settings.max_players),
         ..Default::default()
     };

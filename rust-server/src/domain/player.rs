@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::domain::mode::{GameMode, SURVIVAL_LIVES};
 use crate::domain::power_up::PowerUp;
 
 /// A player within a room.
@@ -37,9 +38,6 @@ pub struct Player {
     pub outbox: Option<UnboundedSender<String>>,
 }
 
-/// Lives handed out at the start of a survival game.
-pub const PLAYER_LIVES: u8 = 3;
-
 impl Player {
     pub fn new(
         sid: String,
@@ -58,7 +56,7 @@ impl Player {
             answered: false,
             answer_index: None,
             answer_time: None,
-            lives: PLAYER_LIVES,
+            lives: SURVIVAL_LIVES,
             infinite_lives: false,
             is_spectator: false,
             is_cheat: false,
@@ -77,29 +75,27 @@ impl Player {
         self.disconnected_at.is_some()
     }
 
-    /// Points for one correct answer; zero for a wrong one.
-    pub const BASE_POINTS: i64 = 100;
-
     /// Apply an answer and return the points it earned.
     ///
-    /// An armed `DoublePoints` is consumed here, whether the answer is right or
-    /// not: the power-up buys one attempt, not one guaranteed hit.
-    pub fn award(&mut self, correct: bool, lives_mode: bool) -> i64 {
+    /// `speed` is the share of the clock left when the answer landed; only
+    /// speed-scored modes use it. An armed `DoublePoints` is consumed here,
+    /// whether the answer is right or not: the power-up buys one attempt, not
+    /// one guaranteed hit.
+    pub fn award(&mut self, correct: bool, mode: GameMode, speed: f64) -> i64 {
         let doubled = std::mem::take(&mut self.double_points);
         if !correct {
             self.streak = 0;
-            if lives_mode {
+            if mode.lives().is_some() {
                 self.lives = self.lives.saturating_sub(1);
             }
             return 0;
         }
         self.streak += 1;
         self.total_correct += 1;
-        let points = if doubled {
-            Self::BASE_POINTS * 2
-        } else {
-            Self::BASE_POINTS
-        };
+        let mut points = mode.points(speed, self.streak);
+        if doubled {
+            points *= 2;
+        }
         self.score += points;
         points
     }
@@ -123,7 +119,7 @@ impl Player {
         self.answered = false;
         self.answer_index = None;
         self.answer_time = None;
-        self.lives = PLAYER_LIVES;
+        self.lives = SURVIVAL_LIVES;
         self.is_spectator = false;
         self.double_points = false;
         self.power_ups = PowerUp::STARTING_HAND.to_vec();
@@ -142,7 +138,7 @@ mod tests {
     fn a_survival_game_takes_one_life_per_wrong_answer() {
         let mut p = player();
         for left in [2, 1, 0] {
-            p.award(false, true);
+            p.award(false, GameMode::Lives, 1.0);
             assert_eq!(p.lives, left);
         }
     }
@@ -150,8 +146,8 @@ mod tests {
     #[test]
     fn a_classic_game_never_touches_lives() {
         let mut p = player();
-        p.award(false, false);
-        assert_eq!(p.lives, PLAYER_LIVES);
+        p.award(false, GameMode::Classic, 1.0);
+        assert_eq!(p.lives, SURVIVAL_LIVES);
     }
 
     #[test]
@@ -162,7 +158,7 @@ mod tests {
         p.score = 400;
 
         p.reset_for_new_game();
-        assert_eq!(p.lives, PLAYER_LIVES);
+        assert_eq!(p.lives, SURVIVAL_LIVES);
         assert!(!p.is_spectator);
         assert_eq!(p.score, 0);
     }
@@ -171,10 +167,10 @@ mod tests {
     fn double_points_doubles_the_next_correct_answer() {
         let mut p = player();
         p.double_points = true;
-        assert_eq!(p.award(true, false), 200);
+        assert_eq!(p.award(true, GameMode::Classic, 1.0), 200);
         assert_eq!(p.score, 200);
         // Spent: the answer after it scores normally again.
-        assert_eq!(p.award(true, false), 100);
+        assert_eq!(p.award(true, GameMode::Classic, 1.0), 100);
         assert_eq!(p.score, 300);
     }
 
@@ -182,21 +178,21 @@ mod tests {
     fn double_points_is_lost_on_a_wrong_answer() {
         let mut p = player();
         p.double_points = true;
-        assert_eq!(p.award(false, false), 0);
-        assert_eq!(p.award(true, false), 100);
+        assert_eq!(p.award(false, GameMode::Classic, 1.0), 0);
+        assert_eq!(p.award(true, GameMode::Classic, 1.0), 100);
     }
 
     #[test]
     fn wrong_answer_resets_streak_and_costs_a_life_in_lives_mode() {
         let mut p = player();
-        p.award(true, true);
-        p.award(true, true);
+        p.award(true, GameMode::Lives, 1.0);
+        p.award(true, GameMode::Lives, 1.0);
         assert_eq!(p.streak, 2);
-        p.award(false, true);
+        p.award(false, GameMode::Lives, 1.0);
         assert_eq!(p.streak, 0);
         assert_eq!(p.lives, 2);
         // Classic mode has no lives to lose.
-        p.award(false, false);
+        p.award(false, GameMode::Classic, 1.0);
         assert_eq!(p.lives, 2);
     }
 
@@ -212,7 +208,7 @@ mod tests {
     #[test]
     fn new_game_deals_a_full_hand_and_clears_score() {
         let mut p = player();
-        p.award(true, false);
+        p.award(true, GameMode::Classic, 1.0);
         p.power_ups.clear();
         p.reset_for_new_game();
         assert_eq!(p.score, 0);

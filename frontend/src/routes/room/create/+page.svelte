@@ -9,6 +9,7 @@
 	let questionCount = $state(10);
 	let numOptions = $state(4);
 	let timerSeconds = $state(30);
+	let timerLocked = $derived(mode === 'blitz');
 	let creating = $state(false);
 	let error = $state('');
 	let visible = $state(false);
@@ -67,11 +68,15 @@
 	];
 
 	const modes = [
-		{ value: 'classic', label: 'Классика', desc: 'Все отвечают одновременно', icon: '🎯' },
-		{ value: 'ffa', label: 'Каждый за себя', desc: 'Кто быстрее ответит', icon: '⚔️' },
-		{ value: 'team', label: 'Команды', desc: 'Скоро — игра командами', icon: '👥', soon: true },
-		{ value: 'lives', label: 'На выживание', desc: '3 жизни — кто выживет', icon: '❤️' },
+		{ value: 'classic', label: 'Классика', desc: '100 очков за верный ответ', icon: '🎯' },
+		{ value: 'ffa', label: 'Каждый за себя', desc: 'Чем быстрее ответ, тем больше очков', icon: '⚔️' },
+		{ value: 'lives', label: 'На выживание', desc: '3 жизни — ошибка их отнимает', icon: '❤️' },
+		{ value: 'blitz', label: 'Блиц', desc: '10 секунд на вопрос, серия умножает очки', icon: '⚡' },
+		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', icon: '👥' },
+		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', icon: '🎓' },
 	];
+
+	const BLITZ_TIMER = 10;
 </script>
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6">
@@ -162,12 +167,12 @@
 					</h3>
 					<div class="space-y-2">
 						{#each modes as m}
-							<label class="group flex items-center gap-3 rounded-xl border p-3 transition-all {m.soon ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} {
+							<label class="group flex items-center gap-3 rounded-xl border p-3 transition-all cursor-pointer {
 								mode === m.value
 									? 'border-white/20 bg-white/[0.05]'
 									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
 							}">
-								<input type="radio" bind:group={mode} value={m.value} class="sr-only" disabled={m.soon} />
+								<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
 								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-white/5'} text-lg transition-transform group-hover:scale-110">
 									{m.icon}
 								</div>
@@ -175,9 +180,7 @@
 									<div class="font-medium text-white">{m.label}</div>
 									<div class="text-xs text-slate-400">{m.desc}</div>
 								</div>
-								{#if m.soon}
-									<span class="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-300">скоро</span>
-								{:else if mode === m.value}
+								{#if mode === m.value}
 									<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
 										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
 									</svg>
@@ -232,12 +235,16 @@
 						<span class="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">Время (сек)</span>
 						<input
 							type="number"
-							bind:value={timerSeconds}
+							value={timerLocked ? BLITZ_TIMER : timerSeconds}
+							oninput={(event) => (timerSeconds = Number(event.currentTarget.value))}
+							disabled={timerLocked}
 							min="10"
 							max="120"
-							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:text-slate-400"
 						/>
-						<span class="mt-1 block text-xs text-slate-500">10–120</span>
+						<span class="mt-1 block text-xs text-slate-500">
+							{timerLocked ? 'В блице время фиксировано — 10 секунд' : '10–120'}
+						</span>
 					</label>
 				</div>
 			</div>

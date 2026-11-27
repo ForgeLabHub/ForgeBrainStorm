@@ -9,6 +9,7 @@ use rand::Rng;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
+use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 use crate::error::{AppError, AppResult};
 
@@ -27,7 +28,7 @@ pub enum RoomState {
 #[derive(Debug, Clone, Serialize)]
 pub struct RoomSettings {
     pub topic: String,
-    pub mode: String,
+    pub mode: GameMode,
     pub max_players: usize,
     #[serde(default = "default_question_count")]
     pub question_count: usize,
@@ -53,7 +54,7 @@ impl Default for RoomSettings {
     fn default() -> Self {
         Self {
             topic: "Общие знания".into(),
-            mode: "classic".into(),
+            mode: GameMode::Classic,
             max_players: 30,
             question_count: default_question_count(),
             num_options: default_num_options(),
@@ -68,23 +69,13 @@ impl RoomSettings {
     pub fn clamp(&mut self) {
         self.question_count = self.question_count.clamp(5, 30);
         self.num_options = self.num_options.clamp(2, 6);
-        self.timer_secs = self.timer_secs.clamp(10, 120);
+        self.timer_secs = self
+            .mode
+            .timer_override()
+            .unwrap_or_else(|| self.timer_secs.clamp(10, 120));
         self.topic.truncate(200);
         if !["easy", "medium", "hard"].contains(&self.difficulty.as_str()) {
             self.difficulty = "medium".into();
-        }
-        if ![
-            "classic",
-            "ffa",
-            "team",
-            "lives",
-            "coop",
-            "svoyaigra",
-            "sandbox",
-        ]
-        .contains(&self.mode.as_str())
-        {
-            self.mode = "classic".into();
         }
     }
 }
@@ -141,6 +132,19 @@ impl Room {
         self.last_activity = Instant::now();
     }
 
+    /// Share of the clock still left (1.0 right after the question appears,
+    /// 0.0 at the buzzer). Modes with speed scoring turn this into points.
+    pub fn speed_ratio(&self) -> f64 {
+        let Some(deadline) = self.deadline else {
+            return 1.0;
+        };
+        let total = self.settings.timer_secs.max(1) as f64;
+        let left = deadline
+            .saturating_duration_since(Instant::now())
+            .as_secs_f64();
+        (left / total).clamp(0.0, 1.0)
+    }
+
     /// CAS transition: Waiting → Starting. Returns false if already taken.
     pub fn try_start(&mut self) -> bool {
         if self.state == RoomState::Waiting {
@@ -179,6 +183,29 @@ impl Room {
             player.reset_for_new_game();
         }
         self.touch();
+    }
+
+    /// Seat players into teams by join order: alternating, so the sides stay
+    /// even to within one player. Other modes clear the field, which keeps a
+    /// rematch from carrying team badges into a free-for-all.
+    pub fn assign_teams(&mut self) {
+        if !self.settings.mode.is_team() {
+            for player in self.players.values_mut() {
+                player.team = None;
+            }
+            return;
+        }
+        let mut seats: Vec<(Instant, String)> = self
+            .players
+            .values()
+            .map(|player| (player.joined_at, player.sid.clone()))
+            .collect();
+        seats.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        for (index, (_, sid)) in seats.iter().enumerate() {
+            if let Some(player) = self.players.get_mut(sid) {
+                player.team = Some((index % TEAM_NAMES.len()) as u8);
+            }
+        }
     }
 
     pub fn all_answered(&self) -> bool {
@@ -304,6 +331,7 @@ pub struct RoomSnapshot {
     pub host_name: String,
     pub state: RoomState,
     pub mode: String,
+    pub mode_title: String,
     pub topic: String,
     pub player_count: usize,
 }
@@ -314,7 +342,8 @@ impl RoomSnapshot {
             code: room.code.clone(),
             host_name: room.host_name.clone(),
             state: room.state,
-            mode: room.settings.mode.clone(),
+            mode: room.settings.mode.as_str().to_string(),
+            mode_title: room.settings.mode.title().to_string(),
             topic: room.settings.topic.clone(),
             player_count: room
                 .players

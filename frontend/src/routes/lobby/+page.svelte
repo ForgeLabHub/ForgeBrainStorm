@@ -55,8 +55,8 @@
 			ffa: '⚔️ Каждый за себя',
 			team: '👥 Команды',
 			lives: '❤️ На выживание',
-			coop: '🤝 Кооператив',
-			svoyaigra: '🎲 Своя Игра',
+			blitz: '⚡ Блиц',
+			sandbox: '🎓 Тренировка',
 		};
 		return labels[mode] || mode;
 	}
@@ -67,8 +67,8 @@
 			ffa: 'from-orange-500 to-red-500',
 			team: 'from-purple-500 to-pink-500',
 			lives: 'from-red-500 to-rose-500',
-			coop: 'from-green-500 to-emerald-500',
-			svoyaigra: 'from-yellow-500 to-amber-500',
+			blitz: 'from-amber-400 to-orange-500',
+			sandbox: 'from-teal-500 to-emerald-500',
 		};
 		return colors[mode] || 'from-slate-500 to-slate-600';
 	}
@@ -79,8 +79,8 @@
 			ffa: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
 			team: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
 			lives: 'bg-red-500/10 text-red-400 border-red-500/20',
-			coop: 'bg-green-500/10 text-green-400 border-green-500/20',
-			svoyaigra: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+			blitz: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+			sandbox: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
 		};
 		return badges[mode] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
 	}
