@@ -6,6 +6,14 @@ rust-version = "1.85"
 description = "BrainStorm — realtime quiz platform (Rust rewrite)"
 license = "MIT"
 
+[lib]
+name = "brainstorm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "brainstorm-server"
+path = "src/main.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["ws", "macros"] }

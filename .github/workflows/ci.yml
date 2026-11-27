@@ -45,6 +45,21 @@ jobs:
         # Tests that need a live database are #[ignore]d and require DATABASE_URL.
         run: cargo test --locked
 
+  security-audit:
+    name: Security audit (cargo audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: rust-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run security audit
+        run: cargo audit
+
   frontend:
     name: Svelte type check and production build
     runs-on: ubuntu-latest

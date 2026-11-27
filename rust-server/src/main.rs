@@ -169,27 +169,63 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "rate-limit")]
     let app = app.layer(axum::Extension(rate_limiter));
 
-    // Background: periodic room cleanup.
-    let cleanup_rooms = rooms.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            let removed = cleanup_rooms.cleanup_stale(Duration::from_secs(300));
-            if removed > 0 {
-                info!(removed, "cleaned up stale rooms");
-            }
-        }
-    });
-
-    // Start server.
+    // Start server with graceful shutdown.
     info!(addr = %settings.listen, "starting HTTP server");
     let listener = TcpListener::bind(settings.listen).await?;
+    
+    // Spawn background cleanup task and keep its handle.
+    let cleanup_handle = {
+        let rooms = rooms.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let removed = rooms.cleanup_stale(Duration::from_secs(300));
+                if removed > 0 {
+                    info!(removed, "cleaned up stale rooms");
+                }
+            }
+        })
+    };
+
+    // Graceful shutdown on SIGTERM or SIGINT.
+    let shutdown_signal = async {
+        let ctrl_c = async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+
+        info!("shutdown signal received, starting graceful shutdown");
+    };
+
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal)
     .await?;
+
+    // Cleanup background tasks.
+    cleanup_handle.abort();
+    
+    info!("server shutdown complete");
 
     Ok(())
 }
