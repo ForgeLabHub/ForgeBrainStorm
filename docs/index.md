@@ -8,7 +8,8 @@
 | Что уже работает и как играть | [../README.md](../README.md) |
 | Правила режимов игры | [game-modes.md](game-modes.md) |
 | Как устроен Rust-бэкенд | [rust-backend.md](rust-backend.md) |
-| Понять устройство | [architecture/system-context.md](architecture/system-context.md) |
+| Понять устройство продукта | [architecture/overview.md](architecture/overview.md) |
+| Устройство legacy-монолита | [architecture/system-context.md](architecture/system-context.md) |
 | Где лежат данные | [database/storage.md](database/storage.md) |
 | API и ошибки | [api/conventions.md](api/conventions.md) |
 | Что делает модуль | [modules/](modules/) |
