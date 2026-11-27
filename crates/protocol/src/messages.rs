@@ -1,4 +1,4 @@
-//! WebSocket message types for client ↔ server communication.
+//! WebSocket message types for client <-> server communication.
 //!
 //! All messages follow the format: `{ "type": "...", "data": {...} }`
 //!
@@ -47,11 +47,9 @@ pub enum ClientMessage {
         /// Room code to join.
         code: RoomCode,
     },
-
     /// Start the game (host only).
     #[serde(rename = "start_game")]
     StartGame,
-
     /// Submit an answer to the current question.
     #[serde(rename = "submit_answer")]
     SubmitAnswer {
@@ -60,14 +58,12 @@ pub enum ClientMessage {
         /// Selected option index (0-based).
         option_index: u8,
     },
-
     /// Use a power-up.
     #[serde(rename = "use_power_up")]
     UsePowerUp {
         /// Power-up type to use.
         power_up: String,
     },
-
     /// Use a cheat power (cheater role only).
     #[serde(rename = "use_cheat_power")]
     UseCheatPower {
@@ -94,28 +90,24 @@ pub enum ServerMessage {
         /// Game mode title (human-readable).
         mode_title: String,
     },
-
     /// Player list updated.
     #[serde(rename = "players_updated")]
     PlayersUpdated {
         /// List of players in the room.
         players: Vec<PlayerInfo>,
     },
-
     /// A player joined the room.
     #[serde(rename = "player_joined")]
     PlayerJoined {
         /// Player who joined.
         player: PlayerInfo,
     },
-
     /// A player left the room.
     #[serde(rename = "player_left")]
     PlayerLeft {
         /// Player who left.
         player: PlayerInfo,
     },
-
     /// New question available.
     #[serde(rename = "question_emitted")]
     QuestionEmitted {
@@ -134,7 +126,6 @@ pub enum ServerMessage {
         /// Game mode.
         mode: String,
     },
-
     /// Result of submitted answer.
     #[serde(rename = "answer_result")]
     AnswerResult {
@@ -149,35 +140,30 @@ pub enum ServerMessage {
         /// Whether the answer was correct.
         correct: bool,
     },
-
     /// Player's power-up hand.
     #[serde(rename = "power_ups")]
     PowerUps {
         /// List of power-up types.
         items: Vec<String>,
     },
-
     /// Cheat power budget (cheater role only).
     #[serde(rename = "cheat_state")]
     CheatState {
         /// Remaining cheat powers.
         powers: serde_json::Value,
     },
-
     /// Cheat power revealed correct answer.
     #[serde(rename = "cheat_reveal")]
     CheatReveal {
         /// Index of the correct option.
         correct_index: u8,
     },
-
     /// Options hidden by power-up.
     #[serde(rename = "options_hidden")]
     OptionsHidden {
         /// Indices of hidden options.
         indexes: Vec<u8>,
     },
-
     /// Error message.
     #[serde(rename = "error")]
     Error {
@@ -187,7 +173,6 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
-
     /// Game over.
     #[serde(rename = "game_over")]
     GameOver {

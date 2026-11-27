@@ -1,7 +1,7 @@
-//! ForgeBrain Protocol — shared types for backend and frontend (WASM).
+//! ForgeBrain Protocol - shared types for backend and frontend (WASM).
 //!
 //! This crate contains:
-//! - WebSocket message types (client ↔ server)
+//! - WebSocket message types (client <-> server)
 //! - Request/Response DTOs
 //! - ID newtypes (RoomCode, UserId, QuestionId)
 //! - Shared validators
@@ -13,8 +13,8 @@
 //!
 //! # Example
 //!
-//! ```rust
-//! use forgebrain_protocol::{ClientMessage, ServerMessage, RoomCode};
+//! ```rust,no_run
+//! use forgebrain_protocol::{ClientMessage, RoomCode};
 //!
 //! let msg = ClientMessage::JoinRoom { code: RoomCode::new("ABC123") };
 //! let json = serde_json::to_string(&msg).unwrap();

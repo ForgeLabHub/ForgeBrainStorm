@@ -26,7 +26,10 @@ impl RoomCode {
     pub fn new(code: impl Into<String>) -> Self {
         let code = code.into();
         debug_assert_eq!(code.len(), 6, "Room code must be 6 characters");
-        debug_assert!(code.chars().all(|c| c.is_alphanumeric()), "Room code must be alphanumeric");
+        debug_assert!(
+            code.chars().all(|c| c.is_alphanumeric()),
+            "Room code must be alphanumeric"
+        );
         Self(code.to_uppercase())
     }
 

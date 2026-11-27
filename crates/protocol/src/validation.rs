@@ -11,15 +11,17 @@ pub enum ValidationError {
     /// Room code is invalid.
     #[error("invalid room code: {0}")]
     InvalidRoomCode(String),
-
     /// Answer option index is out of bounds.
     #[error("option index {index} out of bounds (max {max})")]
-    OptionIndexOutOfBounds { index: u8, max: u8 },
-
+    OptionIndexOutOfBounds {
+        /// The invalid index.
+        index: u8,
+        /// Maximum valid index.
+        max: u8,
+    },
     /// Message type is unknown.
     #[error("unknown message type: {0}")]
     UnknownMessageType(String),
-
     /// Required field is missing.
     #[error("missing required field: {0}")]
     MissingField(String),
@@ -71,7 +73,10 @@ pub fn validate_room_code(code: &str) -> Result<(), ValidationError> {
 /// ```
 pub fn validate_option_index(index: u8, num_options: u8) -> Result<(), ValidationError> {
     if index >= num_options {
-        return Err(ValidationError::OptionIndexOutOfBounds { index, max: num_options - 1 });
+        return Err(ValidationError::OptionIndexOutOfBounds {
+            index,
+            max: num_options - 1,
+        });
     }
     Ok(())
 }
