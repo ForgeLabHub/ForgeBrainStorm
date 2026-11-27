@@ -785,3 +785,14 @@ body[style*="--user-bg"] {
   .bg-stars, #neural-canvas { display: none; }
   .view.anim-enter, .round-transition, .reaction-float, .g-timer.danger, .pres-timer.danger { animation: none; }
 }
+
+/* Solo story: no animation or countdown is needed to read a chapter. */
+.campaign-view { max-width: 720px; margin-inline: auto; }
+.campaign-view [hidden] { display: none; }
+.campaign-entry { margin-bottom: 14px; min-height: 48px; border-color: var(--accent); }
+.campaign-hero { margin-top: 12px; border-color: var(--accent); background: linear-gradient(135deg,rgba(139,92,246,.13),transparent),var(--card); }
+.campaign-hero h2 { font-size: clamp(1.55rem,5vw,2.45rem); margin-block: 6px 12px; }
+.campaign-hero p, .camp-story { line-height: 1.6; }
+.campaign-view .camp-level-card { width: 100%; min-height: 48px; color: var(--text); text-align: left; justify-content: space-between; flex-wrap: wrap; }
+.campaign-view .camp-level-card.locked { opacity: .7; }
+.camp-story { margin-block: 12px; padding-inline-start: 12px; border-inline-start: 3px solid var(--accent); }

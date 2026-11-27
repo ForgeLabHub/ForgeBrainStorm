@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request, session
 
+from ..domain.campaign_catalog import CAMPAIGN_INTRO, CAMPAIGN_LEVELS, CAMPAIGN_TITLE, WORLD_NAMES, get_level
 from ..errors import AuthError
 from ..services import achievements, ai_client, campaign
 from ..validation import as_int
@@ -24,12 +25,19 @@ def levels():
     """Return all levels; guests see them locked."""
     username = session.get("username")
     if username:
-        return jsonify(campaign.get_progress(username))
+        return jsonify({
+            **campaign.get_progress(username),
+            "title": CAMPAIGN_TITLE, "intro": CAMPAIGN_INTRO, "requires_login": False,
+        })
     return jsonify({
-        "levels": [{**level, "stars": 0, "best_score": 0, "locked": True}
-                   for level in campaign.CAMPAIGN_LEVELS],
+        "levels": [{**{key: value for key, value in level.items() if key != "epilogue"},
+                    "stars": 0, "best_score": 0, "locked": True}
+                   for level in CAMPAIGN_LEVELS],
+        "title": CAMPAIGN_TITLE,
+        "intro": CAMPAIGN_INTRO,
+        "requires_login": True,
         "total_stars": 0,
-        "worlds": campaign.WORLD_NAMES,
+        "worlds": WORLD_NAMES,
     })
 
 
@@ -38,7 +46,7 @@ def start():
     """Generate the questions for a level the player has unlocked."""
     username = require_user()
     body = request.get_json(silent=True) or {}
-    level = campaign.get_level(as_int(body.get("level_id", 0), default=0))
+    level = get_level(as_int(body.get("level_id", 0), default=0))
     total_stars = campaign.get_progress(username)["total_stars"]
     if total_stars < level["req_stars"]:
         raise AuthError(f"Нужно {level['req_stars']} звёзд")
@@ -46,6 +54,7 @@ def start():
         topic=level["topic"], count=level["questions"],
         difficulty=level["difficulty"], num_options=4,
     )
+    level.pop("epilogue")
     return jsonify({"questions": questions, "level": level})
 
 
@@ -63,5 +72,7 @@ def result():
     )
     if outcome["stars"] == 3:
         achievements.unlock(username, "perfect_level")
+    if outcome["stars"]:
+        outcome["epilogue"] = get_level(as_int(body.get("level_id", 0), default=0))["epilogue"]
     outcome["new_achievements"] = achievements.evaluate(username)
     return jsonify(outcome)

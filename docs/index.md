@@ -10,6 +10,7 @@
 | Как устроен Rust-бэкенд | [rust-backend.md](rust-backend.md) |
 | Понять устройство продукта | [architecture/overview.md](architecture/overview.md) |
 | Устройство legacy-монолита | [architecture/system-context.md](architecture/system-context.md) |
+| Одиночная кампания и её архитектура | [Markdown](architecture/campaign.md) · [PDF](pdf/ru/architecture/campaign.pdf) |
 | Где лежат данные | [database/storage.md](database/storage.md) |
 | API и ошибки | [api/conventions.md](api/conventions.md) |
 | Что делает модуль | [modules/](modules/) |
@@ -29,8 +30,8 @@
 
 `app/`, `templates/`, `static/`, `run.py`, `wsgi.py` и корневой `Dockerfile` —
 **legacy**-монолит Flask + Socket.IO. Он остаётся в репозитории ради старого
-деплоя; новые фичи туда не добавляются. Часть документов в `modules/` описывает
-именно его — сверяйтесь с кодом `crates/server/`, если сомневаетесь.
+деплоя; одиночная кампания пока поддерживается именно в нём. Часть документов
+в `modules/` описывает Flask — сверяйтесь с `crates/server/` для Rust.
 
 ## Правила
 

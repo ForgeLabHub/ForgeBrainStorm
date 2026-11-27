@@ -10,39 +10,15 @@ from __future__ import annotations
 import time
 
 from ..db import user_connection
-from ..errors import NotFoundError, ValidationError
+from ..domain.campaign_catalog import CAMPAIGN_LEVELS, WORLD_NAMES, get_level
+from ..errors import ValidationError
 from ..logging_setup import get_logger
 from . import accounts
 
 logger = get_logger(__name__)
 
-WORLD_NAMES = {1: "🌍 Мир знаний", 2: "🎭 Мир культуры", 3: "🔮 Мир мастеров"}
-
-CAMPAIGN_LEVELS: list[dict] = [
-    {"id": 1,  "title": "Что? Где? Когда?",  "topic": "общие знания",         "world": 1, "difficulty": "easy",   "questions": 8,  "req_stars": 0,  "boss": False, "reward_coins": 30},
-    {"id": 2,  "title": "История мира",      "topic": "история",              "world": 1, "difficulty": "easy",   "questions": 8,  "req_stars": 2,  "boss": False, "reward_coins": 30},
-    {"id": 3,  "title": "Наука и природа",   "topic": "наука и природа",      "world": 1, "difficulty": "easy",   "questions": 8,  "req_stars": 5,  "boss": False, "reward_coins": 30},
-    {"id": 4,  "title": "Финал Мира 1 🏆",   "topic": "общие знания",         "world": 1, "difficulty": "medium", "questions": 10, "req_stars": 9,  "boss": True,  "reward_coins": 80},
-    {"id": 5,  "title": "Кино и музыка",     "topic": "кино и музыка",        "world": 2, "difficulty": "medium", "questions": 8,  "req_stars": 12, "boss": False, "reward_coins": 40},
-    {"id": 6,  "title": "Спорт",             "topic": "спорт",                "world": 2, "difficulty": "medium", "questions": 8,  "req_stars": 14, "boss": False, "reward_coins": 40},
-    {"id": 7,  "title": "География",         "topic": "география",            "world": 2, "difficulty": "medium", "questions": 8,  "req_stars": 16, "boss": False, "reward_coins": 40},
-    {"id": 8,  "title": "Технологии",        "topic": "технологии и IT",      "world": 2, "difficulty": "medium", "questions": 8,  "req_stars": 18, "boss": False, "reward_coins": 40},
-    {"id": 9,  "title": "Финал Мира 2 🏆",   "topic": "смешанная",            "world": 2, "difficulty": "hard",   "questions": 12, "req_stars": 22, "boss": True,  "reward_coins": 120},
-    {"id": 10, "title": "Мифология",         "topic": "мифология",            "world": 3, "difficulty": "hard",   "questions": 8,  "req_stars": 25, "boss": False, "reward_coins": 50},
-    {"id": 11, "title": "Литература",        "topic": "литература",           "world": 3, "difficulty": "hard",   "questions": 8,  "req_stars": 27, "boss": False, "reward_coins": 50},
-    {"id": 12, "title": "Эрудит Финал 🌟",   "topic": "эрудит высший уровень", "world": 3, "difficulty": "hard",  "questions": 15, "req_stars": 30, "boss": True,  "reward_coins": 200},
-]
-
 XP_PER_CORRECT = 15
 XP_PER_STAR = 25
-
-
-def get_level(level_id: int) -> dict:
-    """Return level metadata or raise :class:`NotFoundError`."""
-    level = next((item for item in CAMPAIGN_LEVELS if item["id"] == int(level_id)), None)
-    if level is None:
-        raise NotFoundError("Уровень не найден")
-    return level
 
 
 def get_progress(username: str) -> dict:
@@ -63,7 +39,7 @@ def get_progress(username: str) -> dict:
     for level in CAMPAIGN_LEVELS:
         saved = progress.get(level["id"], {"stars": 0, "best_score": 0})
         levels.append({
-            **level,
+            **{key: value for key, value in level.items() if key != "epilogue"},
             "world_name": WORLD_NAMES.get(level["world"], ""),
             "stars": saved["stars"],
             "best_score": saved["best_score"],
