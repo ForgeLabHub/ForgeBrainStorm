@@ -300,6 +300,45 @@ impl AiRouter {
         provider.generate_explanation(question, correct_answer).await
     }
 
+    /// Generate questions using RAG (Retrieval-Augmented Generation).
+    ///
+    /// Uses provided context to generate questions based on specific content
+    /// rather than the AI model's internal knowledge. This enables:
+    /// - Custom quiz generation from documents/text
+    /// - More accurate and relevant questions
+    /// - Support for proprietary or domain-specific content
+    pub async fn generate_questions_with_context(
+        &self,
+        request: &GenerationRequest,
+        context: &super::rag::RagContext,
+    ) -> Result<GenerationResponse, AiError> {
+        info!(
+            topic = %request.topic,
+            context_length = context.text_length,
+            "Generating questions with RAG context"
+        );
+
+        // Create enhanced prompt with context
+        let context_chunk = context.get_context_chunk(8000); // Limit to ~8000 chars
+        let enhanced_request = GenerationRequest {
+            topic: format!(
+                "{}\n\n---\n\nBased on the following context, generate {} questions:\n\n{}\n\n---\n\nTopic: {}",
+                request.topic,
+                request.count,
+                context_chunk,
+                request.topic
+            ),
+            count: request.count,
+            difficulty: request.difficulty.clone(),
+            num_options: request.num_options,
+            capabilities: request.capabilities.clone(),
+            exclude_hashes: request.exclude_hashes.clone(),
+        };
+
+        // Use regular generation with enhanced prompt
+        self.generate_questions(&enhanced_request).await
+    }
+
     /// Get list of available providers.
     pub fn available_providers(&self) -> Vec<String> {
         let Ok(circuits) = self.circuits.read() else {

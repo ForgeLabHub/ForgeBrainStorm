@@ -5,6 +5,7 @@ pub mod ai;
 pub mod auth;
 pub mod health;
 pub mod leaderboard;
+pub mod rag;
 pub mod rooms;
 
 use axum::Router;
@@ -20,4 +21,5 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .nest("/api/leaderboard", leaderboard::routes())
         .nest("/api/rooms", rooms::routes())
         .nest("/api/ai", ai::routes())
+        .nest("/api/rag", rag::routes())
 }
