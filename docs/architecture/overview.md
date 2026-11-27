@@ -80,5 +80,6 @@ rust-server/ (axum + tokio + sqlx) :5000
 CI (`.github/workflows/ci.yml`) держит шесть ворот: `cargo fmt`/`clippy -D
 warnings`/`test`, `svelte-check` + сборка фронтенда, линт и тесты legacy-API,
 сборка Docker-образа с проверкой `/health`, отсутствие закоммиченных секретов,
-полнота документации (`scripts/docs-check.sh`). Локально те же проверки —
-`make check` ([verification/matrix.md](../verification/matrix.md)).
+полнота документации (`scripts/docs-check.sh`). Локально то же самое —
+`make agent-verify-all` (rust + python + frontend) и `make verify`
+([verification/matrix.md](../verification/matrix.md)).
