@@ -195,3 +195,4 @@ spec:
 
 - [Redis Client Documentation](./README.md)
 - [Horizontal scaling roadmap](../../../ROADMAP.md)
+- [Epic 1: Horizontal Scaling](../../../docs/EPIC_1_HORIZONTAL_SCALING.md)

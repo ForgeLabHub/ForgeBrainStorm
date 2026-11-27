@@ -32,6 +32,7 @@ use crate::error::AppError;
 use crate::infrastructure::{generate_instance_id, PubSubManager, RedisClient};
 use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
 use crate::middleware::rate_limit::RateLimiter;
+use crate::services::ai::distributed_cache::DistributedAiCache;
 use crate::services::ai::router::AiRouter;
 use crate::services::ai::{AiCapability, ProviderConfig, ProviderType};
 
@@ -97,6 +98,20 @@ async fn main() -> anyhow::Result<()> {
     info!("connecting to database");
     let pool = db::init_pool(&settings).await?;
 
+    // Initialize Redis client (optional — graceful degradation).
+    info!("initializing Redis client");
+    let redis_client = match RedisClient::new(&settings.redis_url).await {
+        Ok(client) => {
+            info!(connected = client.is_connected().await, "Redis client initialized");
+            client
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to initialize Redis client, running in local-only mode");
+            RedisClient::new("").await.expect("Empty URL should never fail")
+        }
+    };
+    let redis = Arc::new(redis_client);
+
     // Build AI router with multiple providers.
     info!("initializing AI router");
     let ai_configs: Vec<ProviderConfig> = settings
@@ -130,21 +145,11 @@ async fn main() -> anyhow::Result<()> {
         })
         .collect();
 
-    let ai_router = Arc::new(AiRouter::new(ai_configs));
+    // Create distributed AI cache (Redis-backed with local fallback)
+    let ai_cache = Arc::new(DistributedAiCache::new(redis.clone(), "brainstorm"));
+    info!("Distributed AI cache initialized");
 
-    // Initialize Redis client (optional — graceful degradation).
-    info!("initializing Redis client");
-    let redis_client = match RedisClient::new(&settings.redis_url).await {
-        Ok(client) => {
-            info!(connected = client.is_connected().await, "Redis client initialized");
-            client
-        }
-        Err(e) => {
-            warn!(error = %e, "Failed to initialize Redis client, running in local-only mode");
-            RedisClient::new("").await.expect("Empty URL should never fail")
-        }
-    };
-    let redis = Arc::new(redis_client);
+    let ai_router = Arc::new(AiRouter::new(ai_configs, ai_cache));
 
     // Initialize Pub/Sub manager for distributed room synchronization.
     let instance_id = generate_instance_id();
