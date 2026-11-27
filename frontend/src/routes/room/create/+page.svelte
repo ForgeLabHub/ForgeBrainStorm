@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { loadRoomDefaults } from '$lib/settings';
 
 	let topic = $state('');
 	let difficulty = $state('medium');
@@ -10,28 +11,25 @@
 	let questionCount = $state(10);
 	let numOptions = $state(4);
 	let timerSeconds = $state(30);
-	let timerLocked = $derived(mode === 'blitz' || mode === 'svoyaigra');
+	let timerLocked = $derived(['blitz', 'svoyaigra', 'sudden', 'marathon'].includes(mode));
+	let countLocked = $derived(mode === 'marathon');
 	let creating = $state(false);
 	let error = $state('');
 	let visible = $state(false);
 
-	let aiProviders: string[] = $state([]);
-	let selectedProvider = $state('');
 
 	onMount(() => {
+		const saved = loadRoomDefaults();
+		mode = saved.mode;
+		difficulty = saved.difficulty;
+		questionCount = saved.questions;
+		numOptions = saved.options;
+		timerSeconds = saved.timer;
+
 		const timer = setTimeout(() => (visible = true), 100);
 		return () => clearTimeout(timer);
 	});
 
-	onMount(async () => {
-		try {
-			const response = await api.getAiProviders();
-			aiProviders = response.providers || [];
-			selectedProvider = response.default || aiProviders[0] || '';
-		} catch (e) {
-			console.error('Failed to load AI providers:', e);
-		}
-	});
 
 	async function createRoom(e: Event) {
 		e.preventDefault();
@@ -76,10 +74,12 @@
 		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', accent: 'border-purple-500/30' },
 		{ value: 'coop', label: 'Кооператив', desc: 'Одна общая копилка очков на всех', accent: 'border-green-500/30' },
 		{ value: 'svoyaigra', label: 'Своя Игра', desc: '15 секунд на вопрос, очки растут с ответом', accent: 'border-cyan-500/30' },
+		{ value: 'sudden', label: 'Внезапная смерть', desc: 'Одна ошибка — и выбыл, 20 секунд', accent: 'border-rose-500/30' },
+		{ value: 'marathon', label: 'Марафон', desc: '30 вопросов, очки растут с серией', accent: 'border-indigo-500/30' },
 		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', accent: 'border-slate-500/30' },
 	];
 
-	const FIXED_TIMERS: Record<string, number> = { blitz: 10, svoyaigra: 15 };
+	const FIXED_TIMERS: Record<string, number> = { blitz: 10, svoyaigra: 15, sudden: 20, marathon: 20 };
 </script>
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6">
@@ -234,11 +234,12 @@
 						<input
 							type="number"
 							bind:value={questionCount}
+						disabled={countLocked}
 							min="5"
 							max="30"
 							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
 						/>
-						<span class="mt-1 block text-xs text-slate-500">5–30</span>
+						<span class="mt-1 block text-xs text-slate-500">{countLocked ? '30 вопросов' : '5–30'}</span>
 					</label>
 				</div>
 			</div>
@@ -275,7 +276,7 @@
 							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:text-slate-400"
 						/>
 						<span class="mt-1 block text-xs text-slate-500">
-							{timerLocked ? `Фиксировано: ${FIXED_TIMERS[mode]}с` : '10–120'}
+							{timerLocked ? `${FIXED_TIMERS[mode]} сек` : '10–120'}
 						</span>
 					</label>
 				</div>

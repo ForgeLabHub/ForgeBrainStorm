@@ -8,7 +8,7 @@
 
 | Путь | Что это | Проверка |
 |---|---|---|
-| `rust-server/` | основной realtime-бэкенд: axum, tokio, sqlx/PostgreSQL, WebSocket-игровой цикл, провайдеры ИИ | `make agent-verify` |
+| `crates/server/` | основной realtime-бэкенд: axum, tokio, sqlx/PostgreSQL, WebSocket-игровой цикл, провайдеры ИИ | `make agent-verify` |
 | `frontend/` | UI на SvelteKit (Svelte 5 runes, Tailwind, adapter-node) | `make frontend-check` |
 | `app/`, `templates/`, `static/`, `run.py`, `wsgi.py` | legacy-монолит Flask + Socket.IO на SQLite (отдаётся на Render) | `make lint test` |
 | `docs/` | архитектура, API, эксплуатация, безопасность (RU + EN + PDF) | `make docs-check` |
@@ -20,7 +20,7 @@
 2. **Компиляция раньше функционала.** После любого изменения в Rust запусти
    `make agent-verify` (fmt → check → clippy `-D warnings` → test). Пока это не
    зелено, новую функциональность не добавляй.
-3. **`unwrap()` запрещён** в продакшен-коде (сейчас в `rust-server/src` их ноль).
+3. **`unwrap()` запрещён** в продакшен-коде (сейчас в `crates/server/src` их ноль).
    Используй `?`, `expect("конкретная причина")` или `AppError`.
 4. **Тесты.** Меняешь логику — добавь или обнови юнит-тест в том же файле
    (`#[cfg(test)]`). Тесты, которым нужна живая база, помечай `#[ignore]`.
@@ -62,7 +62,7 @@
   `ConnectInfo` — это адрес прокси, и лимит по нему задушит всех игроков сразу.
   Включать только вместе с ключеванием по `X-Forwarded-For`.
 - Конфиг валидируется fail-fast в production (`app/config.py` и
-  `rust-server/src/config.rs`): `SECRET_KEY` ≥ 24, `ADMIN_SECRET_KEY` ≥ 12,
+  `crates/server/src/config.rs`): `SECRET_KEY` ≥ 24, `ADMIN_SECRET_KEY` ≥ 12,
   `CHEAT_TESTER_CODE` ≥ 8 символов.
 
 ## Frontend: что легко сломать

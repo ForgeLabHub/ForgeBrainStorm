@@ -42,10 +42,6 @@
 			error = 'Имя: от 2 до 20 символов';
 			return;
 		}
-		if (password.length < 12) {
-			error = 'Пароль должен быть не менее 12 символов';
-			return;
-		}
 		if (!passwordMatch) {
 			error = 'Пароли не совпадают';
 			return;
@@ -56,7 +52,8 @@
 		try {
 			const response = await api.register(username.trim(), password);
 			if (response.ok) {
-				goto('/lobby');
+				const role = response.user?.role ?? 'player';
+				goto(role === 'admin' ? '/admin' : '/lobby');
 			} else {
 				error = response.error || 'Не удалось зарегистрироваться';
 			}
@@ -136,7 +133,7 @@
 								id="password"
 								type="password"
 								bind:value={password}
-								placeholder="Минимум 12 символов"
+								placeholder="От 12 символов"
 								autocomplete="new-password"
 								class="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-11 pr-4 text-white placeholder-slate-500 backdrop-blur-sm transition focus:border-purple-500/50 focus:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
 							/>
@@ -207,7 +204,7 @@
 					<!-- Submit -->
 					<button
 						type="submit"
-						disabled={loading || !passwordMatch || password.length < 12}
+						disabled={loading || !passwordMatch || password.length === 0}
 						class="group relative w-full overflow-hidden rounded-xl py-3 font-semibold text-white shadow-lg transition-all disabled:cursor-not-allowed disabled:opacity-50"
 					>
 						<div class="absolute inset-0 bg-gradient-to-r from-purple-500 to-cyan-600 transition-transform group-hover:scale-105"></div>

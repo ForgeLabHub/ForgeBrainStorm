@@ -24,14 +24,14 @@
 
 ## Что актуально
 
-Продукт — `rust-server/` (axum + tokio + sqlx, WebSocket-игровой цикл) и
+Продукт — `crates/server/` (axum + tokio + sqlx, WebSocket-игровой цикл) и
 `frontend/` (SvelteKit). Их документация: [rust-backend.md](rust-backend.md),
 [game-modes.md](game-modes.md), [modules/](modules/), [api/conventions.md](api/conventions.md).
 
 `app/`, `templates/`, `static/`, `run.py`, `wsgi.py` и корневой `Dockerfile` —
 **legacy**-монолит Flask + Socket.IO. Он остаётся в репозитории ради старого
-деплоя; одиночная кампания пока поддерживается именно в нём. Часть документов в `modules/` описывает
-именно его — сверяйтесь с кодом `rust-server/`, если сомневаетесь.
+деплоя; одиночная кампания пока поддерживается именно в нём. Часть документов
+в `modules/` описывает Flask — сверяйтесь с `crates/server/` для Rust.
 
 ## Правила
 
