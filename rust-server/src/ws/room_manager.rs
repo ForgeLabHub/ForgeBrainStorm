@@ -17,11 +17,12 @@ use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 use rand::seq::SliceRandom;
 use tokio::sync::broadcast;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::domain::player::Player;
 use crate::domain::room::{generate_room_code, Room, RoomSettings, RoomState};
 use crate::error::AppError;
+use crate::services::ai::dynamic_difficulty::DdaManager;
 use crate::services::ai::{AiCapability, GenerationRequest};
 use crate::ws::protocol::ServerMessage;
 use crate::AppState;
@@ -101,6 +102,15 @@ impl RoomManager {
         let code = generate_room_code();
         let (tx, _) = broadcast::channel(256);
 
+        // Check if DDA (Dynamic Difficulty Adjustment) is enabled
+        let dda_enabled = settings.mode == "adaptive";
+        let dda_manager = if dda_enabled {
+            info!("DDA enabled for room {}", code);
+            Some(DdaManager::new(5)) // Window size of 5 questions
+        } else {
+            None
+        };
+
         let room = Room {
             code: code.clone(),
             host_user_id: user_id,
@@ -114,6 +124,7 @@ impl RoomManager {
             created_at: Instant::now(),
             last_activity: Instant::now(),
             tx,
+            dda_manager,
         };
 
         let room_arc = Arc::new(RwLock::new(room));
@@ -381,6 +392,19 @@ impl RoomManager {
                 return Err(AppError::Conflict("Need at least 1 player".into()));
             }
 
+            // Initialize DDA tracking for all players if DDA is enabled
+            if let Some(ref mut dda) = room.dda_manager {
+                for (player_id, player) in &room.players {
+                    dda.add_player(*player_id, player.username.clone());
+                    debug!(player_id, "DDA: tracking player");
+                }
+                info!(
+                    code,
+                    players = room.players.len(),
+                    "DDA: initialized tracking for all players"
+                );
+            }
+
             // Generate questions using AI
             info!(code, "Generating questions...");
             let request = GenerationRequest {
@@ -560,6 +584,22 @@ impl RoomManager {
             });
 
             player.last_activity = Instant::now();
+
+            // Record answer in DDA manager if enabled
+            if let Some(ref mut dda) = room.dda_manager {
+                let answer_time_ms = room
+                    .question_start_time
+                    .map(|s| s.elapsed().as_millis() as u64)
+                    .unwrap_or(0);
+                dda.record_answer(user_id, question_index, is_correct, answer_time_ms);
+                debug!(
+                    user_id,
+                    question_index,
+                    is_correct,
+                    answer_time_ms,
+                    "DDA: recorded answer"
+                );
+            }
 
             // Check if all players answered
             let all_answered = room
