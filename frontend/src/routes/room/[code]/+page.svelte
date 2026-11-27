@@ -188,11 +188,11 @@
 		</div>
 	{:else}
 		<!-- Header -->
-		<div class="mb-8">
-			<div class="flex items-center gap-3 flex-wrap">
+		<div class="mb-6 sm:mb-8">
+			<div class="flex items-center gap-2 sm:gap-3 flex-wrap">
 				<button
 					onclick={copyCode}
-					class="group relative rounded-xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 px-4 py-2 font-mono text-sm font-bold text-white hover:border-blue-500/50 transition-all shadow-lg"
+					class="group relative rounded-xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 px-3 sm:px-4 py-2 font-mono text-xs sm:text-sm font-bold text-white hover:border-blue-500/50 transition-all shadow-lg"
 				>
 					<span class="relative z-10 flex items-center gap-2">
 						{roomCode}
@@ -208,12 +208,12 @@
 					</span>
 				</button>
 				{#if mode}
-					<span class="px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-sm font-medium text-slate-300">
+					<span class="px-2 sm:px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-xs sm:text-sm font-medium text-slate-300">
 						{getModeLabel(mode)}
 					</span>
 				{/if}
 			</div>
-			<h1 class="mt-3 text-2xl font-bold text-white sm:text-3xl">{topic || 'Без темы'}</h1>
+			<h1 class="mt-3 text-xl sm:text-2xl md:text-3xl font-bold text-white truncate">{topic || 'Без темы'}</h1>
 		</div>
 
 		{#if error}
@@ -227,15 +227,15 @@
 
 		{#if gamePhase === 'waiting'}
 			<!-- Waiting phase -->
-			<div class="glass-card rounded-2xl p-8 text-center">
+			<div class="glass-card rounded-2xl p-6 sm:p-8 text-center">
 				<div class="mb-6">
-					<div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
-						<svg class="h-8 w-8 text-blue-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<div class="mx-auto mb-4 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
+						<svg class="h-7 w-7 sm:h-8 sm:w-8 text-blue-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
 						</svg>
 					</div>
-					<h2 class="text-xl font-bold text-white">Ожидание игроков</h2>
-					<p class="mt-2 text-sm text-slate-400">
+					<h2 class="text-lg sm:text-xl font-bold text-white">Ожидание игроков</h2>
+					<p class="mt-2 text-xs sm:text-sm text-slate-400">
 						Поделитесь кодом комнаты:
 						<button onclick={copyCode} class="font-mono text-blue-400 hover:text-blue-300 font-bold transition">{roomCode}</button>
 					</p>
@@ -248,7 +248,7 @@
 								<div class="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-lg">
 									{player.name.charAt(0).toUpperCase()}
 								</div>
-								<span class="text-sm font-medium text-white">{player.name}</span>
+								<span class="text-sm font-medium text-white truncate max-w-[120px]">{player.name}</span>
 								{#if player.is_host}
 									<span class="rounded-lg bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 px-2 py-0.5 text-[10px] font-bold text-yellow-400">HOST</span>
 								{/if}
@@ -260,9 +260,9 @@
 				{#if isHost && players.length > 0}
 					<button
 						onclick={startGame}
-						class="btn-primary rounded-xl px-8 py-3 font-semibold text-white"
+						class="btn-primary rounded-xl px-6 sm:px-8 py-3 font-semibold text-white w-full sm:w-auto"
 					>
-						<span class="flex items-center gap-2">
+						<span class="flex items-center justify-center gap-2">
 							Начать игру
 							<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
