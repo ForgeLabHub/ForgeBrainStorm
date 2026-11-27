@@ -58,18 +58,18 @@
 	];
 </script>
 
-<div class="mx-auto max-w-3xl animate-fade-in">
+<div class="mx-auto max-w-3xl px-4 sm:px-0 animate-fade-in">
 	<!-- Header -->
-	<div class="mb-8">
-		<h1 class="text-3xl font-bold text-white">Создать комнату</h1>
-		<p class="mt-2 text-slate-400">Настройте параметры викторины</p>
+	<div class="mb-6 sm:mb-8">
+		<h1 class="text-2xl sm:text-3xl font-bold text-white">Создать комнату</h1>
+		<p class="mt-2 text-sm sm:text-base text-slate-400">Настройте параметры викторины</p>
 	</div>
 
-	<form onsubmit={createRoom} class="space-y-6">
+	<form onsubmit={createRoom} class="space-y-4 sm:space-y-6">
 		<!-- Topic -->
-		<div class="glass-card rounded-2xl p-6">
+		<div class="glass-card rounded-2xl p-5 sm:p-6">
 			<label class="block">
-				<span class="mb-3 block text-sm font-semibold text-slate-300 uppercase tracking-wide">Тема викторины</span>
+				<span class="mb-3 block text-xs sm:text-sm font-semibold text-slate-300 uppercase tracking-wide">Тема викторины</span>
 				<input
 					type="text"
 					bind:value={topic}
@@ -108,35 +108,35 @@
 				</div>
 			</div>
 
-			<!-- Mode -->
-			<div class="glass-card rounded-2xl p-6">
-				<h3 class="mb-4 text-sm font-semibold text-slate-300 uppercase tracking-wide">Режим игры</h3>
-				<div class="space-y-2">
-					{#each modes as m}
-						<label class="flex cursor-pointer items-center gap-3 rounded-xl p-4 transition-all hover:scale-[1.02] {
-							mode === m.value
-								? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 shadow-lg'
-								: 'bg-white/[0.02] border border-white/5 hover:border-white/20'
-						}">
-							<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
-							<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 border border-white/10">
-								<svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={m.icon}/>
-								</svg>
-							</div>
-							<div class="min-w-0 flex-1">
-								<div class="font-semibold text-white">{m.label}</div>
-								<div class="text-xs text-slate-400">{m.desc}</div>
-							</div>
-							{#if mode === m.value}
-								<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-								</svg>
-							{/if}
-						</label>
-					{/each}
-				</div>
+		<!-- Mode -->
+		<div class="glass-card rounded-2xl p-5 sm:p-6">
+			<h3 class="mb-4 text-xs sm:text-sm font-semibold text-slate-300 uppercase tracking-wide">Режим игры</h3>
+			<div class="space-y-2">
+				{#each modes as m}
+					<label class="flex cursor-pointer items-center gap-3 rounded-xl p-3 sm:p-4 transition-all {
+						mode === m.value
+							? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 shadow-lg'
+							: 'bg-white/[0.02] border border-white/5 hover:border-white/20'
+					}">
+						<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
+						<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 border border-white/10 flex-shrink-0">
+							<svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={m.icon}/>
+							</svg>
+						</div>
+						<div class="min-w-0 flex-1">
+							<div class="font-semibold text-white text-sm sm:text-base">{m.label}</div>
+							<div class="text-xs text-slate-400">{m.desc}</div>
+						</div>
+						{#if mode === m.value}
+							<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+							</svg>
+						{/if}
+					</label>
+				{/each}
 			</div>
+		</div>
 		</div>
 
 		<!-- Parameters -->
