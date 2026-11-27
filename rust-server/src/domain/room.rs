@@ -15,6 +15,7 @@ use tokio::sync::broadcast;
 
 use crate::domain::player::{LegacyPlayer, Player};
 use crate::error::{AppError, AppResult};
+use crate::services::ai::dynamic_difficulty::DdaManager;
 use crate::ws::protocol::ServerMessage;
 
 /// Room lifecycle states.
@@ -72,7 +73,7 @@ impl RoomSettings {
         if !["easy", "medium", "hard"].contains(&self.difficulty.as_str()) {
             self.difficulty = "medium".into();
         }
-        if !["classic", "ffa", "team", "lives", "coop", "svoyaigra", "sandbox"]
+        if !["classic", "ffa", "team", "lives", "coop", "svoyaigra", "sandbox", "adaptive"]
             .contains(&self.mode.as_str())
         {
             self.mode = "classic".into();
@@ -95,6 +96,9 @@ pub struct Room {
     pub created_at: Instant,
     pub last_activity: Instant,
     pub tx: broadcast::Sender<ServerMessage>,
+    /// Dynamic Difficulty Adjustment manager (optional).
+    /// Tracks player performance and adjusts difficulty in real-time.
+    pub dda_manager: Option<DdaManager>,
 }
 
 /// Legacy room for HTTP API (keyed by session ID).
@@ -169,6 +173,7 @@ impl RoomRegistry {
             created_at: Instant::now(),
             last_activity: Instant::now(),
             tx,
+            dda_manager: None, // DDA disabled by default for legacy rooms
         };
 
         let snapshot = RoomSnapshot::from_room(&room);
