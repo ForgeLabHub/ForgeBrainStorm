@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::domain::cheat::CheatPowers;
 use crate::domain::mode::{GameMode, SURVIVAL_LIVES};
 use crate::domain::power_up::PowerUp;
 
@@ -23,9 +24,10 @@ pub struct Player {
     pub lives: u8,
     pub infinite_lives: bool,
     pub is_spectator: bool,
+    /// Account has the `cheater` role; the server, never the client, sets this.
     pub is_cheat: bool,
-    pub is_invisible: bool,
-    pub instant_answer: bool,
+    /// Cheater powers left in this game.
+    pub cheat: CheatPowers,
     pub team: Option<u8>,
     pub joined_at: Instant,
     pub disconnected_at: Option<Instant>,
@@ -60,8 +62,7 @@ impl Player {
             infinite_lives: false,
             is_spectator: false,
             is_cheat: false,
-            is_invisible: false,
-            instant_answer: false,
+            cheat: CheatPowers::new(),
             team: None,
             joined_at: Instant::now(),
             disconnected_at: None,
@@ -123,6 +124,7 @@ impl Player {
         self.is_spectator = false;
         self.double_points = false;
         self.power_ups = PowerUp::STARTING_HAND.to_vec();
+        self.cheat.reset();
     }
 }
 

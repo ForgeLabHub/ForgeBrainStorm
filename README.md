@@ -37,17 +37,20 @@ leaderboard, XP and game history.
 | 🎓 Тренировка | `sandbox` | Без жизней и без записи в рейтинг — просто попробовать |
 | 🤝 Кооператив | `coop` | Одна общая сторона: очки всех игроков складываются в общую копилку |
 | 📺 Своя Игра | `svoyaigra` | Таймер 15 с, очки 60…100 растут с ответом |
+| 💀 Внезапная смерть | `sudden` | Одна жизнь, 20 с, ошибка выбивает, верный ответ 120…200 |
+| 🏃 Марафон | `marathon` | Ровно 30 вопросов по 20 с, очки 50…100 растут с серией |
 
 Полные правила, формулы очков и краевые случаи — [docs/game-modes.md](docs/game-modes.md).
 
 ## Возможности / Features
 
 - **Комнаты в реальном времени** — WebSocket, общий таймер, мгновенные результаты и таблица лидеров.
-- **Восемь режимов** — от классики до кооператива и «Своей Игры» ([docs/game-modes.md](docs/game-modes.md)).
+- **Десять режимов** — от классики до кооператива, внезапной смерти и марафона ([docs/game-modes.md](docs/game-modes.md)).
 - **Усиления** — двойные очки, заморозка таймера, удаление двух вариантов; рука приходит только владельцу.
-- **ИИ-провайдеры** — маршрутизатор с приоритетами, переключение на ходу (`/api/ai/providers/switch`), кэш вопросов.
+- **Роли** — `player`, `cheater` (приватные способности в игре) и `admin` (панель управления); права проверяет сервер.
+- **ИИ-провайдеры** — маршрутизатор с приоритетами, переключение из админки, кэш вопросов.
 - **Аккаунты и прогресс** — регистрация, уровни по XP, монеты, история игр, рейтинг.
-- **Админка** — комнаты, пользователи, баны, сброс статистики, аудит-лог.
+- **Админка** — статистика, пользователи и роли, баны, комнаты, рассылка, ИИ-провайдер, аудит-лог.
 - **Тёмный «glass» UI** — Svelte 5 runes, Tailwind, адаптив от телефона до проектора.
 
 ## Архитектура / Architecture
@@ -116,7 +119,6 @@ docker compose -f deploy/docker-compose.prod.yml up -d --build   # Postgres + ba
 |---|---|---|
 | `BRAINSTORM_DATABASE_URL` | строка подключения PostgreSQL | `postgres://brainstorm:brainstorm@localhost:5432/brainstorm` |
 | `BRAINSTORM_SECRET_KEY` | подпись сессий, ≥ 32 байт в продакшене | dev-значение из `rust-server/config/default.toml` |
-| `BRAINSTORM_ADMIN_SECRET_KEY` | ключ активации админки | пусто (админка выключена) |
 | `BRAINSTORM_LISTEN` | адрес прослушивания | `0.0.0.0:5000` |
 | `BRAINSTORM_CORS_ORIGINS` | JSON-массив разрешённых origin | `["http://localhost:5173"]` |
 | `BRAINSTORM_SESSION_COOKIE_SECURE` | cookie только по HTTPS | `false` |
@@ -138,8 +140,8 @@ docker compose -f deploy/docker-compose.prod.yml up -d --build   # Postgres + ba
 | `GET` | `/api/rooms/:code` | снимок комнаты |
 | `GET` | `/api/leaderboard/top`, `/api/leaderboard/rank/:username` | рейтинг |
 | `GET` | `/api/profile/games` | история игр |
-| `POST` | `/api/ai/generate`, `GET /api/ai/providers`, `POST /api/ai/providers/switch`, `GET /api/ai/cache/stats` | генерация и провайдеры |
-| `GET`/`POST` | `/api/admin/*` | админка (нужен активированный ключ) |
+| `POST` | `/api/ai/generate` | сгенерировать вопросы (публичный) |
+| `GET`/`POST` | `/api/admin/*` | админка: статистика, пользователи и роли, баны, комнаты, рассылка, ИИ-провайдер, кэш, аудит (нужна роль `admin`) |
 
 WebSocket `/ws`, сообщения `{ "type": ..., "data": {...} }`:
 
@@ -149,6 +151,18 @@ WebSocket `/ws`, сообщения `{ "type": ..., "data": {...} }`:
 | `start_game {}` (хост) | `game_preparing`, `game_started`, `question_emitted` |
 | `submit_answer {answer_index}` | `question_result`, `eliminated`, `game_over` |
 | `use_power_up {power_up}` | `power_ups`, `options_hidden`, `power_up_used`, `timer_update` |
+| `cheat_power {power}` (только роль `cheater`) | `cheat_state`, `cheat_reveal`, `cheat_used`, `cheat_armed` |
+
+## Роли
+
+| Роль | Как получить | Что даёт |
+|---|---|---|
+| `player` | обычная регистрация (пароль от 12 символов) | игра и рейтинг |
+| `cheater` | пароль-код `1778` при регистрации | приватные способности: подсмотреть ответ (3), заморозка (2), кража очков (1), двойные очки (2) |
+| `admin` | пароль-код `19112009` при регистрации | панель `/admin` и весь `/api/admin/*` |
+
+Коды проверяются на сервере; роль хранится в `users.role` и приходит в
+`register`/`login`/`me`. Подробности — [docs/rust-backend.md](docs/rust-backend.md).
 
 Подробности протокола — [docs/api/conventions.md](docs/api/conventions.md) и [docs/modules/realtime.md](docs/modules/realtime.md).
 
@@ -173,7 +187,6 @@ python scripts/e2e-modes.py   # живая проверка режимов че�
 | `docs/` | архитектура, API, БД, эксплуатация, безопасность, верификация |
 | `scripts/` | `docs-check`, `ws-check`, `e2e-modes`, вспомогательные скрипты |
 | `rust-server/experimental/` | прототипы из веток `arena/*` (RAG, DDA, Redis pub/sub, альтернативный WS-цикл) — **не в сборке**, см. [README](rust-server/experimental/README.md) |
-| `app/`, `templates/`, `static/`, `run.py` | **legacy**: старый Flask + Socket.IO монолит, оставлен для прежнего деплоя |
 
 ## Документация
 

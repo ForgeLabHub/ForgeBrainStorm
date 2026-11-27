@@ -32,6 +32,16 @@
 		remove_two_options: { icon: 'scissors', label: '−2 варианта' },
 	};
 
+	type CheatPowerKind = 'peek' | 'freeze' | 'steal' | 'double';
+	type CheatBudget = Record<CheatPowerKind, number>;
+
+	const CHEAT_META: Record<CheatPowerKind, { icon: IconName; label: string; hint: string }> = {
+		peek: { icon: 'eye', label: 'Подсмотреть', hint: 'Показать верный ответ' },
+		freeze: { icon: 'hourglass', label: 'Заморозка', hint: '+10 секунд всем' },
+		steal: { icon: 'bolt', label: 'Кража', hint: '50 очков у лидера' },
+		double: { icon: 'spark', label: '×2', hint: 'Двойные очки за ответ' }
+	};
+
 	type Question = {
 		question: string;
 		options: string[];
@@ -54,6 +64,9 @@
 	let lastResult: { kind: ResultKind; correctIndex: number; explanation: string; player_answers?: any[] } | null = $state(null);
 	let finalLeaderboard: any[] | null = $state(null);
 	let powerUps: PowerUpKind[] = $state([]);
+	let cheatBudget: CheatBudget | null = $state(null);
+	let cheatReveal: number | null = $state(null);
+	let cheatNotice = $state('');
 	let hiddenOptions: number[] = $state([]);
 	let eliminated = $state(false);
 	let modeTitle = $state('');
@@ -140,6 +153,36 @@
 		ws.on('power_ups', (data: any) => {
 			powerUps = Array.isArray(data?.items) ? data.items : [];
 		});
+		ws.on('cheat_state', (data: any) => {
+			const powers = data?.powers;
+			cheatBudget =
+				powers && typeof powers.peek === 'number'
+					? {
+						peek: powers.peek,
+						freeze: powers.freeze,
+						steal: powers.steal,
+						double: powers.double
+					}
+					: null;
+		});
+		ws.on('cheat_reveal', (data: any) => {
+			cheatReveal = typeof data?.correct_index === 'number' ? data.correct_index : null;
+		});
+		ws.on('cheat_armed', () => {
+			cheatNotice = 'Следующий верный ответ даст двойные очки';
+		});
+		ws.on('cheat_used', (data: any) => {
+			if (data?.power === 'freeze') {
+				cheatNotice = `Заморозка: +${data.seconds} секунд`;
+				timeLeft += Number(data.seconds) || 0;
+			}
+			if (data?.power === 'steal') {
+				cheatNotice = `Кража: ${data.points} очков у лидера`;
+			}
+		});
+		ws.on('announcement', (data: any) => {
+			if (data?.message) cheatNotice = data.message;
+		});
 		ws.on('options_hidden', (data: any) => {
 			hiddenOptions = Array.isArray(data?.indexes) ? data.indexes : [];
 		});
@@ -162,6 +205,7 @@
 			timeLeft = data.time_limit || 30;
 			selectedAnswer = null;
 			hiddenOptions = [];
+			cheatReveal = null;
 			gamePhase = 'playing';
 			startTimer();
 		});
@@ -241,6 +285,11 @@
 		if (selectedAnswer !== null || gamePhase !== 'playing') return;
 		selectedAnswer = index;
 		ws.send('submit_answer', { answer_index: index });
+	}
+
+	function useCheatPower(power: CheatPowerKind) {
+		if (gamePhase !== 'playing' || !cheatBudget || cheatBudget[power] <= 0) return;
+		ws.send('cheat_power', { power });
 	}
 
 	function usePowerUp(kind: PowerUpKind) {
@@ -371,21 +420,47 @@
 						</div>
 					{/if}
 
+					<!-- Cheater powers: the server hands the budget, the UI only shows it -->
+					{#if cheatBudget}
+						<div class="rounded-2xl border border-red-500/25 bg-red-500/[0.06] p-4">
+							<div class="flex items-center justify-between gap-2">
+								<p class="text-xs font-semibold uppercase tracking-widest text-red-300">Читерский набор</p>
+								{#if cheatNotice}
+									<p class="truncate text-xs text-red-200">{cheatNotice}</p>
+								{/if}
+							</div>
+							<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+								{#each Object.entries(CHEAT_META) as [power, meta] (power)}
+									{@const kind = power as CheatPowerKind}
+									{@const left = cheatBudget[kind]}
+									<button
+										onclick={() => useCheatPower(kind)}
+										disabled={left <= 0 || gamePhase !== 'playing'}
+										class="flex flex-col items-start gap-1 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-left text-red-200 transition hover:border-red-400/50 disabled:opacity-40"
+										title={meta.hint}
+									>
+										<span class="flex items-center gap-2 text-sm font-semibold">
+											<Icon name={meta.icon} class="h-4 w-4" />
+											{meta.label}
+										</span>
+										<span class="text-[11px] text-red-300/70">{meta.hint} · осталось {left}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
 					<!-- Question -->
-					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm">
+					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm sm:p-8">
 						<div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5"></div>
 						<div class="relative z-10">
-							{#if questionSource}
-							<span class="mb-3 mr-2 inline-block rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
-								{questionSource === 'fallback' ? 'офлайн-банк вопросов' : `ИИ · ${questionSource.replace('ai:', '')}`}
-							</span>
-						{/if}
-						{#if question.category}
-								<span class="inline-block mb-3 rounded-full bg-purple-500/10 border border-purple-500/20 px-3 py-1 text-xs font-medium text-purple-400">
+							{#if question.category}
+								<span class="mb-3 mr-2 inline-block rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
 									{question.category}
 								</span>
 							{/if}
-							<h2 class="text-xl font-bold text-white leading-relaxed">{question.question}</h2>
+
+							<h2 class="text-lg font-bold leading-relaxed text-white sm:text-xl">{question.question}</h2>
 						</div>
 					</div>
 
@@ -416,6 +491,9 @@
 										{String.fromCharCode(65 + i)}
 									</div>
 									<span class="font-medium {isSelected ? 'text-blue-300' : 'text-white'}">{option}</span>
+									{#if cheatReveal === i}
+										<span class="ml-auto shrink-0 rounded-md border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-300">верный</span>
+									{/if}
 								</div>
 							</button>
 						{/each}
@@ -432,7 +510,7 @@
 			{:else if gamePhase === 'result'}
 				<div class="space-y-6">
 					<!-- Result card -->
-					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm">
+					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm sm:p-8">
 						<div class="absolute inset-0 {lastResult?.kind === 'correct' ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/5' : lastResult?.kind === 'timeout' ? 'bg-gradient-to-br from-amber-500/10 to-orange-500/5' : 'bg-gradient-to-br from-red-500/10 to-rose-500/5'}"></div>
 						<div class="relative z-10 text-center">
 							<div class="mb-4 flex justify-center {lastResult?.kind === 'correct' ? 'text-green-400' : lastResult?.kind === 'timeout' ? 'text-amber-400' : 'text-red-400'}"><Icon name={lastResult?.kind === 'correct' ? 'check' : 'cross'} class="h-12 w-12" /></div>

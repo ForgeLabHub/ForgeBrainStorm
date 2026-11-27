@@ -30,18 +30,19 @@ triage. Please give us reasonable time to fix the issue before public disclosure
 
 BrainStorm is a self-hosted application. A few design decisions matter for deployments:
 
-- **Secrets** — `SECRET_KEY`, `ADMIN_SECRET_KEY` and `CHEAT_TESTER_CODE` have **no defaults**.
-  In `ENV=production` the app refuses to start if they are missing or shorter than 16 chars.
-  Keep them in `.env` (git-ignored) or your platform's secret store; never commit them.
+- **Secrets** — `SECRET_KEY` (session signing) is the only required secret and has **no default**.
+  In `ENV=production` the app refuses to start if it is shorter than 32 bytes or still the
+  development value. Keep it in `.env` (git-ignored) or your platform's secret store.
 - **Reverse proxy** — `X-Forwarded-For` is only trusted when `TRUST_PROXY=true`. Enable it only
   behind a trusted proxy, otherwise client IPs (and therefore rate limits) are spoofable.
 - **Cookies** — set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
 - **CORS** — set `CORS_ORIGINS` to explicit origins in production instead of `*`.
-- **Rate limiting** — activation, auth and AI endpoints are rate limited in-process. For
+- **Rate limiting** — auth and room-creation endpoints are rate limited in-process. For
   multi-worker deployments back this with Redis (see [ROADMAP.md](ROADMAP.md)).
-- **Cheat/admin mode** — privileged Socket.IO events require a session activated through
-  `/api/cheat/activate` or `/api/admin/activate`; the keys are compared in constant time.
-- **Password storage** — PBKDF2-HMAC-SHA256 with a per-password salt and 260 000 iterations;
-  legacy hashes are transparently upgraded on next login.
+- **Cheat/admin mode** — no privilege lives in the client: the role is stored in
+  `users.role`, `/api/admin/*` sits behind `admin_middleware`, and cheat powers are granted
+  and spent by the server. The codes `1778` (cheater) and `19112009` (admin) are
+  registration password codes, not separate configuration secrets.
+- **Password storage** — Argon2id hashes with a per-password salt.
 
 If you find a gap in any of the above, please report it as described above.

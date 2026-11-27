@@ -30,10 +30,6 @@ pub struct Settings {
     #[serde(default)]
     pub secret_key: String,
 
-    /// Admin activation key (compared in constant time).
-    #[serde(default)]
-    pub admin_secret_key: String,
-
     /// Database URL (postgres).
     #[serde(default)]
     pub database_url: String,
@@ -211,9 +207,6 @@ impl Settings {
         if let Some(v) = var("SECRET_KEY") {
             self.secret_key = v;
         }
-        if let Some(v) = var("ADMIN_SECRET_KEY") {
-            self.admin_secret_key = v;
-        }
         if let Some(v) = var("DATABASE_URL") {
             self.database_url = v;
         }
@@ -270,9 +263,6 @@ impl Settings {
                     "SESSION_COOKIE_SECURE must be true in production",
                 ));
             }
-            if self.admin_secret_key.is_empty() {
-                return Err(ConfigError::Missing("ADMIN_SECRET_KEY"));
-            }
         }
         if self.database_url.is_empty() {
             return Err(ConfigError::Missing("DATABASE_URL"));
@@ -314,7 +304,6 @@ mod tests {
             env: Environment::Development,
             listen: default_listen_addr(),
             secret_key: "test-secret-key-at-least-32-bytes".into(),
-            admin_secret_key: String::new(),
             database_url: "postgres://localhost/brainstorm".into(),
             db_pool_size: 5,
             ai_providers: Vec::new(),
@@ -351,7 +340,6 @@ mod tests {
     fn prod_rejects_wildcard_cors() {
         let mut s = minimal_settings();
         s.env = Environment::Production;
-        s.admin_secret_key = "admin-secret".into();
         s.cors_origins = vec!["*".into()];
         assert!(matches!(s.validate(), Err(ConfigError::Insecure(_))));
     }

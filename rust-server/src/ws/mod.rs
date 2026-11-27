@@ -12,6 +12,7 @@
 //! broadcast forwarder run as separate tasks so the read loop never blocks on
 //! slow clients.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
+use crate::domain::cheat::{CheatPower, CHEAT_FREEZE_SECS, STEAL_POINTS};
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 use crate::domain::power_up::{self, PowerUp, FREEZE_SECS};
@@ -134,6 +136,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     player.double_points = carried.5;
                     player.is_spectator = carried.6;
                     player.infinite_lives = carried.7;
+                    player.is_cheat = auth.role.is_cheater();
                     player.outbox = Some(out_tx.clone());
                     room.players.insert(sid.clone(), player);
                     room.touch();
@@ -188,6 +191,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     &out_tx,
                     json!({"type": "power_ups", "data": {"items": hand.iter().map(|kind| kind.as_str()).collect::<Vec<_>>()}}),
                 );
+                let cheat = room
+                    .read()
+                    .players
+                    .get(&sid)
+                    .filter(|player| player.is_cheat)
+                    .map(|player| player.cheat.to_json());
+                if let Some(budget) = cheat {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "cheat_state", "data": {"powers": budget}}),
+                    );
+                }
                 let _ = room.read().tx.send(players);
             }
 
@@ -274,7 +289,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     }
                 };
 
-                let questions = fit_count(questions, count);
+                let questions = fit_count(questions, count, &topic);
 
                 let (first_question, players, token, hands) = {
                     let mut room = room.write();
@@ -288,8 +303,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         player.is_spectator = false;
                         player.lives = mode.lives().unwrap_or(1);
                         player.infinite_lives = mode.lives().is_none();
+                        player.cheat.reset();
                         if let Some(outbox) = player.outbox.as_ref() {
                             hands.push((outbox.clone(), power_ups_event(&player.power_ups)));
+                            if player.is_cheat {
+                                hands.push((
+                                    outbox.clone(),
+                                    json!({"type": "cheat_state", "data": {"powers": player.cheat.to_json()}})
+                                        .to_string(),
+                                ));
+                            }
                         }
                     }
                     (
@@ -397,6 +420,145 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 }
             }
 
+            "cheat_power" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+                let Some(power) = message["data"]["power"].as_str().and_then(CheatPower::parse)
+                else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Неизвестная способность"}}),
+                    );
+                    continue;
+                };
+
+                let (budget, private_event, public_event, scores_changed) = {
+                    let mut room = room.write();
+                    if room.state != RoomState::Playing {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Способности работают только в игре"}}),
+                        );
+                        continue;
+                    }
+
+                    let allowed = room
+                        .players
+                        .get(&sid)
+                        .map(|player| player.is_cheat && player.cheat.remaining(power) > 0)
+                        .unwrap_or(false);
+                    if !allowed {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Способность недоступна"}}),
+                        );
+                        continue;
+                    }
+
+                    let name = room
+                        .players
+                        .get(&sid)
+                        .map(|player| player.display_name.clone())
+                        .unwrap_or_default();
+                    if let Some(player) = room.players.get_mut(&sid) {
+                        player.cheat.spend(power);
+                    }
+
+                    let mut private_event: Option<String> = None;
+                    let mut public_event: Option<String> = None;
+                    let mut scores_changed = false;
+
+                    match power {
+                        CheatPower::Peek => {
+                            let correct = room
+                                .questions
+                                .get(room.current_q)
+                                .and_then(|question| question["correct_index"].as_u64())
+                                .map(|value| value as usize);
+                            if let Some(index) = correct {
+                                private_event = Some(
+                                    json!({"type": "cheat_reveal", "data": {"correct_index": index}})
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        CheatPower::Double => {
+                            if let Some(player) = room.players.get_mut(&sid) {
+                                player.double_points = true;
+                            }
+                            private_event = Some(
+                                json!({"type": "cheat_armed", "data": {"power": "double"}}).to_string(),
+                            );
+                        }
+                        CheatPower::Freeze => {
+                            if let Some(deadline) = room.deadline {
+                                room.deadline = Some(deadline + Duration::from_secs(CHEAT_FREEZE_SECS));
+                            }
+                            public_event = Some(
+                                json!({
+                                    "type": "cheat_used",
+                                    "data": {"player": name, "power": "freeze", "seconds": CHEAT_FREEZE_SECS}
+                                })
+                                .to_string(),
+                            );
+                        }
+                        CheatPower::Steal => {
+                            let leader = room
+                                .players
+                                .iter()
+                                .filter(|(other, player)| **other != sid && !player.is_spectator)
+                                .map(|(other, player)| (other.clone(), player.score))
+                                .max_by_key(|(_, score)| *score);
+                            if let Some((leader_sid, leader_score)) = leader {
+                                let amount = leader_score.clamp(0, STEAL_POINTS);
+                                if let Some(player) = room.players.get_mut(&leader_sid) {
+                                    player.score -= amount;
+                                }
+                                if let Some(player) = room.players.get_mut(&sid) {
+                                    player.score += amount;
+                                }
+                                scores_changed = true;
+                                public_event = Some(
+                                    json!({
+                                        "type": "cheat_used",
+                                        "data": {"player": name, "power": "steal", "points": amount}
+                                    })
+                                    .to_string(),
+                                );
+                            }
+                        }
+                    }
+
+                    room.touch();
+                    let budget = room
+                        .players
+                        .get(&sid)
+                        .map(|player| player.cheat.to_json())
+                        .unwrap_or(serde_json::Value::Null);
+                    (budget, private_event, public_event, scores_changed)
+                };
+
+                if let Some(event) = public_event {
+                    let _ = room.read().tx.send(event);
+                }
+                if let Some(event) = private_event {
+                    let _ = out_tx.send(event);
+                }
+                send_json(
+                    &out_tx,
+                    json!({"type": "cheat_state", "data": {"powers": budget}}),
+                );
+                if scores_changed {
+                    let event = players_event(&room.read());
+                    let _ = room.read().tx.send(event);
+                }
+            }
+
             "submit_answer" => {
                 let Some(room) = room_arc.clone() else {
                     continue;
@@ -430,7 +592,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             player.award(index == correct, mode, speed);
                             if mode.lives().is_some() && player.lives == 0 {
                                 player.is_spectator = true;
-                                player.instant_answer = false;
                                 knocked_out = true;
                             }
                         }
@@ -774,9 +935,40 @@ fn spawn_timer(room: Arc<RwLock<Room>>, token: u64, pool: Option<PgPool>) {
 /// A provider answers with as many questions as it likes; the room plays the
 /// number the host asked for. Trimming here keeps the round count and the
 /// "question 3 of 5" label honest even when a provider ignores `count`.
-fn fit_count(mut questions: Vec<Value>, count: usize) -> Vec<Value> {
-    if questions.len() > count {
-        questions.truncate(count);
+fn fit_count(mut questions: Vec<Value>, count: usize, topic: &str) -> Vec<Value> {
+    let count = count.max(1);
+    questions.truncate(count);
+
+    // Providers sometimes return fewer questions than asked. Modes like the
+    // marathon promise a fixed length, so top the set up from the offline bank
+    // instead of silently playing a shorter game.
+    if questions.len() < count {
+        let seen: HashSet<String> = questions
+            .iter()
+            .filter_map(|question| question["question"].as_str().map(str::to_owned))
+            .collect();
+        let missing = count - questions.len();
+        let padding: Vec<Value> = fallback_questions(topic, count)
+            .into_iter()
+            .filter_map(|question| serde_json::to_value(question).ok())
+            .filter(|question| {
+                question["question"]
+                    .as_str()
+                    .map(|text| !seen.contains(text))
+                    .unwrap_or(false)
+            })
+            .take(missing)
+            .collect();
+        questions.extend(padding);
+    }
+
+    // Last resort when the bank has no new material left: repeat the set.
+    let base = questions.len();
+    let mut index = 0;
+    while base > 0 && questions.len() < count {
+        let extra = questions[index % base].clone();
+        questions.push(extra);
+        index += 1;
     }
     questions
 }
@@ -837,17 +1029,29 @@ mod tests {
 
     #[test]
     fn provider_overdelivery_is_trimmed_to_the_requested_count() {
-        assert_eq!(fit_count(questions(10), 5).len(), 5);
+        assert_eq!(fit_count(questions(10), 5, "тема").len(), 5);
     }
 
     #[test]
-    fn a_shorter_answer_is_left_alone() {
-        assert_eq!(fit_count(questions(3), 5).len(), 3);
+    fn a_short_set_is_padded_up_to_the_requested_count() {
+        let padded = fit_count(questions(3), 5, "тема");
+        assert_eq!(padded.len(), 5);
+        assert_eq!(padded[0]["question"].as_str().unwrap(), "q0");
+        for question in &padded[3..] {
+            assert!(question["correct_index"].is_number(), "{question}");
+        }
+    }
+
+    #[test]
+    fn an_empty_set_is_filled_from_the_offline_bank() {
+        let filled = fit_count(Vec::new(), 4, "тема");
+        assert_eq!(filled.len(), 4);
+        assert!(filled.iter().all(|q| q["question"].is_string()));
     }
 
     #[test]
     fn trimming_keeps_the_first_questions() {
-        let trimmed = fit_count(questions(4), 2);
+        let trimmed = fit_count(questions(4), 2, "тема");
         let first = trimmed[0]["question"].as_str().unwrap();
         assert_eq!(first, "q0");
     }

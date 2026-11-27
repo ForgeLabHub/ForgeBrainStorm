@@ -11,8 +11,6 @@ listen = "0.0.0.0:5000"
 # Secret key for HMAC, sessions, CSRF. Must be >= 32 bytes in production.
 secret_key = "dev-secret-change-me-in-production-please-use-a-long-random-string"
 
-# Admin activation key.
-admin_secret_key = ""
 
 # PostgreSQL connection string.
 database_url = "postgres://brainstorm:brainstorm@localhost:5432/brainstorm"
@@ -22,7 +20,7 @@ db_pool_size = 20
 
 # ── Multi-AI Provider Configuration ─────────────────────────
 # Providers are tried in order, falling back to the next on failure.
-# The active provider can also be switched at runtime via /api/ai/providers/switch.
+# The active provider is switched at runtime from the admin panel (POST /api/admin/ai/switch).
 
 # Default provider (used first if available).
 default_ai_provider = "openrouter"

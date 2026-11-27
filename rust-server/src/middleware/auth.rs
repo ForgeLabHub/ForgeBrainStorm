@@ -14,6 +14,7 @@ use axum_extra::extract::CookieJar;
 use dashmap::DashMap;
 use sqlx::PgPool;
 
+use crate::domain::role::Role;
 use crate::error::{AppError, AppResult};
 
 /// Name of the session cookie.
@@ -24,9 +25,18 @@ pub const SESSION_COOKIE: &str = "brainstorm_session";
 pub struct AuthContext {
     pub user_id: i64,
     pub username: String,
-    pub is_admin: bool,
-    pub is_tester: bool,
+    pub role: Role,
     pub session_token: String,
+}
+
+impl AuthContext {
+    pub fn is_admin(&self) -> bool {
+        self.role.is_admin()
+    }
+
+    pub fn is_cheater(&self) -> bool {
+        self.role.is_cheater()
+    }
 }
 
 /// In-memory cache for validated sessions, with its own pool reference.
@@ -59,8 +69,8 @@ impl SessionCache {
             }
         }
 
-        let row = sqlx::query_as::<_, (i64, String, bool, bool)>(
-            "SELECT u.id, u.username, s.is_admin, s.is_tester
+        let row = sqlx::query_as::<_, (i64, String, String)>(
+            "SELECT u.id, u.username, u.role
              FROM sessions s
              JOIN users u ON u.id = s.user_id
              WHERE s.token = $1 AND s.expires_at > NOW() AND s.revoked_at IS NULL",
@@ -73,8 +83,7 @@ impl SessionCache {
         let ctx = AuthContext {
             user_id: row.0,
             username: row.1,
-            is_admin: row.2,
-            is_tester: row.3,
+            role: Role::parse(&row.2).unwrap_or_default(),
             session_token: token.to_string(),
         };
 
@@ -120,7 +129,7 @@ pub async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// Middleware: validate that the session belongs to an admin.
+/// Middleware: validate that the account role is `admin`.
 pub async fn admin_middleware(
     jar: CookieJar,
     mut request: Request,
@@ -138,7 +147,7 @@ pub async fn admin_middleware(
         .ok_or(AppError::Unauthorized)?;
 
     let ctx = cache.get_or_load(&token).await?;
-    if !ctx.is_admin {
+    if !ctx.role.can_administer() {
         return Err(AppError::Forbidden("Требуется доступ администратора"));
     }
     request.extensions_mut().insert(ctx);

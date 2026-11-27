@@ -4,6 +4,8 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+export type Role = 'player' | 'cheater' | 'admin';
+
 export interface User {
 username: string;
 xp: number;
@@ -12,6 +14,7 @@ games_played: number;
 wins: number;
 total_score?: number;
 level: number;
+role?: Role;
 }
 
 export interface Room {
@@ -161,27 +164,114 @@ topPlayers: (limit = 50) => request<LeaderboardResponse>(`/api/leaderboard/top?l
 
 playerRank: (username: string) => request<PlayerRankResponse>(`/api/leaderboard/rank/${username}`),
 
-// AI
-generateQuestions: (topic: string, count = 10, difficulty = 'medium', numOptions = 4) =>
-request<GenerateResponse>('/api/ai/generate', {
+// Admin panel
+adminStats: () => request<AdminStats>('/api/admin/stats'),
+
+adminUsers: (query = '') =>
+request<AdminUser[]>(`/api/admin/users?q=${encodeURIComponent(query)}`),
+
+adminSetRole: (userId: number, role: Role) =>
+request<ApiBase>('/api/admin/users/role', {
 method: 'POST',
-body: JSON.stringify({
-topic,
-count,
-difficulty,
-num_options: numOptions,
-}),
+body: JSON.stringify({ user_id: userId, role }),
 }),
 
-getAiProviders: () => request<ProvidersResponse>('/api/ai/providers'),
+adminResetUser: (userId: number) =>
+request<ApiBase>('/api/admin/users/reset', {
+method: 'POST',
+body: JSON.stringify({ user_id: userId }),
+}),
 
-switchAiProvider: (provider: string) =>
-request<ApiBase>('/api/ai/providers/switch', {
+adminDeleteUser: (userId: number) =>
+request<ApiBase>('/api/admin/users/delete', {
+method: 'POST',
+body: JSON.stringify({ user_id: userId }),
+}),
+
+adminBan: (identifier: string, minutes = 60, reason = '') =>
+request<ApiBase>('/api/admin/ban', {
+method: 'POST',
+body: JSON.stringify({ identifier, kind: 'user', duration_minutes: minutes, reason }),
+}),
+
+adminUnban: (identifier: string) =>
+request<ApiBase>('/api/admin/unban', {
+method: 'POST',
+body: JSON.stringify({ identifier, kind: 'user' }),
+}),
+
+adminRooms: () => request<AdminRoom[]>('/api/admin/rooms'),
+
+adminCloseRoom: (code: string) =>
+request<ApiBase>('/api/admin/rooms/close', {
+method: 'POST',
+body: JSON.stringify({ code }),
+}),
+
+adminBroadcast: (message: string) =>
+request<ApiBase>('/api/admin/broadcast', {
+method: 'POST',
+body: JSON.stringify({ message }),
+}),
+
+adminAuditLog: () => request<AdminAuditEntry[]>('/api/admin/audit_log'),
+
+adminAiStatus: () => request<AdminAiStatus>('/api/admin/ai'),
+
+adminSwitchProvider: (provider: string) =>
+request<ApiBase>('/api/admin/ai/switch', {
 method: 'POST',
 body: JSON.stringify({ provider }),
 }),
 
-getAiCacheStats: () => request<CacheStatsResponse>('/api/ai/cache/stats'),
-
-clearAiCache: () => request<ApiBase>('/api/ai/cache/clear', { method: 'POST' }),
+adminClearAiCache: () => request<ApiBase>('/api/admin/ai/cache/clear', { method: 'POST' })
 };
+
+export interface AdminStats {
+users: number;
+admins: number;
+cheaters: number;
+games: number;
+total_score: number;
+active_bans: number;
+live_rooms: number;
+live_players: number;
+}
+
+export interface AdminUser {
+user_id: number;
+username: string;
+role: Role;
+xp: number;
+coins: number;
+games_played: number;
+wins: number;
+banned: boolean;
+}
+
+export interface AdminRoom {
+code: string;
+host: string;
+state: string;
+mode: string;
+mode_title: string;
+topic: string;
+player_count: number;
+}
+
+export interface AdminAuditEntry {
+id: number;
+actor_id: number | null;
+actor_name: string | null;
+action: string;
+target: string;
+reason: string;
+created_at: string;
+}
+
+export interface AdminAiStatus {
+providers: string[];
+default: string;
+questions_cached: number;
+hints_cached: number;
+}

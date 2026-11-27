@@ -67,7 +67,10 @@ impl Default for RoomSettings {
 impl RoomSettings {
     /// Clamp values to safe ranges — applies to sandbox rooms too.
     pub fn clamp(&mut self) {
-        self.question_count = self.question_count.clamp(5, 30);
+        self.question_count = self
+            .mode
+            .question_override()
+            .unwrap_or_else(|| self.question_count.clamp(5, 30));
         self.num_options = self.num_options.clamp(2, 6);
         self.timer_secs = self
             .mode
@@ -217,7 +220,7 @@ impl Room {
     pub fn all_answered(&self) -> bool {
         self.players
             .values()
-            .filter(|p| !p.is_spectator && !p.is_disconnected() && !p.instant_answer)
+            .filter(|p| !p.is_spectator && !p.is_disconnected())
             .all(|p| p.answered)
     }
 

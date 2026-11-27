@@ -33,11 +33,15 @@ pub enum GameMode {
     Coop,
     /// Svoyaigra (Jeopardy-style): players choose questions with point values.
     Svoyaigra,
+    /// Sudden death: one wrong answer and you are out, speed pays double.
+    Sudden,
+    /// Marathon: a fixed long round, points grow with the streak.
+    Marathon,
 }
 
 impl GameMode {
     /// Modes offered by the UI, in display order.
-    pub const ALL: [GameMode; 8] = [
+    pub const ALL: [GameMode; 10] = [
         GameMode::Classic,
         GameMode::FreeForAll,
         GameMode::Lives,
@@ -46,6 +50,8 @@ impl GameMode {
         GameMode::Sandbox,
         GameMode::Coop,
         GameMode::Svoyaigra,
+        GameMode::Sudden,
+        GameMode::Marathon,
     ];
 
     /// Parse a mode sent by a client. Aliases keep old links and API clients
@@ -60,6 +66,8 @@ impl GameMode {
             "sandbox" | "practice" => Some(GameMode::Sandbox),
             "coop" | "cooperative" => Some(GameMode::Coop),
             "svoyaigra" | "jeopardy" => Some(GameMode::Svoyaigra),
+            "sudden" | "sudden_death" => Some(GameMode::Sudden),
+            "marathon" => Some(GameMode::Marathon),
             _ => None,
         }
     }
@@ -74,6 +82,8 @@ impl GameMode {
             GameMode::Sandbox => "sandbox",
             GameMode::Coop => "coop",
             GameMode::Svoyaigra => "svoyaigra",
+            GameMode::Sudden => "sudden",
+            GameMode::Marathon => "marathon",
         }
     }
 
@@ -88,6 +98,8 @@ impl GameMode {
             GameMode::Sandbox => "Тренировка",
             GameMode::Coop => "Кооператив",
             GameMode::Svoyaigra => "Своя Игра",
+            GameMode::Sudden => "Внезапная смерть",
+            GameMode::Marathon => "Марафон",
         }
     }
 
@@ -102,6 +114,8 @@ impl GameMode {
             GameMode::Sandbox => "Без рейтинга и жизней — просто поиграть",
             GameMode::Coop => "Одна общая копилка очков на всех",
             GameMode::Svoyaigra => "15 секунд на вопрос, очки растут с ответом",
+            GameMode::Sudden => "Одна ошибка — и выбыл, скорость платит вдвое",
+            GameMode::Marathon => "30 вопросов, очки растут с каждой серией",
         }
     }
 
@@ -109,6 +123,7 @@ impl GameMode {
     pub fn lives(self) -> Option<u8> {
         match self {
             GameMode::Lives => Some(SURVIVAL_LIVES),
+            GameMode::Sudden => Some(1),
             _ => None,
         }
     }
@@ -118,6 +133,16 @@ impl GameMode {
         match self {
             GameMode::Blitz => Some(10),
             GameMode::Svoyaigra => Some(15),
+            GameMode::Sudden => Some(20),
+            GameMode::Marathon => Some(20),
+            _ => None,
+        }
+    }
+
+    /// A fixed question count for modes that own their length.
+    pub fn question_override(self) -> Option<usize> {
+        match self {
+            GameMode::Marathon => Some(30),
             _ => None,
         }
     }
@@ -141,7 +166,7 @@ impl GameMode {
     pub fn base_points(self) -> i64 {
         match self {
             GameMode::Blitz => 60,
-            GameMode::Sandbox | GameMode::Coop => 50,
+            GameMode::Sandbox | GameMode::Coop | GameMode::Marathon => 50,
             GameMode::Svoyaigra => 100,
             _ => 100,
         }
@@ -175,6 +200,16 @@ impl GameMode {
             GameMode::Svoyaigra => {
                 let raw = 60.0 + 40.0 * speed;
                 ((raw / 10.0).round() * 10.0) as i64
+            }
+            // Sudden death: twice the free-for-all scale, 120…200 per answer.
+            GameMode::Sudden => {
+                let raw = 120.0 + 80.0 * speed;
+                ((raw / 5.0).round() * 5.0) as i64
+            }
+            // Marathon: 50 base, +10 per consecutive answer, capped at 100.
+            GameMode::Marathon => {
+                let bonus = (10 * i64::from(streak.saturating_sub(1))).min(50);
+                50 + bonus
             }
             _ => self.base_points(),
         }
@@ -240,6 +275,24 @@ mod tests {
         let buzzer = GameMode::Svoyaigra.points(0.0, 1);
         assert_eq!(instant, 100);
         assert_eq!(buzzer, 60);
+    }
+
+    #[test]
+    fn sudden_death_has_one_life_and_pays_double() {
+        assert_eq!(GameMode::Sudden.lives(), Some(1));
+        assert_eq!(GameMode::Sudden.points(1.0, 1), 200);
+        assert_eq!(GameMode::Sudden.points(0.0, 1), 120);
+        assert_eq!(GameMode::Sudden.timer_override(), Some(20));
+    }
+
+    #[test]
+    fn marathon_owns_its_length_and_rewards_streaks() {
+        assert_eq!(GameMode::Marathon.question_override(), Some(30));
+        assert_eq!(GameMode::Classic.question_override(), None);
+        assert_eq!(GameMode::Marathon.points(1.0, 1), 50);
+        assert_eq!(GameMode::Marathon.points(1.0, 4), 80);
+        assert_eq!(GameMode::Marathon.points(0.0, 9), 100);
+        assert!(GameMode::Marathon.persists());
     }
 
     #[test]

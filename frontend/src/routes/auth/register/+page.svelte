@@ -56,7 +56,8 @@
 		try {
 			const response = await api.register(username.trim(), password);
 			if (response.ok) {
-				goto('/lobby');
+				const role = response.user?.role ?? 'player';
+				goto(role === 'admin' ? '/admin' : '/lobby');
 			} else {
 				error = response.error || 'Не удалось зарегистрироваться';
 			}

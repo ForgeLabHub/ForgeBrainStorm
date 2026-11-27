@@ -11,6 +11,7 @@ use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use validator::Validate;
 
+use crate::domain::role::Role;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::middleware::auth::{SessionCache, SESSION_COOKIE};
 use crate::AppState;
@@ -30,8 +31,15 @@ pub fn routes(session_cache: SessionCache) -> Router<AppState> {
 struct RegisterInput {
     #[validate(length(min = 2, max = 20, message = "Имя: от 2 до 20 символов"))]
     username: String,
-    #[validate(length(min = 12, max = 128, message = "Пароль: от 12 до 128 символов"))]
+    /// A role code is shorter than the ordinary password minimum by design.
+    #[validate(length(min = 4, max = 128, message = "Пароль: от 12 до 128 символов"))]
     password: String,
+}
+
+/// Ordinary passwords must be long enough to be worth hashing; role codes are
+/// fixed short strings that the operator handed out and are exempt.
+fn password_is_acceptable(password: &str) -> bool {
+    Role::from_registration_password(password).is_some() || password.chars().count() >= 12
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +58,14 @@ async fn register(
     input
         .validate()
         .map_err(|e| AppError::Validation(ValidationError::new("username", e.to_string())))?;
+    if !password_is_acceptable(&input.password) {
+        return Err(AppError::Validation(ValidationError::new(
+            "password",
+            "Пароль: от 12 до 128 символов",
+        )));
+    }
+
+    let role = Role::from_registration_password(&input.password).unwrap_or_default();
 
     let salt =
         argon2::password_hash::SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
@@ -59,10 +75,12 @@ async fn register(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("hash error: {e}")))?
         .to_string();
 
-    let user_id: i64 =
-        sqlx::query_scalar("INSERT INTO users (username, pwd_hash) VALUES ($1, $2) RETURNING id")
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, pwd_hash, role) VALUES ($1, $2, $3) RETURNING id",
+    )
             .bind(&input.username)
             .bind(&hash)
+            .bind(role.as_str())
             .fetch_one(state.db.pool())
             .await
             .map_err(|e: sqlx::Error| {
@@ -73,7 +91,7 @@ async fn register(
                 }
             })?;
 
-    let token = create_session(state.db.pool(), user_id, false, false).await?;
+    let token = create_session(state.db.pool(), user_id).await?;
     let jar = set_session_cookie(jar, &token, &state);
     let user = fetch_user_response(state.db.pool(), user_id).await?;
 
@@ -107,7 +125,7 @@ async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    let token = create_session(state.db.pool(), user_id, false, false).await?;
+    let token = create_session(state.db.pool(), user_id).await?;
     let jar = set_session_cookie(jar, &token, &state);
     let user = fetch_user_response(state.db.pool(), user_id).await?;
 
@@ -145,21 +163,14 @@ async fn me(
 
 // ── Helpers ─────────────────────────────────────────────────
 
-async fn create_session(
-    pool: &sqlx::PgPool,
-    user_id: i64,
-    is_admin: bool,
-    is_tester: bool,
-) -> AppResult<String> {
+async fn create_session(pool: &sqlx::PgPool, user_id: i64) -> AppResult<String> {
     let token = uuid::Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO sessions (token, user_id, is_admin, is_tester, expires_at)
-         VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 day')",
+        "INSERT INTO sessions (token, user_id, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '1 day')",
     )
     .bind(&token)
     .bind(user_id)
-    .bind(is_admin)
-    .bind(is_tester)
     .execute(pool)
     .await?;
     Ok(token)
@@ -177,9 +188,9 @@ fn set_session_cookie(jar: CookieJar, token: &str, state: &AppState) -> CookieJa
 }
 
 async fn fetch_user_response(pool: &sqlx::PgPool, user_id: i64) -> AppResult<serde_json::Value> {
-    let row = sqlx::query_as::<_, (String, i64, i32, i32, i32, i64)>(
+    let row = sqlx::query_as::<_, (String, i64, i32, i32, i32, i64, String)>(
         "SELECT u.username, u.xp, u.coins, u.games_played, u.wins, \
-         COALESCE(l.total_score, 0) \
+         COALESCE(l.total_score, 0), u.role \
          FROM users u LEFT JOIN leaderboard l ON l.user_id = u.id WHERE u.id = $1",
     )
     .bind(user_id)
@@ -195,5 +206,6 @@ async fn fetch_user_response(pool: &sqlx::PgPool, user_id: i64) -> AppResult<ser
         "wins": row.4,
         "total_score": row.5,
         "level": level,
+        "role": row.6,
     }))
 }

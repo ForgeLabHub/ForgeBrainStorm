@@ -10,7 +10,6 @@ mod domain;
 mod error;
 mod middleware;
 mod routes;
-mod security;
 mod services;
 mod ws;
 

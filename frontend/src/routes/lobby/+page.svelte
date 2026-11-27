@@ -80,11 +80,11 @@
 	}
 </script>
 
-<div class="mx-auto max-w-7xl px-6 py-8">
+<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
 	<!-- Header -->
 	<div class="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 		<div>
-			<h1 class="text-3xl font-bold text-white">Игровые комнаты</h1>
+			<h1 class="text-2xl font-bold text-white sm:text-3xl">Игровые комнаты</h1>
 			<p class="mt-1 text-slate-400">Присоединитесь к игре или создайте свою</p>
 		</div>
 		<a href="/room/create" class="relative group">

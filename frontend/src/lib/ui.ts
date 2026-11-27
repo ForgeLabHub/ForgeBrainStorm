@@ -8,7 +8,9 @@ export const MODES: Record<string, { label: string; hint: string }> = {
   team: { label: 'Команды', hint: 'Две команды на одном счёте' },
   sandbox: { label: 'Тренировка', hint: 'Без рейтинга и жизней' },
   coop: { label: 'Кооператив', hint: 'Одна общая копилка очков' },
-  svoyaigra: { label: 'Своя Игра', hint: '15 секунд, очки растут с ответом' }
+  svoyaigra: { label: 'Своя Игра', hint: '15 секунд, очки растут с ответом' },
+  sudden: { label: 'Внезапная смерть', hint: 'Одна ошибка — и выбыл, скорость платит вдвое' },
+  marathon: { label: 'Марафон', hint: '30 вопросов, очки растут с каждой серией' }
 };
 
 export const DIFFICULTIES: Record<string, string> = {

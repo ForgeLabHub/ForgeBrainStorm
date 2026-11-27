@@ -13,6 +13,7 @@
 	let userXp = $state(0);
 	let userCoins = $state(0);
 	let mobileMenuOpen = $state(false);
+	let role = $state<'player' | 'cheater' | 'admin'>('player');
 
 	async function loadUser() {
 		try {
@@ -23,6 +24,7 @@
 				userLevel = response.user.level || 1;
 				userXp = response.user.xp || 0;
 				userCoins = response.user.coins || 0;
+				role = response.user.role ?? 'player';
 				return;
 			}
 		} catch {
@@ -70,10 +72,17 @@
 					Комнаты
 				</a>
 
-				<a href="/settings" class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-					AI
+<a href="/leaderboard" class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 21h8m-4-4v4M6 4h12v4a6 6 0 11-12 0V4z"></path></svg>
+						Рейтинг
 				</a>
+
+				{#if role === 'admin'}
+					<a href="/admin" class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-all">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3l7 4v5c0 4.4-3 8.4-7 9-4-0.6-7-4.6-7-9V7l7-4z"></path></svg>
+						Админка
+					</a>
+				{/if}
 
 				{#if isLoggedIn}
 					<a href="/profile" class="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2 hover:bg-white/10 hover:border-white/20 transition-all group">
@@ -84,7 +93,14 @@
 							</div>
 						</div>
 						<div class="flex flex-col">
-							<span class="text-sm font-medium text-white leading-tight">{username}</span>
+							<span class="text-sm font-medium text-white leading-tight">
+											{username}
+											{#if role === 'admin'}
+												<span class="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-300">админ</span>
+											{:else if role === 'cheater'}
+												<span class="ml-1 rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-rose-300">читер</span>
+											{/if}
+										</span>
 							<span class="text-xs text-slate-400 leading-tight">Ур. {userLevel} · 🪙 {userCoins}</span>
 						</div>
 					</a>
@@ -139,14 +155,24 @@
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
 						Комнаты
 					</a>
-					<a
-						href="/settings"
-						onclick={closeMobileMenu}
-						class="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-300 hover:bg-white/5 transition-all"
-					>
-						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-						Настройки AI
-					</a>
+<a
+							href="/leaderboard"
+							onclick={closeMobileMenu}
+							class="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-300 hover:bg-white/5 transition-all"
+						>
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 21h8m-4-4v4M6 4h12v4a6 6 0 11-12 0V4z"></path></svg>
+							Рейтинг
+						</a>
+						{#if role === 'admin'}
+							<a
+								href="/admin"
+								onclick={closeMobileMenu}
+								class="flex items-center gap-3 rounded-xl px-4 py-3 text-amber-300 hover:bg-amber-500/10 transition-all"
+							>
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3l7 4v5c0 4.4-3 8.4-7 9-4-0.6-7-4.6-7-9V7l7-4z"></path></svg>
+								Админка
+							</a>
+						{/if}
 					{#if isLoggedIn}
 						<div class="border-t border-white/5 pt-2 mt-2">
 							<div class="flex items-center gap-3 px-4 py-2">
@@ -174,15 +200,9 @@
 	<footer class="relative z-10 border-t border-white/5 bg-[#0a0b1a]/80 backdrop-blur-xl px-4 py-6 sm:px-6">
 		<div class="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
 			<p class="text-sm text-slate-500">
-				BrainStorm — интеллектуальная викторина с AI
+				BrainStorm — викторина для компании
 			</p>
-			<div class="flex items-center gap-4 text-sm text-slate-500">
-				<span>v0.2.0</span>
-				<span class="flex items-center gap-1">
-					<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-					Online
-				</span>
-			</div>
+					<p class="text-sm text-slate-500">Играйте с друзьями по коду комнаты</p>
 		</div>
 	</footer>
 </div>
