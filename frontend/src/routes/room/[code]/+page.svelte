@@ -253,12 +253,14 @@
 
 	function getModeLabel(m: string): string {
 		const labels: Record<string, string> = {
-			classic: '🎯 Классика',
-			ffa: '⚔️ Каждый за себя',
-			team: '👥 Команды',
-			lives: '❤️ На выживание',
-			blitz: '⚡ Блиц',
-			sandbox: '🎓 Тренировка',
+			classic: 'Классика',
+			ffa: 'Каждый за себя',
+			team: 'Команды',
+			lives: 'На выживание',
+			blitz: 'Блиц',
+			coop: 'Кооператив',
+			svoyaigra: 'Своя Игра',
+			sandbox: 'Тренировка',
 		};
 		return labels[m] || m;
 	}

@@ -51,12 +51,14 @@
 
 	function getModeLabel(mode: string): string {
 		const labels: Record<string, string> = {
-			classic: '🎯 Классика',
-			ffa: '⚔️ Каждый за себя',
-			team: '👥 Команды',
-			lives: '❤️ На выживание',
-			blitz: '⚡ Блиц',
-			sandbox: '🎓 Тренировка',
+			classic: 'Классика',
+			ffa: 'Каждый за себя',
+			team: 'Команды',
+			lives: 'На выживание',
+			blitz: 'Блиц',
+			coop: 'Кооператив',
+			svoyaigra: 'Своя Игра',
+			sandbox: 'Тренировка',
 		};
 		return labels[mode] || mode;
 	}
@@ -68,6 +70,8 @@
 			team: 'from-purple-500 to-pink-500',
 			lives: 'from-red-500 to-rose-500',
 			blitz: 'from-amber-400 to-orange-500',
+			coop: 'from-green-500 to-emerald-500',
+			svoyaigra: 'from-cyan-500 to-blue-500',
 			sandbox: 'from-teal-500 to-emerald-500',
 		};
 		return colors[mode] || 'from-slate-500 to-slate-600';
@@ -80,6 +84,8 @@
 			team: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
 			lives: 'bg-red-500/10 text-red-400 border-red-500/20',
 			blitz: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+			coop: 'bg-green-500/10 text-green-400 border-green-500/20',
+			svoyaigra: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
 			sandbox: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
 		};
 		return badges[mode] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
