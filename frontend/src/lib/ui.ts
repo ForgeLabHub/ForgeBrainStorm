@@ -4,7 +4,7 @@ export const MODES: Record<string, { label: string; hint: string }> = {
   classic: { label: 'Классика', hint: 'Все отвечают одновременно' },
   ffa: { label: 'Каждый за себя', hint: 'Чем быстрее ответ, тем больше очков' },
   lives: { label: 'На выживание', hint: 'Три жизни, ошибки выбивают' },
-  blitz: { label: 'Блиц', hint: '10 секунд на вопрос, серия умножает очки' },
+  blitz: { label: 'Блиц', hint: '10 секунд на вопрос, отвечают все' },
   team: { label: 'Команды', hint: 'Две команды на одном счёте' },
   sandbox: { label: 'Тренировка', hint: 'Без рейтинга и жизней' }
 };

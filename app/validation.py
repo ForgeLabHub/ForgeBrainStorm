@@ -26,7 +26,7 @@ MAX_TOPIC_LEN = 60
 MAX_URL_LEN = 2048
 
 DIFFICULTIES = ("easy", "medium", "hard")
-GAME_MODES = ("classic", "ffa", "team", "lives", "coop", "svoyaigra")
+GAME_MODES = ("classic", "ffa", "team", "lives", "coop", "svoyaigra", "blitz")
 
 
 def as_str(value: Any, *, default: str = "", strip: bool = True, max_len: int | None = None) -> str:
