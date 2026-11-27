@@ -51,6 +51,8 @@ All notable changes to BrainStorm are documented here. The format is based on
   keying by `ConnectInfo` is wrong behind Caddy.
 
 ### Fixed
+- Profile «Средний счёт» divides total points by games played; it used to show the
+  average XP, so the number never matched the game list below it.
 - A page reload no longer costs you the game: the room keeps your seat (score, streak,
   lives, elimination, hand) while it is playing or finished, and the socket replays the
   live question or the final board on reconnect. Players who dropped are shown dimmed
