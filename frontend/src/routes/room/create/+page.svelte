@@ -74,7 +74,7 @@
 		{ value: 'lives', label: 'На выживание', desc: '3 жизни — ошибка их отнимает', accent: 'border-red-500/30' },
 		{ value: 'blitz', label: 'Блиц', desc: '10 секунд, серия умножает очки', accent: 'border-yellow-500/30' },
 		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', accent: 'border-purple-500/30' },
-		{ value: 'coop', label: 'Кооператив', desc: 'Работайте вместе ради общей цели', accent: 'border-green-500/30' },
+		{ value: 'coop', label: 'Кооператив', desc: 'Одна общая копилка очков на всех', accent: 'border-green-500/30' },
 		{ value: 'svoyaigra', label: 'Своя Игра', desc: '15 секунд на вопрос, очки растут с ответом', accent: 'border-cyan-500/30' },
 		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', accent: 'border-slate-500/30' },
 	];

@@ -50,7 +50,8 @@
 	let mode = $state('');
 	let error = $state('');
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
-	let lastResult: { correct: boolean; correctIndex: number; explanation: string; player_answers?: any[] } | null = $state(null);
+	type ResultKind = 'correct' | 'wrong' | 'timeout';
+	let lastResult: { kind: ResultKind; correctIndex: number; explanation: string; player_answers?: any[] } | null = $state(null);
 	let finalLeaderboard: any[] | null = $state(null);
 	let powerUps: PowerUpKind[] = $state([]);
 	let hiddenOptions: number[] = $state([]);
@@ -68,6 +69,8 @@
 	let teamScores = $derived<TeamScore[]>(
 		serverTeams.length > 0
 			? [...serverTeams].sort((a, b) => b.score - a.score)
+			: isCoop
+				? [{ team: 0, name: 'Все вместе', score: players.reduce((sum, p) => sum + p.score, 0) }]
 			: mode === 'team'
 				? [
 						{ team: 0, name: 'Синие', score: players.filter((p) => p.team === 0).reduce((sum, p) => sum + p.score, 0) },
@@ -171,7 +174,12 @@
 			const correctIndex =
 				typeof data.correct_index === 'number' ? data.correct_index : (data.correctIndex ?? 0);
 			lastResult = {
-				correct: selectedAnswer !== null && selectedAnswer === correctIndex,
+				kind:
+					selectedAnswer === null
+						? 'timeout'
+						: selectedAnswer === correctIndex
+							? 'correct'
+							: 'wrong',
 				correctIndex,
 				explanation: data.explanation || '',
 				player_answers: data.player_answers
@@ -425,11 +433,11 @@
 				<div class="space-y-6">
 					<!-- Result card -->
 					<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm">
-						<div class="absolute inset-0 {lastResult?.correct ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/5' : 'bg-gradient-to-br from-red-500/10 to-rose-500/5'}"></div>
+						<div class="absolute inset-0 {lastResult?.kind === 'correct' ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/5' : lastResult?.kind === 'timeout' ? 'bg-gradient-to-br from-amber-500/10 to-orange-500/5' : 'bg-gradient-to-br from-red-500/10 to-rose-500/5'}"></div>
 						<div class="relative z-10 text-center">
-							<div class="mb-4 flex justify-center {lastResult?.correct ? 'text-green-400' : 'text-red-400'}"><Icon name={lastResult?.correct ? 'check' : 'cross'} class="h-12 w-12" /></div>
-							<h2 class="text-2xl font-bold {lastResult?.correct ? 'text-green-400' : 'text-red-400'}">
-								{lastResult?.correct ? 'Правильно!' : 'Неправильно'}
+							<div class="mb-4 flex justify-center {lastResult?.kind === 'correct' ? 'text-green-400' : lastResult?.kind === 'timeout' ? 'text-amber-400' : 'text-red-400'}"><Icon name={lastResult?.kind === 'correct' ? 'check' : 'cross'} class="h-12 w-12" /></div>
+							<h2 class="text-2xl font-bold {lastResult?.kind === 'correct' ? 'text-green-400' : lastResult?.kind === 'timeout' ? 'text-amber-400' : 'text-red-400'}">
+								{lastResult?.kind === 'correct' ? 'Правильно!' : lastResult?.kind === 'timeout' ? 'Время вышло' : 'Неправильно'}
 							</h2>
 							{#if lastResult}
 								<p class="mt-2 text-slate-400">
