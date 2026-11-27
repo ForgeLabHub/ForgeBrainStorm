@@ -123,12 +123,31 @@ class TestShopAndCampaign:
         payload = client.get("/api/campaign/levels").get_json()
         assert all(level["locked"] for level in payload["levels"])
 
+    def test_campaign_story_can_be_opened_without_a_room(self, client):
+        page = client.get("/").get_data(as_text=True)
+        assert 'id="btn-campaign"' in page and 'id="view-campaign-game"' in page
+        guest = client.get("/api/campaign/levels").get_json()
+        assert guest["requires_login"] is True
+        assert len(guest["levels"]) == 12 and len(guest["worlds"]) == 3
+        assert all(level["briefing"] and "epilogue" not in level for level in guest["levels"])
+
+        client.post("/api/auth/register", json={"username": "reader", "password": "supersecret"})
+        board = client.get("/api/campaign/levels").get_json()
+        assert board["requires_login"] is False
+        assert not board["levels"][0]["locked"]
+        first = client.post("/api/campaign/start", json={"level_id": 1})
+        assert first.status_code == 200
+        assert first.get_json()["questions"]
+        assert "epilogue" not in first.get_json()["level"]
+        assert client.post("/api/campaign/start", json={"level_id": 12}).status_code != 200
+
     def test_campaign_result_grants_stars(self, client):
         client.post("/api/auth/register", json={"username": "hero", "password": "supersecret"})
         response = client.post("/api/campaign/result", json={
             "level_id": 1, "score": 900, "correct": 9, "total_questions": 10,
         })
         assert response.get_json()["stars"] == 3
+        assert response.get_json()["epilogue"]
 
 
 class TestLearnValidation:

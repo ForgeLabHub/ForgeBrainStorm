@@ -11,7 +11,7 @@
   <title>🧠 Мозговой Штурм</title>
   <link rel="icon" href="/static/favicon.png">
   <link rel="manifest" href="/static/manifest.json">
-  <link rel="stylesheet" href="/static/css/style.css?v=blitz1">
+  <link rel="stylesheet" href="/static/css/style.css?v=campaign1">
   <script>
   /* Apply the saved colour scheme before first paint to avoid a flash. */
   (function () {
@@ -475,6 +475,8 @@
     </div>
   </div>
 
+  <button id="btn-campaign" type="button" class="btn btn-ghost btn-full campaign-entry">✦ Маяк Новой Гавани · Играть одному</button>
+
   <div class="tab-switcher">
     <button class="tab-btn active" data-tab="create">✨ Создать</button>
     <button class="tab-btn" data-tab="join">🚀 Войти</button>
@@ -836,6 +838,8 @@
   </div>
 </div>
 
+
+{% include "partials/campaign.html" %}
 
 <!-- ══ AUTH VIEW ══ -->
 <div id="view-auth" class="view">

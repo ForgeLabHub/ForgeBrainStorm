@@ -346,6 +346,7 @@ function showView(id){
   const el=$(id); if(!el) return;
   el.classList.add("active");
   if(animationsOn) el.classList.add("anim-enter");
+  if(id==="view-campaign") void loadCampaign();
 }
 
 /* ════════════ TRANSITION OVERLAY ════════════ */
@@ -2282,171 +2283,153 @@ function initAuthUI() {
 /* ════════════════════════════════════════════════════════
    CAMPAIGN — режим кампании
    ════════════════════════════════════════════════════════ */
-let _campData     = null;
-let _campCurrent  = null;   // {level, questions, idx, score, correct}
-let _campTimer    = null;
+let _campCurrent = null;
+let _campLoading = false;
+
+async function campaignRequest(path, body) {
+  const options = body ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {};
+  const response = await fetch(`/api/campaign/${path}`, options);
+  const data = await response.json();
+  if(!response.ok) throw new Error(data.error || "Сервер не ответил на запрос кампании.");
+  return data;
+}
 
 async function loadCampaign() {
-  console.log("📋 loadCampaign called, _authUser:", _authUser);
-  if (!_authUser) {
-    const prompt = $("campaign-login-prompt");
-    if (prompt) prompt.style.display="";
-    $("campaign-map").innerHTML="";
-    return;
+  const status = $("campaign-status"), map = $("campaign-map");
+  status.textContent = "Загружаем главы…";
+  map.replaceChildren();
+  try {
+    const data = await campaignRequest("levels");
+    $("campaign-title").textContent = data.title;
+    $("campaign-intro").textContent = data.intro;
+    $("camp-stars-total").textContent = `★ ${data.total_stars} / ${data.levels.length * 3} звёзд`;
+    $("campaign-login-prompt").hidden = !data.requires_login;
+    for(const [id, title] of Object.entries(data.worlds)) {
+      const heading = document.createElement("h3");
+      heading.className = "camp-world-title";
+      heading.textContent = title;
+      map.append(heading);
+      for(const level of data.levels.filter(level=>String(level.world)===id)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `camp-level-card${level.locked ? " locked" : ""}${level.boss ? " boss" : ""}`;
+        button.disabled = level.locked;
+        const name = document.createElement("strong"), details = document.createElement("span");
+        name.textContent = `${String(level.id).padStart(2,"0")} · ${level.title}`;
+        details.className = "camp-level-meta";
+        details.textContent = `${level.boss ? "Финал акта · " : ""}${level.questions} вопросов · ${level.locked ? `нужно ★ ${level.req_stars}` : `★ ${level.stars}/3`}`;
+        button.append(name, details);
+        button.onclick = ()=>openCampaignLevel(level);
+        map.append(button);
+      }
+    }
+    status.textContent = data.levels.length ? "" : "Главы временно недоступны.";
+  } catch {
+    status.textContent = "Не удалось загрузить главы. Вернитесь на главную и откройте карту снова.";
   }
-  const prompt = $("campaign-login-prompt");
-  if (prompt) prompt.style.display="none";
-  try {
-    console.log("📡 Fetching campaign levels...");
-    _campData = await fetch("/api/campaign/levels").then(r=>r.json());
-    console.log("📥 Campaign data:", _campData);
-    _renderCampaignMap(_campData);
-  } catch(e) { toast("❌ Ошибка загрузки кампании"); console.error("Campaign error:", e); }
 }
 
-function _renderCampaignMap(data) {
-  const map   = $("campaign-map"); if(!map) return;
-  const stars  = data.total_stars||0;
-  if ($("camp-stars-total")) $("camp-stars-total").textContent = `⭐ ${stars} звёзд`;
-  const worlds = {};
-  (data.levels||[]).forEach(l=> (worlds[l.world]||=[]).push(l));
-  const WORLD_NAMES = {1:"🌍 Мир знаний",2:"🎭 Мир культуры",3:"🔮 Мир мастеров"};
-  map.innerHTML = Object.entries(worlds).map(([w,levels])=>`
-    <div class="camp-world-title">${WORLD_NAMES[w]||"Мир "+w}</div>
-    ${levels.map(l=>{
-      const stars = l.stars||0;
-      const starsStr = "⭐".repeat(stars)+"☆".repeat(3-stars);
-      const locked = l.locked;
-      return `<div class="camp-level-card ${locked?"locked":""} ${l.boss?"boss":""}"
-        onclick="${locked?"void(0)":"startCampaignLevel("+l.id+")"}">
-        <div class="camp-level-icon">${l.boss?"⚔️": (locked?"🔒":"🧠")}</div>
-        <div class="camp-level-info">
-          <div class="camp-level-name">${l.title}</div>
-          <div class="camp-level-meta">${l.difficulty==="easy"?"Лёгкий":l.difficulty==="medium"?"Средний":"Сложный"} · ${l.questions} вопросов · 🪙${l.reward_coins}</div>
-        </div>
-        <div class="camp-stars">${stars>0?starsStr:"☆☆☆"}</div>
-        ${locked?`<div style="font-size:.72rem;color:var(--red)">⭐${l.req_stars}</div>`:""}
-      </div>`;
-    }).join("")}
-  `).join("");
-}
-
-async function startCampaignLevel(levelId) {
-  if (!_authUser) { showView("view-auth"); return; }
-  const level = _campData?.levels?.find(l=>l.id===levelId);
-  if (!level || level.locked) return;
-  toast("🤖 Генерируем вопросы...", 2000);
-  // Импортируем generate_questions через API (используем ai_client через socket?)
-  // Грузим через /api/learn/from_text с темой уровня — нет, это другой формат
-  // Используем серверный endpoint
-  try {
-    const resp = await fetch("/api/campaign/start",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({level_id:levelId})
-    }).then(r=>r.json());
-    if (!resp.questions?.length) { toast("❌ Не удалось получить вопросы"); return; }
-    _campCurrent = {
-      level, questions: resp.questions,
-      idx:0, score:0, correct:0, answered:false
-    };
-    _showCampaignGame();
-  } catch(e) { toast("❌ Ошибка загрузки уровня: "+e); }
-}
-
-function _showCampaignGame() {
-  const c = _campCurrent; if(!c) return;
+function openCampaignLevel(level) {
+  _campCurrent = {level,questions:[],idx:0,correct:0,answered:false};
+  $("camp-level-title").textContent = level.title;
+  $("camp-briefing").textContent = level.briefing;
+  $("btn-camp-start").hidden = false;
+  $("camp-question-panel").hidden = true;
+  $("camp-result-overlay").hidden = true;
   showView("view-campaign-game");
-  if ($("camp-level-title")) $("camp-level-title").textContent = c.level.title;
-  if ($("camp-q-total"))     $("camp-q-total").textContent    = c.questions.length;
-  if ($("camp-result-overlay")) $("camp-result-overlay").style.display="none";
-  _campShowQuestion();
+  $("camp-level-title").focus();
+}
+
+async function startCampaignLevel() {
+  const run = _campCurrent, button = $("btn-camp-start");
+  if(!run || _campLoading) return;
+  _campLoading = true;
+  button.disabled = true;
+  button.textContent = "Загружаем вопросы…";
+  try {
+    const data = await campaignRequest("start", {level_id:run.level.id});
+    if(run !== _campCurrent) return;
+    if(!data.questions?.length) throw new Error("Для этой главы пока нет вопросов.");
+    run.questions = data.questions;
+    $("camp-q-total").textContent = run.questions.length;
+    button.hidden = true;
+    $("camp-question-panel").hidden = false;
+    _campShowQuestion();
+  } catch(error) {
+    if(run === _campCurrent) toast(error.message);
+  } finally {
+    _campLoading = false;
+    button.disabled = false;
+    button.textContent = "Начать испытание";
+  }
 }
 
 function _campShowQuestion() {
-  const c = _campCurrent; if(!c) return;
-  const q = c.questions[c.idx];
-  if (!q) { _campFinish(); return; }
-  c.answered = false;
-  if ($("camp-q-num"))       $("camp-q-num").textContent      = c.idx+1;
-  if ($("camp-score"))       $("camp-score").textContent      = c.score;
-  if ($("camp-explanation")) $("camp-explanation").style.display="none";
-  if ($("camp-question-text")) $("camp-question-text").textContent = q.question;
-  // Timer bar
-  clearInterval(_campTimer);
-  let t=20;
-  const bar = $("camp-timer-bar");
-  if(bar){bar.style.width="100%"; bar.style.background="var(--primary)";}
-  _campTimer=setInterval(()=>{
-    t--;
-    if(bar) bar.style.width=(t/20*100)+"%";
-    if(bar&&t<=5) bar.style.background="var(--red)";
-    if(t<=0) { clearInterval(_campTimer); if(!c.answered) _campAnswer(-1); }
-  },1000);
-  // Options
-  const opts = $("camp-options"); if(!opts) return;
-  const LETTERS=["A","B","C","D","E","F"];
-  opts.innerHTML=(q.options||[]).map((o,i)=>
-    `<button class="option-btn" data-idx="${i}" onclick="_campAnswer(${i})">
-      <span class="opt-letter">${LETTERS[i]}</span>${o}
-    </button>`
-  ).join("");
+  const run = _campCurrent, question = run.questions[run.idx];
+  run.answered = false;
+  $("camp-q-num").textContent = run.idx + 1;
+  $("camp-question-text").textContent = question.question;
+  $("camp-explanation").hidden = true;
+  $("btn-camp-continue").hidden = true;
+  $("camp-options").replaceChildren(...question.options.map((option,index)=>{
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "option-btn";
+    button.textContent = option;
+    button.onclick = ()=>_campAnswer(index);
+    return button;
+  }));
+  $("camp-question-text").focus();
 }
 
-function _campAnswer(idx) {
-  const c=_campCurrent; if(!c||c.answered) return;
-  c.answered=true;
-  clearInterval(_campTimer);
-  const q=c.questions[c.idx];
-  const correct=q.correct;
-  const isOk=(idx===correct);
-  if(isOk){ c.score+=100; c.correct++; NeuralBg.pulse("#34d399",0.8); }
-  else NeuralBg.pulse("#f87171",0.6);
-  // Подсветка
-  qsa("#camp-options .option-btn").forEach((btn,i)=>{
-    if(i===correct) btn.classList.add("correct");
-    else if(i===idx&&!isOk) btn.classList.add("wrong");
-    btn.disabled=true;
+function _campAnswer(index) {
+  const run = _campCurrent;
+  if(!run || run.answered) return;
+  run.answered = true;
+  const question = run.questions[run.idx], correct = index === question.correct;
+  if(correct) run.correct++;
+  qsa("#camp-options .option-btn").forEach((button,i)=>{
+    button.disabled = true;
+    if(i === question.correct) button.classList.add("correct");
+    else if(i === index) button.classList.add("wrong");
   });
-  const expEl=$("camp-explanation");
-  if(expEl&&q.explanation){ expEl.textContent=q.explanation; expEl.style.display=""; }
-  // Авто-переход через 1.8с
-  setTimeout(()=>{
-    c.idx++;
-    if(c.idx>=c.questions.length) _campFinish();
-    else _campShowQuestion();
-  },1800);
+  const feedback = $("camp-explanation");
+  feedback.textContent = `${correct ? "Верно." : `Верный ответ: ${question.options[question.correct]}.`} ${question.explanation || ""}`;
+  feedback.hidden = false;
+  $("btn-camp-continue").hidden = false;
+  $("btn-camp-continue").focus();
 }
 
-async function _campFinish() {
-  clearInterval(_campTimer);
-  const c=_campCurrent; if(!c) return;
-  const pct=Math.round(c.correct/c.questions.length*100);
-  const stars=pct>=90?3:pct>=65?2:pct>=40?1:0;
-  const starsStr="⭐".repeat(stars)+"☆".repeat(3-stars);
-  // Сохраняем результат
-  const res=await fetch("/api/campaign/result",{
-    method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({level_id:c.level.id,score:c.score,correct:c.correct,total_questions:c.questions.length})
-  }).then(r=>r.json()).catch(()=>({}));
-  if($("camp-result-overlay")) $("camp-result-overlay").style.display="";
-  if($("camp-result-stars"))   $("camp-result-stars").textContent=starsStr;
-  if($("camp-result-text"))    $("camp-result-text").innerHTML=
-    `<b>${c.correct}</b> из <b>${c.questions.length}</b> верных (${pct}%)<br>`+
-    (res.coins?`💰 +${res.coins} монет · `:"")+(res.xp?`+${res.xp} XP`:"");
-  if(stars>0) fireConfetti();
-  // Разблокированные достижения
-  if(res.new_achievements?.length)
-    res.new_achievements.forEach(id=>toast(`🏅 Достижение: ${ACHIEVEMENTS_CLIENT[id]||id}`,3000));
-  // Обновляем профиль
-  const me=await fetch("/api/auth/me").then(r=>r.json()).catch(()=>({}));
-  if(me.logged_in) _setAuthUser(me.user);
+async function _campFinish(run) {
+  $("camp-question-panel").hidden = true;
+  $("camp-result-overlay").hidden = false;
+  $("camp-result-stars").textContent = "";
+  $("camp-epilogue").textContent = "";
+  $("camp-result-text").textContent = "Сохраняем результат…";
+  $("camp-result-heading").focus();
+  try {
+    const result = await campaignRequest("result", {level_id:run.level.id,score:run.correct*100,correct:run.correct,total_questions:run.questions.length});
+    if(run !== _campCurrent) return;
+    $("camp-result-stars").textContent = `★ ${result.stars}/3`;
+    $("camp-result-text").textContent = `${run.correct} из ${run.questions.length} верных · +${result.xp} XP · +${result.coins} монет`;
+    $("camp-epilogue").textContent = result.epilogue ? result.epilogue : "Компас пока не откликается. Вернитесь на карту и попробуйте пройти главу ещё раз.";
+  } catch {
+    if(run === _campCurrent) $("camp-result-text").textContent = `${run.correct} из ${run.questions.length} верных. Сервер не подтвердил сохранение результата.`;
+  }
 }
 
 function initCampaignUI() {
-  on($("btn-camp-retry"),"click",()=>{ _campCurrent&&(_campCurrent.idx=0,_campCurrent.score=0,_campCurrent.correct=0,_showCampaignGame()); });
-  on($("btn-camp-next"), "click",()=>loadCampaign().then(()=>showView("view-campaign")));
-  on($("btn-camp-back"), "click",()=>{ clearInterval(_campTimer); showView("view-campaign"); });
+  $("btn-campaign").onclick = ()=>showView("view-campaign");
+  $("btn-camp-start").onclick = startCampaignLevel;
+  $("btn-camp-continue").onclick = ()=>{
+    const run = _campCurrent;
+    if(!run || !run.answered) return;
+    if(++run.idx >= run.questions.length) void _campFinish(run);
+    else _campShowQuestion();
+  };
+  const returnToMap = ()=>{ _campCurrent = null; showView("view-campaign"); };
+  $("btn-camp-back").onclick = returnToMap;
+  $("btn-camp-next").onclick = returnToMap;
 }
 
 const ACHIEVEMENTS_CLIENT={
@@ -2471,16 +2454,7 @@ window.addEventListener("DOMContentLoaded",()=>{
   }).catch(()=>{});
   
   checkAuthStatus();  // Проверка статуса читера/админа
-  // При открытии campaign view — загружаем карту
-  const origShowView = window.showView;
-  window.showViewOrig = origShowView;
-  window.showView = (id, ...args)=>{
-    origShowView(id, ...args);
-    if(id==="view-campaign") loadCampaign();
-  };
 });
 
 window.transitionTo = transitionTo;
-window.startCampaignLevel=startCampaignLevel;
-window._campAnswer=_campAnswer;
 

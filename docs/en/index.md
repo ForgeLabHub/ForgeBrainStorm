@@ -7,6 +7,7 @@ in step and both ship as PDF in [../pdf/](../pdf/).
 | --- | --- |
 | Run it from scratch | [BUILD.md](BUILD.md) (Russian: [../../BUILD.md](../../BUILD.md)) |
 | Understand the design | [architecture/system-context.md](architecture/system-context.md) |
+| Solo campaign and its architecture | [Markdown](architecture/campaign.md) · [PDF](../pdf/en/architecture/campaign.pdf) |
 | Where the data lives | [database/storage.md](database/storage.md) |
 | API and errors | [api/conventions.md](api/conventions.md) |
 | What a module does / what to borrow | [modules/](modules/) |

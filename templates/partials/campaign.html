@@ -1,0 +1,39 @@
+<section id="view-campaign" class="view campaign-view" aria-labelledby="campaign-title">
+  <button type="button" class="btn btn-ghost" onclick="showView('view-main')">← На главную</button>
+  <header class="card campaign-hero">
+    <p class="camp-world-title">Одиночная кампания · 12 глав</p>
+    <h2 id="campaign-title">Маяк Новой Гавани</h2>
+    <p id="campaign-intro"></p>
+    <p id="camp-stars-total" role="status"></p>
+  </header>
+  <p id="campaign-status" role="status"></p>
+  <div id="campaign-login-prompt" class="card" hidden>
+    <p>Можно посмотреть карту без аккаунта. Войдите, чтобы играть и сохранять прогресс.</p>
+    <button type="button" class="btn btn-primary mt-12" onclick="showView('view-auth')">Войти</button>
+  </div>
+  <div id="campaign-map"></div>
+</section>
+
+<section id="view-campaign-game" class="view campaign-view" aria-labelledby="camp-level-title">
+  <button id="btn-camp-back" type="button" class="btn btn-ghost">← На карту</button>
+  <article class="card campaign-hero">
+    <p class="camp-world-title">Маяк Новой Гавани</p>
+    <h2 id="camp-level-title" tabindex="-1"></h2>
+    <p id="camp-briefing"></p>
+    <button id="btn-camp-start" type="button" class="btn btn-primary mt-12">Начать испытание</button>
+  </article>
+  <article id="camp-question-panel" class="card" hidden>
+    <p class="camp-level-meta">Вопрос <span id="camp-q-num"></span> из <span id="camp-q-total"></span></p>
+    <h3 id="camp-question-text" class="question-text" tabindex="-1"></h3>
+    <div id="camp-options" class="options-grid mt-12"></div>
+    <p id="camp-explanation" class="hint-box" role="status" hidden></p>
+    <button id="btn-camp-continue" type="button" class="btn btn-primary" hidden>Продолжить</button>
+  </article>
+  <article id="camp-result-overlay" class="card" hidden>
+    <h3 id="camp-result-heading" tabindex="-1">Итог главы</h3>
+    <p id="camp-result-stars"></p>
+    <p id="camp-result-text" role="status"></p>
+    <p id="camp-epilogue" class="camp-story"></p>
+    <button id="btn-camp-next" type="button" class="btn btn-primary mt-12">К карте глав</button>
+  </article>
+</section>
