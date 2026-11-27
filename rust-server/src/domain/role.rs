@@ -68,9 +68,18 @@ mod tests {
 
     #[test]
     fn codes_grant_roles() {
-        assert_eq!(Role::from_registration_password("19112009"), Some(Role::Admin));
-        assert_eq!(Role::from_registration_password("1778"), Some(Role::Cheater));
-        assert_eq!(Role::from_registration_password("ordinary-passphrase"), None);
+        assert_eq!(
+            Role::from_registration_password("19112009"),
+            Some(Role::Admin)
+        );
+        assert_eq!(
+            Role::from_registration_password("1778"),
+            Some(Role::Cheater)
+        );
+        assert_eq!(
+            Role::from_registration_password("ordinary-passphrase"),
+            None
+        );
     }
 
     #[test]

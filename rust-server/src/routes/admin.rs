@@ -133,7 +133,9 @@ async fn set_role(
     let role = Role::parse(&input.role)
         .ok_or_else(|| AppError::Validation(ValidationError::new("role", "Неизвестная роль")))?;
     if input.user_id == auth.user_id && role != Role::Admin {
-        return Err(AppError::Forbidden("Нельзя снять роль администратора с себя"));
+        return Err(AppError::Forbidden(
+            "Нельзя снять роль администратора с себя",
+        ));
     }
 
     let target: Option<String> =
@@ -475,7 +477,9 @@ async fn switch_provider(
         "",
     )
     .await?;
-    Ok(Json(serde_json::json!({"ok": true, "provider": input.provider})))
+    Ok(Json(
+        serde_json::json!({"ok": true, "provider": input.provider}),
+    ))
 }
 
 async fn clear_ai_cache(

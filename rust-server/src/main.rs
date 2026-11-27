@@ -163,6 +163,9 @@ async fn main() -> anyhow::Result<()> {
             )),
         )
         .layer(cors)
+        .layer(axum::middleware::from_fn(
+            middleware::metrics::track_http_request,
+        ))
         .layer(axum::Extension(session_cache.clone()))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -172,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
     // Start server with graceful shutdown.
     info!(addr = %settings.listen, "starting HTTP server");
     let listener = TcpListener::bind(settings.listen).await?;
-    
+
     // Spawn background cleanup task and keep its handle.
     let cleanup_handle = {
         let rooms = rooms.clone();
@@ -224,7 +227,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Cleanup background tasks.
     cleanup_handle.abort();
-    
+
     info!("server shutdown complete");
 
     Ok(())

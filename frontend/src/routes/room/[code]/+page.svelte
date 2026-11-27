@@ -676,7 +676,7 @@
 									</div>
 								</div>
 							</div>
-							{#if !player.infinite_lives && typeof player.lives === 'number'}
+							{#if (mode === 'lives' || mode === 'sudden') && !player.infinite_lives && typeof player.lives === 'number'}
 								<div class="mb-1 text-right text-xs tracking-tight">
 									{#each Array(3) as _, i}
 										<Icon name="heart" class="h-3.5 w-3.5 {i < (player.lives ?? 0) ? 'text-red-400' : 'text-slate-700'}" />

@@ -21,88 +21,127 @@ async fn test_server_starts_and_responds_to_health() {
 #[test]
 fn test_reconnect_preserves_player_state() {
     use brainstorm::domain::player::Player;
-    
-    let mut player = Player::new("sid1".to_string(), "Alice".to_string(), Some(1), Some("Alice".to_string()));
+
+    let mut player = Player::new(
+        "sid1".to_string(),
+        "Alice".to_string(),
+        Some(1),
+        Some("Alice".to_string()),
+    );
     player.score = 500;
     player.streak = 3;
     player.lives = 2;
-    
+
     // Simulate reconnect: create new player with same user_id
-    let mut new_player = Player::new("sid2".to_string(), "Alice".to_string(), Some(1), Some("Alice".to_string()));
+    let mut new_player = Player::new(
+        "sid2".to_string(),
+        "Alice".to_string(),
+        Some(1),
+        Some("Alice".to_string()),
+    );
     new_player.score = player.score;
     new_player.streak = player.streak;
     new_player.lives = player.lives;
-    
+
     assert_eq!(new_player.score, 500);
     assert_eq!(new_player.streak, 3);
     assert_eq!(new_player.lives, 2);
 }
 
-/// Test that question_event includes time_remaining for reconnect.
+/// A started question carries a token and a server-side deadline, so a client
+/// that reconnects mid-question gets the remaining time instead of a fresh clock.
 #[test]
 fn test_question_event_includes_time_remaining() {
-    // This would require a full Room setup, which needs database.
-    // Placeholder for now.
-    assert!(true);
+    use brainstorm::domain::room::{Room, RoomSettings};
+
+    let settings = RoomSettings {
+        topic: "Космос".into(),
+        ..RoomSettings::default()
+    };
+    let mut room = Room::new("TEST01".into(), 1, "host".into(), settings);
+    room.set_questions(vec![serde_json::json!({"question": "q"})], "test");
+
+    assert!(room.question_token > 0);
+    assert!(room.deadline.is_some());
+    let remaining = room.speed_ratio();
+    assert!((0.0..=1.0).contains(&remaining), "{remaining}");
 }
 
 /// Test that answer timing is determined server-side, not client-side.
 #[test]
 fn test_answer_timing_is_server_side() {
     use brainstorm::domain::mode::GameMode;
-    
+
     // Simulate server receiving an answer at a specific time.
     let mode = GameMode::FreeForAll;
     let speed = 0.5; // Answered halfway through the timer
     let points = mode.points(speed, 1);
-    
+
     // FFA: 40 + 60 * 0.5 = 70 points
     assert_eq!(points, 70);
 }
 
-/// Test that duplicate answer submissions are rejected.
+/// An answer is accepted once per question: the round only advances after every
+/// player is marked as answered, and the flag is what the handler checks.
 #[test]
 fn test_duplicate_answer_rejected() {
     use brainstorm::domain::player::Player;
-    
-    let mut player = Player::new("sid1".to_string(), "Alice".to_string(), Some(1), Some("Alice".to_string()));
-    
-    // First answer: accepted
-    let first_answer = true;
-    
-    // In real code, we'd track answered questions.
-    // For now, just verify the player can track state.
-    player.total_correct += 1;
-    assert_eq!(player.total_correct, 1);
+    use brainstorm::domain::room::{Room, RoomSettings};
+
+    let settings = RoomSettings {
+        topic: "Космос".into(),
+        ..RoomSettings::default()
+    };
+    let mut room = Room::new("TEST02".into(), 1, "host".into(), settings);
+    let alice = Player::new(
+        "sid1".to_string(),
+        "Alice".to_string(),
+        Some(1),
+        Some("Alice".to_string()),
+    );
+    let bob = Player::new(
+        "sid2".to_string(),
+        "Bob".to_string(),
+        Some(2),
+        Some("Bob".to_string()),
+    );
+    room.players.insert("sid1".into(), alice);
+    room.players.insert("sid2".into(), bob);
+
+    assert!(!room.all_answered());
+    room.players.get_mut("sid1").expect("alice").answered = true;
+    assert!(!room.all_answered());
+    room.players.get_mut("sid2").expect("bob").answered = true;
+    assert!(room.all_answered());
 }
 
 /// Test that room cleanup removes stale rooms.
 #[test]
 fn test_room_cleanup_removes_stale() {
     use brainstorm::domain::room::{RoomRegistry, RoomSettings};
-    
+
     let registry = RoomRegistry::new(100);
-    
-    // Create a room
-    let settings = RoomSettings::default();
-    let result = registry.create(1, "Alice", settings);
-    assert!(result.is_ok());
-    
-    // Verify room exists
-    let rooms = registry.list_public();
-    assert_eq!(rooms.len(), 1);
-    
-    // Cleanup with very short timeout (should not remove fresh room)
-    let removed = registry.cleanup_stale(Duration::from_secs(0));
-    // Fresh room should not be removed
-    assert_eq!(removed, 0);
+    let created = registry
+        .create(1, "Alice", RoomSettings::default())
+        .expect("room is created");
+
+    assert_eq!(registry.len(), 1);
+    assert!(registry.get(&created.code).is_some());
+
+    // A fresh room is idle for less than the timeout, so it survives.
+    assert_eq!(registry.cleanup_stale(Duration::from_secs(0)), 0);
+    assert_eq!(registry.len(), 1);
+
+    registry.remove(&created.code);
+    assert_eq!(registry.len(), 0);
+    assert!(registry.get(&created.code).is_none());
 }
 
 /// Test that game modes parse correctly.
 #[test]
 fn test_game_mode_parsing() {
     use brainstorm::domain::mode::GameMode;
-    
+
     assert_eq!(GameMode::parse("classic"), Some(GameMode::Classic));
     assert_eq!(GameMode::parse("ffa"), Some(GameMode::FreeForAll));
     assert_eq!(GameMode::parse("lives"), Some(GameMode::Lives));
@@ -111,7 +150,7 @@ fn test_game_mode_parsing() {
     assert_eq!(GameMode::parse("coop"), Some(GameMode::Coop));
     assert_eq!(GameMode::parse("svoyaigra"), Some(GameMode::Svoyaigra));
     assert_eq!(GameMode::parse("sandbox"), Some(GameMode::Sandbox));
-    
+
     // Aliases
     assert_eq!(GameMode::parse("survival"), Some(GameMode::Lives));
     assert_eq!(GameMode::parse("cooperative"), Some(GameMode::Coop));
@@ -122,13 +161,13 @@ fn test_game_mode_parsing() {
 #[test]
 fn test_scoring_is_deterministic() {
     use brainstorm::domain::mode::GameMode;
-    
+
     let mode = GameMode::Classic;
-    
+
     // Same inputs should always produce same outputs
     let points1 = mode.points(0.5, 1);
     let points2 = mode.points(0.5, 1);
-    
+
     assert_eq!(points1, points2);
     assert_eq!(points1, 100); // Classic: flat 100 points
 }
@@ -137,10 +176,10 @@ fn test_scoring_is_deterministic() {
 #[test]
 fn test_blitz_timer_override() {
     use brainstorm::domain::mode::GameMode;
-    
+
     let mode = GameMode::Blitz;
     let timer = mode.timer_override();
-    
+
     assert_eq!(timer, Some(10));
 }
 
@@ -148,10 +187,10 @@ fn test_blitz_timer_override() {
 #[test]
 fn test_svoyaigra_timer_override() {
     use brainstorm::domain::mode::GameMode;
-    
+
     let mode = GameMode::Svoyaigra;
     let timer = mode.timer_override();
-    
+
     assert_eq!(timer, Some(15));
 }
 
@@ -159,10 +198,10 @@ fn test_svoyaigra_timer_override() {
 #[test]
 fn test_lives_mode_starts_with_3() {
     use brainstorm::domain::mode::GameMode;
-    
+
     let mode = GameMode::Lives;
     let lives = mode.lives();
-    
+
     assert_eq!(lives, Some(3));
 }
 
@@ -170,10 +209,10 @@ fn test_lives_mode_starts_with_3() {
 #[test]
 fn test_sandbox_does_not_persist() {
     use brainstorm::domain::mode::GameMode;
-    
+
     let mode = GameMode::Sandbox;
     assert!(!mode.persists());
-    
+
     let classic = GameMode::Classic;
     assert!(classic.persists());
 }
@@ -182,25 +221,21 @@ fn test_sandbox_does_not_persist() {
 #[test]
 fn test_coop_is_team_mode() {
     use brainstorm::domain::mode::GameMode;
-    
+
     let mode = GameMode::Coop;
     assert!(mode.is_team());
 }
 
-/// Test that power-ups work correctly.
+/// Double points applies once, to the next correct answer only.
 #[test]
 fn test_power_up_double_points() {
-    use brainstorm::domain::power_up::PowerUp;
     use brainstorm::domain::mode::GameMode;
-    
-    let power_up = PowerUp::DoublePoints;
+    use brainstorm::domain::player::Player;
+
     let mode = GameMode::Classic;
-    
-    // Base points: 100
-    // With double: 200
-    let base = mode.points(1.0, 1);
-    let doubled = power_up.apply(base, mode, 1.0, 1);
-    
-    assert_eq!(base, 100);
-    assert_eq!(doubled, 200);
+    let mut player = Player::new("sid".into(), "tester".into(), None, None);
+    player.double_points = true;
+
+    assert_eq!(player.award(true, mode, 1.0), 200);
+    assert_eq!(player.award(true, mode, 1.0), 100);
 }

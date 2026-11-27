@@ -288,7 +288,18 @@ impl RoomRegistry {
         let room = Room::new(code.clone(), host_user_id, host_name.to_string(), settings);
         let snapshot = RoomSnapshot::from_room(&room);
         rooms.insert(code, Arc::new(RwLock::new(room)));
+        drop(rooms);
+        self.publish_active_rooms();
         Ok(snapshot)
+    }
+
+    /// Number of live rooms; feeds the `room_active_total` gauge.
+    pub fn len(&self) -> usize {
+        self.rooms.read().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn get(&self, code: &str) -> Option<RoomSnapshot> {
@@ -315,6 +326,11 @@ impl RoomRegistry {
 
     pub fn remove(&self, code: &str) {
         self.rooms.write().remove(code);
+        self.publish_active_rooms();
+    }
+
+    fn publish_active_rooms(&self) {
+        crate::metrics::Metrics::global().set_active_rooms(self.len());
     }
 
     /// Remove finished and idle rooms. Returns count removed.
@@ -328,7 +344,10 @@ impl RoomRegistry {
             let finished = r.state == RoomState::Finished;
             !(idle && finished)
         });
-        before - rooms.len()
+        let removed = before - rooms.len();
+        drop(rooms);
+        self.publish_active_rooms();
+        removed
     }
 }
 

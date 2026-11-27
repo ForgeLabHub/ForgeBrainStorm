@@ -29,10 +29,6 @@ pub struct Metrics {
     pub room_active_total: Gauge,
     /// Total answers submitted.
     pub answers_total: CounterVec,
-    /// AI tokens used by provider.
-    pub ai_tokens_total: CounterVec,
-    /// Games abandoned by mode and phase.
-    pub game_abandoned_total: CounterVec,
 }
 
 impl Metrics {
@@ -68,11 +64,8 @@ impl Metrics {
             )
             .expect("failed to register http_request_duration_seconds");
 
-            let room_active_total = register_gauge!(
-                "brainstorm_room_active_total",
-                "Active rooms"
-            )
-            .expect("failed to register room_active_total");
+            let room_active_total = register_gauge!("brainstorm_room_active_total", "Active rooms")
+                .expect("failed to register room_active_total");
 
             let answers_total = register_counter_vec!(
                 "brainstorm_answers_total",
@@ -81,20 +74,6 @@ impl Metrics {
             )
             .expect("failed to register answers_total");
 
-            let ai_tokens_total = register_counter_vec!(
-                "brainstorm_ai_tokens_total",
-                "AI tokens used",
-                &["provider"]
-            )
-            .expect("failed to register ai_tokens_total");
-
-            let game_abandoned_total = register_counter_vec!(
-                "brainstorm_game_abandoned_total",
-                "Games abandoned",
-                &["mode", "phase"]
-            )
-            .expect("failed to register game_abandoned_total");
-
             Metrics {
                 ws_connections_active,
                 games_started_total,
@@ -102,8 +81,6 @@ impl Metrics {
                 http_request_duration_seconds,
                 room_active_total,
                 answers_total,
-                ai_tokens_total,
-                game_abandoned_total,
             }
         })
     }
@@ -126,32 +103,27 @@ impl Metrics {
         self.answers_total.with_label_values(&[label]).inc();
     }
 
-    /// Record AI tokens used.
-    pub fn record_ai_tokens(&self, provider: &str, tokens: u64) {
-        self.ai_tokens_total
-            .with_label_values(&[provider])
-            .inc_by(tokens as f64);
-    }
-
-    /// Record a game abandonment.
-    pub fn record_game_abandoned(&self, mode: &str, phase: &str) {
-        self.game_abandoned_total
-            .with_label_values(&[mode, phase])
-            .inc();
-    }
-
     /// Update active room count.
     pub fn set_active_rooms(&self, count: usize) {
         self.room_active_total.set(count as f64);
     }
 }
 
+/// Record one HTTP request in the duration histogram.
+pub fn record_http_request(method: &str, route: &str, status: u16, duration_secs: f64) {
+    Metrics::global()
+        .http_request_duration_seconds
+        .with_label_values(&[method, route, &status.to_string()])
+        .observe(duration_secs);
+}
+
 /// Encode all metrics in Prometheus text format.
 pub fn encode_metrics() -> String {
     use prometheus::Encoder;
     let encoder = prometheus::TextEncoder::new();
-    let metric_families = prometheus::gather();
     let mut buffer = Vec::new();
-    encoder.encode(&metric_families, &mut buffer).unwrap();
-    String::from_utf8(buffer).unwrap()
+    if encoder.encode(&prometheus::gather(), &mut buffer).is_err() {
+        return String::new();
+    }
+    String::from_utf8(buffer).unwrap_or_default()
 }

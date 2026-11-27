@@ -153,7 +153,6 @@ jobs:
         run: |
           docker run -d --name brainstorm-rust-ci --network host \
             -e SECRET_KEY=ci-secret-key-that-is-long-enough-000 \
-            -e ADMIN_SECRET_KEY=ci-admin-secret-key-000 \
             -e DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/brainstorm \
             -e BRAINSTORM__DEFAULT_AI_PROVIDER=mock \
             brainstorm-rust:ci

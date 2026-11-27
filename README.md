@@ -187,6 +187,7 @@ python scripts/e2e-modes.py   # живая проверка режимов че�
 | `docs/` | архитектура, API, БД, эксплуатация, безопасность, верификация |
 | `scripts/` | `docs-check`, `ws-check`, `e2e-modes`, вспомогательные скрипты |
 | `rust-server/experimental/` | прототипы из веток `arena/*` (RAG, DDA, Redis pub/sub, альтернативный WS-цикл) — **не в сборке**, см. [README](rust-server/experimental/README.md) |
+| `app/`, `templates/`, `static/`, `run.py` | **legacy**: прежний Flask + Socket.IO монолит, продуктом не используется; живёт только ради старого деплоя |
 
 ## Документация
 

@@ -78,18 +78,18 @@ async fn register(
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (username, pwd_hash, role) VALUES ($1, $2, $3) RETURNING id",
     )
-            .bind(&input.username)
-            .bind(&hash)
-            .bind(role.as_str())
-            .fetch_one(state.db.pool())
-            .await
-            .map_err(|e: sqlx::Error| {
-                if e.to_string().contains("duplicate") || e.to_string().contains("unique") {
-                    AppError::Conflict("Пользователь с таким именем уже существует".into())
-                } else {
-                    AppError::Database(Box::new(e))
-                }
-            })?;
+    .bind(&input.username)
+    .bind(&hash)
+    .bind(role.as_str())
+    .fetch_one(state.db.pool())
+    .await
+    .map_err(|e: sqlx::Error| {
+        if e.to_string().contains("duplicate") || e.to_string().contains("unique") {
+            AppError::Conflict("Пользователь с таким именем уже существует".into())
+        } else {
+            AppError::Database(Box::new(e))
+        }
+    })?;
 
     let token = create_session(state.db.pool(), user_id).await?;
     let jar = set_session_cookie(jar, &token, &state);

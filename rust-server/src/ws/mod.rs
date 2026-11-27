@@ -31,6 +31,7 @@ use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 use crate::domain::power_up::{self, PowerUp, FREEZE_SECS};
 use crate::domain::room::{Room, RoomState};
+use crate::metrics::Metrics;
 use crate::middleware::auth::AuthContext;
 use crate::services::ai::{AiCapability, GenerationRequest};
 use crate::services::questions::fallback_questions;
@@ -70,6 +71,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
     let mut room_arc: Option<Arc<RwLock<Room>>> = None;
     let mut forwarder: Option<JoinHandle<()>> = None;
 
+    let metrics = Metrics::global();
+    metrics.ws_connections_active.inc();
     info!(user_id = auth.user_id, "WebSocket connected");
 
     while let Some(incoming) = receiver.next().await {
@@ -261,6 +264,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     .to_string(),
                 );
 
+                let generation_started = Instant::now();
                 let (questions, source) = match state.ai_router.generate_questions(&request).await {
                     Ok(response) => {
                         let provider = response.provider_used.clone();
@@ -289,11 +293,22 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     }
                 };
 
+                metrics.record_ai_generation(
+                    source.trim_start_matches("ai:"),
+                    if source.starts_with("ai:") {
+                        "ok"
+                    } else {
+                        "fallback"
+                    },
+                    generation_started.elapsed().as_secs_f64(),
+                );
+
                 let questions = fit_count(questions, count, &topic);
 
                 let (first_question, players, token, hands) = {
                     let mut room = room.write();
                     room.set_questions(questions, &source);
+                    metrics.record_game_start(room.settings.mode.as_str());
                     room.assign_teams();
                     let mode = room.settings.mode;
                     let mut hands = Vec::new();
@@ -428,7 +443,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     );
                     continue;
                 };
-                let Some(power) = message["data"]["power"].as_str().and_then(CheatPower::parse)
+                let Some(power) = message["data"]["power"]
+                    .as_str()
+                    .and_then(CheatPower::parse)
                 else {
                     send_json(
                         &out_tx,
@@ -492,12 +509,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 player.double_points = true;
                             }
                             private_event = Some(
-                                json!({"type": "cheat_armed", "data": {"power": "double"}}).to_string(),
+                                json!({"type": "cheat_armed", "data": {"power": "double"}})
+                                    .to_string(),
                             );
                         }
                         CheatPower::Freeze => {
                             if let Some(deadline) = room.deadline {
-                                room.deadline = Some(deadline + Duration::from_secs(CHEAT_FREEZE_SECS));
+                                room.deadline =
+                                    Some(deadline + Duration::from_secs(CHEAT_FREEZE_SECS));
                             }
                             public_event = Some(
                                 json!({
@@ -590,6 +609,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             player.answer_index = Some(index);
                             player.answer_time = Some(Instant::now());
                             player.award(index == correct, mode, speed);
+                            metrics.record_answer(index == correct);
                             if mode.lives().is_some() && player.lives == 0 {
                                 player.is_spectator = true;
                                 knocked_out = true;
@@ -682,6 +702,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
         let _ = room.read().tx.send(event);
     }
     writer.abort();
+    metrics.ws_connections_active.dec();
     info!(user_id = auth.user_id, "WebSocket disconnected");
 }
 
@@ -796,17 +817,20 @@ fn players_event(room: &Room) -> String {
 fn question_event(room: &Room) -> Option<String> {
     let question = room.questions.get(room.current_q)?;
     let time_limit = room.settings.timer_secs;
-    
+
     // Calculate remaining time based on server-side deadline (anti-cheat).
-    let time_remaining = room.deadline.map(|deadline| {
-        let now = std::time::Instant::now();
-        if deadline > now {
-            deadline.duration_since(now).as_secs()
-        } else {
-            0
-        }
-    }).unwrap_or(time_limit);
-    
+    let time_remaining = room
+        .deadline
+        .map(|deadline| {
+            let now = std::time::Instant::now();
+            if deadline > now {
+                deadline.duration_since(now).as_secs()
+            } else {
+                0
+            }
+        })
+        .unwrap_or(time_limit);
+
     Some(
         json!({
             "type": "question_emitted",
