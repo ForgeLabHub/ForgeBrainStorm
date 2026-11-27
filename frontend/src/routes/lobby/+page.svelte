@@ -74,15 +74,15 @@
 	}
 </script>
 
-<div class="mx-auto max-w-5xl animate-fade-in">
+<div class="mx-auto max-w-5xl px-4 sm:px-0 animate-fade-in">
 	<!-- Header -->
-	<div class="mb-8 flex items-center justify-between">
+	<div class="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 		<div>
-			<h1 class="text-3xl font-bold text-white">Комнаты</h1>
+			<h1 class="text-2xl sm:text-3xl font-bold text-white">Комнаты</h1>
 			<p class="mt-1 text-sm text-slate-500">Присоединяйтесь к игре или создайте свою</p>
 		</div>
-		<a href="/room/create" class="btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white">
-			<span class="flex items-center gap-2">
+		<a href="/room/create" class="btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white sm:w-auto w-full text-center">
+			<span class="flex items-center justify-center gap-2">
 				<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
 				</svg>
@@ -92,23 +92,23 @@
 	</div>
 
 	<!-- Join room card -->
-	<div class="glass-card rounded-2xl p-6 sm:p-8 mb-6">
-		<h2 class="mb-4 text-sm font-semibold text-slate-300 uppercase tracking-wider">Присоединиться по коду</h2>
-		<form onsubmit={(e) => { e.preventDefault(); joinRoom(); }} class="flex gap-3">
+	<div class="glass-card rounded-2xl p-5 sm:p-6 md:p-8 mb-6">
+		<h2 class="mb-4 text-xs sm:text-sm font-semibold text-slate-300 uppercase tracking-wider">Присоединиться по коду</h2>
+		<form onsubmit={(e) => { e.preventDefault(); joinRoom(); }} class="flex flex-col sm:flex-row gap-3">
 			<input
 				type="text"
 				bind:value={joinCode}
 				placeholder="ABCDEF"
 				maxlength="6"
-				class="input-modern flex-1 rounded-xl px-4 py-3 font-mono text-center text-xl uppercase placeholder-slate-600 tracking-widest"
+				class="input-modern flex-1 rounded-xl px-4 py-3 font-mono text-center text-lg sm:text-xl uppercase placeholder-slate-600 tracking-widest"
 			/>
 			<button
 				type="submit"
 				disabled={joining || joinCode.length !== 6}
-				class="btn-secondary rounded-xl px-8 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+				class="btn-secondary rounded-xl px-6 sm:px-8 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto w-full"
 			>
 				{#if joining}
-					<svg class="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+					<svg class="h-5 w-5 animate-spin mx-auto sm:mx-0" fill="none" viewBox="0 0 24 24">
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 					</svg>
@@ -154,27 +154,27 @@
 				<p class="mt-1 text-sm text-slate-500">Создайте свою первую комнату</p>
 			</div>
 		{:else}
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2">
 				{#each rooms as room, i}
 					<a
 						href="/room/{room.code}"
-						class="group glass-card rounded-xl p-5 hover:scale-[1.02] transition-all duration-300 animate-fade-in"
+						class="group glass-card rounded-xl p-4 sm:p-5 transition-all duration-300 animate-fade-in"
 						style="animation-delay: {i * 50}ms"
 					>
 						<div class="mb-3 flex items-start justify-between">
-							<div>
+							<div class="flex-1 min-w-0">
 								<div class="font-mono text-xs text-slate-500 tracking-wider">{room.code}</div>
-								<div class="mt-1 font-semibold text-white group-hover:text-blue-400 transition">
+								<div class="mt-1 font-semibold text-white group-hover:text-blue-400 transition truncate">
 									{room.topic || 'Без темы'}
 								</div>
 							</div>
-							<svg class="h-5 w-5 text-slate-600 transition-all group-hover:text-white group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<svg class="h-5 w-5 text-slate-600 transition-all group-hover:text-white ml-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
 							</svg>
 						</div>
 
-						<div class="flex items-center justify-between">
-							<span class="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold bg-gradient-to-r border {getModeColor(room.mode)}">
+						<div class="flex items-center justify-between gap-2">
+							<span class="inline-flex items-center rounded-lg px-2 sm:px-3 py-1 text-xs font-semibold bg-gradient-to-r border {getModeColor(room.mode)}">
 								{getModeLabel(room.mode)}
 							</span>
 							<span class="flex items-center gap-1.5 text-sm text-slate-400">
@@ -185,11 +185,11 @@
 							</span>
 						</div>
 
-						<div class="mt-3 text-xs text-slate-500 flex items-center gap-1.5">
-							<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<div class="mt-3 text-xs text-slate-500 flex items-center gap-1.5 truncate">
+							<svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
 							</svg>
-							{room.host}
+							<span class="truncate">{room.host}</span>
 						</div>
 					</a>
 				{/each}
