@@ -35,9 +35,35 @@ pub struct Player {
     pub power_ups: Vec<PowerUp>,
     /// Armed by `DoublePoints`, spent by the next correct answer.
     pub double_points: bool,
+    /// Chat silenced by a cheater for the rest of the game.
+    pub muted: bool,
+    /// Cursed by a cheater: the next answer scores nothing even when correct.
+    pub jinxed: bool,
+    /// Account taken over by a cheater; the player watches as a spectator.
+    pub hijacked: bool,
     /// This player's own socket. Private events (a hand, hidden options) must
     /// not go through the room broadcast or everyone would see them.
     pub outbox: Option<UnboundedSender<String>>,
+}
+
+/// State that must survive a page reload. A reload opens a new socket, and
+/// handing out a fresh cheat budget (or lifting a curse) on reconnect would be
+/// a free exploit, so the room copies this across instead of starting over.
+#[derive(Debug, Clone)]
+pub struct ReconnectState {
+    pub score: i64,
+    pub streak: u32,
+    pub total_correct: u32,
+    pub lives: u8,
+    pub power_ups: Vec<PowerUp>,
+    pub double_points: bool,
+    pub is_spectator: bool,
+    pub infinite_lives: bool,
+    pub muted: bool,
+    pub jinxed: bool,
+    pub hijacked: bool,
+    pub cheat: CheatPowers,
+    pub team: Option<u8>,
 }
 
 impl Player {
@@ -68,6 +94,9 @@ impl Player {
             disconnected_at: None,
             power_ups: Vec::new(),
             double_points: false,
+            muted: false,
+            jinxed: false,
+            hijacked: false,
             outbox: None,
         }
     }
@@ -83,6 +112,15 @@ impl Player {
     /// whether the answer is right or not: the power-up buys one attempt, not
     /// one guaranteed hit.
     pub fn award(&mut self, correct: bool, mode: GameMode, speed: f64) -> i64 {
+        // A curse is spent on the first answer after it lands, right or wrong.
+        // An armed double survives it, so the player is not robbed of both.
+        if std::mem::take(&mut self.jinxed) {
+            self.streak = 0;
+            if mode.lives().is_some() {
+                self.lives = self.lives.saturating_sub(1);
+            }
+            return 0;
+        }
         let doubled = std::mem::take(&mut self.double_points);
         if !correct {
             self.streak = 0;
@@ -123,8 +161,45 @@ impl Player {
         self.lives = SURVIVAL_LIVES;
         self.is_spectator = false;
         self.double_points = false;
+        self.muted = false;
+        self.jinxed = false;
+        self.hijacked = false;
         self.power_ups = PowerUp::STARTING_HAND.to_vec();
         self.cheat.reset();
+    }
+
+    pub fn reconnect_state(&self) -> ReconnectState {
+        ReconnectState {
+            score: self.score,
+            streak: self.streak,
+            total_correct: self.total_correct,
+            lives: self.lives,
+            power_ups: self.power_ups.clone(),
+            double_points: self.double_points,
+            is_spectator: self.is_spectator,
+            infinite_lives: self.infinite_lives,
+            muted: self.muted,
+            jinxed: self.jinxed,
+            hijacked: self.hijacked,
+            cheat: self.cheat,
+            team: self.team,
+        }
+    }
+
+    pub fn apply_reconnect(&mut self, state: ReconnectState) {
+        self.score = state.score;
+        self.streak = state.streak;
+        self.total_correct = state.total_correct;
+        self.lives = state.lives;
+        self.power_ups = state.power_ups;
+        self.double_points = state.double_points;
+        self.is_spectator = state.is_spectator;
+        self.infinite_lives = state.infinite_lives;
+        self.muted = state.muted;
+        self.jinxed = state.jinxed;
+        self.hijacked = state.hijacked;
+        self.cheat = state.cheat;
+        self.team = state.team;
     }
 }
 
@@ -174,6 +249,39 @@ mod tests {
         // Spent: the answer after it scores normally again.
         assert_eq!(p.award(true, GameMode::Classic, 1.0), 100);
         assert_eq!(p.score, 300);
+    }
+
+    #[test]
+    fn a_cursed_player_scores_nothing_even_when_right() {
+        let mut p = player();
+        p.jinxed = true;
+        assert_eq!(p.award(true, GameMode::Lives, 1.0), 0);
+        assert_eq!(p.score, 0);
+        assert_eq!(p.lives, 2);
+        assert_eq!(p.streak, 0);
+        // The curse is spent: the next answer scores normally.
+        assert!(p.award(true, GameMode::Lives, 1.0) > 0);
+    }
+
+    #[test]
+    fn a_curse_does_not_swallow_an_armed_double() {
+        let mut p = player();
+        p.jinxed = true;
+        p.double_points = true;
+        assert_eq!(p.award(true, GameMode::Classic, 1.0), 0);
+        // The double is still armed and pays out on the next correct answer.
+        assert!(p.double_points);
+        assert_eq!(p.award(true, GameMode::Classic, 1.0), 200);
+    }
+
+    #[test]
+    fn a_new_game_clears_mute_curse_and_hijack() {
+        let mut p = player();
+        p.muted = true;
+        p.jinxed = true;
+        p.hijacked = true;
+        p.reset_for_new_game();
+        assert!(!p.muted && !p.jinxed && !p.hijacked);
     }
 
     #[test]

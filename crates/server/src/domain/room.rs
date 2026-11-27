@@ -9,6 +9,7 @@ use rand::Rng;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
+use crate::domain::chat::ChatLog;
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 use crate::error::{AppError, AppResult};
@@ -105,8 +106,11 @@ pub struct Room {
     /// Monotonic token identifying the current question. Timer tasks compare
     /// it before advancing so a stale timer can never skip a question.
     pub question_token: u64,
-    /// Where the current question set came from: `ai:<provider>` or `fallback`.
+    /// Where the current question set came from: `ai:<provider>`, `fallback`
+    /// or `cheat` once a cheater rewrote the question.
     pub question_source: String,
+    /// Chat history and per-player flood control.
+    pub chat: ChatLog,
 }
 
 impl Room {
@@ -128,6 +132,7 @@ impl Room {
             tx,
             question_token: 0,
             question_source: String::new(),
+            chat: ChatLog::new(),
         }
     }
 
@@ -181,6 +186,7 @@ impl Room {
         self.deadline = None;
         // Bump the token so any in-flight timer becomes a no-op.
         self.question_token += 1;
+        self.chat.clear();
         self.players.retain(|_, player| !player.is_disconnected());
         for player in self.players.values_mut() {
             player.reset_for_new_game();
@@ -248,6 +254,71 @@ impl Room {
         self.deadline = Some(Instant::now() + Duration::from_secs(self.settings.timer_secs));
         self.reset_answers();
         self.touch();
+    }
+
+    /// Resolve a cheat target: a socket id or a display name, case-insensitive.
+    /// Spectators and the cheater themselves are not valid victims.
+    pub fn resolve_victim(&self, needle: &str, cheater_sid: &str) -> Option<String> {
+        let needle = needle.trim();
+        if needle.is_empty() {
+            return None;
+        }
+        let lower = needle.to_lowercase();
+        self.players
+            .values()
+            .filter(|player| player.sid != cheater_sid && !player.is_spectator)
+            .find(|player| player.sid == needle || player.display_name.to_lowercase() == lower)
+            .map(|player| player.sid.clone())
+    }
+
+    /// Take over `victim`: their points move to `cheater` and they finish the
+    /// game as a spectator. Returns the victim's name and the points moved.
+    pub fn hijack(&mut self, cheater_sid: &str, victim_sid: &str) -> Option<(String, i64)> {
+        if cheater_sid == victim_sid {
+            return None;
+        }
+        let (name, points) = {
+            let victim = self.players.get_mut(victim_sid)?;
+            if victim.is_spectator {
+                return None;
+            }
+            let points = victim.score.max(0);
+            victim.score = 0;
+            victim.is_spectator = true;
+            victim.hijacked = true;
+            victim.answered = true;
+            victim.answer_index = None;
+            (victim.display_name.clone(), points)
+        };
+        let cheater = self.players.get_mut(cheater_sid)?;
+        cheater.score += points;
+        Some((name, points))
+    }
+
+    /// Replace the current question with one the cheater wrote. Answers already
+    /// given are dropped so the whole room answers the new text.
+    pub fn rewrite_question(
+        &mut self,
+        text: String,
+        options: Vec<String>,
+        correct_index: usize,
+    ) -> bool {
+        if options.len() < 2 || correct_index >= options.len() {
+            return false;
+        }
+        let Some(slot) = self.questions.get_mut(self.current_q) else {
+            return false;
+        };
+        *slot = serde_json::json!({
+            "question": text,
+            "options": options,
+            "correct_index": correct_index,
+            "explanation": "Вопрос подменил читер. Верный ответ знает только он.",
+        });
+        self.question_source = "cheat".to_string();
+        self.reset_answers();
+        self.touch();
+        true
     }
 }
 
@@ -415,6 +486,71 @@ mod tests {
         room.players.insert("sid".into(), player);
         room.questions = vec![serde_json::json!({"question": "q"})];
         room
+    }
+
+    fn room_with_two_players() -> Room {
+        let mut room = room_with_player(500);
+        let mut victim = Player::new("v1".into(), "Боря".into(), Some(2), Some("borya".into()));
+        victim.score = 300;
+        room.players.insert("v1".into(), victim);
+        room.state = RoomState::Playing;
+        room
+    }
+
+    #[test]
+    fn a_victim_is_found_by_name_case_insensitively() {
+        let room = room_with_two_players();
+        assert_eq!(room.resolve_victim("боря", "sid"), Some("v1".into()));
+        assert_eq!(room.resolve_victim("v1", "sid"), Some("v1".into()));
+        // A cheater cannot target themselves, an unknown name, or nothing.
+        assert_eq!(room.resolve_victim("host", "sid"), None);
+        assert_eq!(room.resolve_victim("никого", "sid"), None);
+        assert_eq!(room.resolve_victim("   ", "sid"), None);
+    }
+
+    #[test]
+    fn hijacking_moves_the_points_and_benches_the_victim() {
+        let mut room = room_with_two_players();
+        let taken = room.hijack("sid", "v1").expect("hijacked");
+
+        assert_eq!(taken, ("Боря".into(), 300));
+        assert_eq!(room.players["sid"].score, 800);
+        assert_eq!(room.players["v1"].score, 0);
+        assert!(room.players["v1"].is_spectator);
+        assert!(room.players["v1"].hijacked);
+        // The victim is out of the game, so they no longer count as answering.
+        assert_eq!(room.resolve_victim("v1", "sid"), None);
+    }
+
+    #[test]
+    fn an_already_benched_player_cannot_be_hijacked_twice() {
+        let mut room = room_with_two_players();
+        room.players.get_mut("v1").unwrap().is_spectator = true;
+        assert!(room.hijack("sid", "v1").is_none());
+    }
+
+    #[test]
+    fn rewriting_replaces_the_question_and_drops_the_answers() {
+        let mut room = room_with_two_players();
+        room.players.get_mut("v1").unwrap().answered = true;
+
+        let ok =
+            room.rewrite_question("Сколько будет 2+2?".into(), vec!["3".into(), "4".into()], 1);
+
+        assert!(ok);
+        let question = &room.questions[room.current_q];
+        assert_eq!(question["question"], "Сколько будет 2+2?");
+        assert_eq!(question["correct_index"], 1);
+        assert_eq!(room.question_source, "cheat");
+        assert!(!room.players["v1"].answered);
+    }
+
+    #[test]
+    fn a_rewrite_with_a_bad_correct_index_is_refused() {
+        let mut room = room_with_two_players();
+        assert!(!room.rewrite_question("Вопрос".into(), vec!["a".into()], 0));
+        assert!(!room.rewrite_question("Вопрос".into(), vec!["a".into(), "b".into()], 5));
+        assert_eq!(room.questions[0]["question"], "q");
     }
 
     #[test]

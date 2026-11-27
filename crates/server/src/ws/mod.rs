@@ -7,6 +7,11 @@
 //!   * `use_power_up`  `{ power_up }`       (one of `double_points`,
 //!     `freeze_time`, `remove_two_options`)
 //!   * `play_again`    `{}`                 (host only)
+//!   * `chat_send`     `{ text }`
+//!   * `emoji`         `{ emoji, target? }`  (palette is server-side)
+//!   * `cheat_power`   `{ power, target?, payload? }` — `target` is a player
+//!     id or display name for `hijack`/`mute`/`jinx`, `payload` is
+//!     `{ question, options, correct_index }` for `rewrite`
 //!
 //! Server → client uses the same envelope. Per-socket writer and per-room
 //! broadcast forwarder run as separate tasks so the read loop never blocks on
@@ -26,6 +31,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
+use crate::domain::chat::{self, ChatError, MAX_CHAT_CHARS};
 use crate::domain::cheat::{CheatPower, CHEAT_FREEZE_SECS, STEAL_POINTS};
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
@@ -104,25 +110,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
 
                 let (topic, mode, is_host, players, subscription) = {
                     let mut room = room.write();
-                    // A reload opens a new socket for the same account: carry the score over
-                    // instead of leaving a ghost player behind.
+                    // A reload opens a new socket for the same account: carry the game
+                    // state over instead of leaving a ghost player behind.
                     let carried = room
                         .players
                         .values()
                         .find(|player| player.user_id == Some(auth.user_id))
-                        .map(|player| {
-                            (
-                                player.score,
-                                player.streak,
-                                player.total_correct,
-                                player.lives,
-                                player.power_ups.clone(),
-                                player.double_points,
-                                player.is_spectator,
-                                player.infinite_lives,
-                            )
-                        })
-                        .unwrap_or((0, 0, 0, 3, Vec::new(), false, false, false));
+                        .map(Player::reconnect_state);
                     room.players
                         .retain(|_, player| player.user_id != Some(auth.user_id));
                     let mut player = Player::new(
@@ -131,14 +125,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         Some(auth.user_id),
                         Some(auth.username.clone()),
                     );
-                    player.score = carried.0;
-                    player.streak = carried.1;
-                    player.total_correct = carried.2;
-                    player.lives = carried.3;
-                    player.power_ups = carried.4;
-                    player.double_points = carried.5;
-                    player.is_spectator = carried.6;
-                    player.infinite_lives = carried.7;
+                    if let Some(state) = carried {
+                        player.apply_reconnect(state);
+                    }
                     player.is_cheat = auth.role.is_cheater();
                     player.outbox = Some(out_tx.clone());
                     room.players.insert(sid.clone(), player);
@@ -193,6 +182,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 send_json(
                     &out_tx,
                     json!({"type": "power_ups", "data": {"items": hand.iter().map(|kind| kind.as_str()).collect::<Vec<_>>()}}),
+                );
+                let history = room.read().chat.history();
+                send_json(
+                    &out_tx,
+                    json!({"type": "chat_history", "data": {"messages": history}}),
                 );
                 let cheat = room
                     .read()
@@ -435,6 +429,80 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 }
             }
 
+            "chat_send" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+
+                let raw = message["data"]["text"].as_str().unwrap_or_default();
+                let Some((from, muted)) = chat_sender(&room, &sid) else {
+                    continue;
+                };
+                if muted {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Читер запретил вам писать в чат", "code": "chat_muted"}}),
+                    );
+                    continue;
+                }
+
+                let result = {
+                    let mut room = room.write();
+                    room.chat.push(&sid, &from, raw)
+                };
+                match result {
+                    Ok(message) => {
+                        room.write().touch();
+                        let event = json!({"type": "chat_message", "data": message});
+                        let _ = room.read().tx.send(event.to_string());
+                    }
+                    Err(error) => send_chat_error(&out_tx, error),
+                }
+            }
+
+            "emoji" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+
+                let emoji = message["data"]["emoji"].as_str().unwrap_or_default();
+                let target = message["data"]["target"].as_str().map(str::to_owned);
+                let Some((from, muted)) = chat_sender(&room, &sid) else {
+                    continue;
+                };
+                if muted {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Читер запретил вам писать в чат", "code": "chat_muted"}}),
+                    );
+                    continue;
+                }
+
+                let result = {
+                    let mut room = room.write();
+                    room.chat.push_emoji(&sid, &from, emoji)
+                };
+                match result {
+                    Ok(message) => {
+                        room.write().touch();
+                        let event = json!({
+                            "type": "emoji",
+                            "data": { "from": from, "emoji": message.text, "target": target }
+                        });
+                        let _ = room.read().tx.send(event.to_string());
+                    }
+                    Err(error) => send_chat_error(&out_tx, error),
+                }
+            }
+
             "cheat_power" => {
                 let Some(room) = room_arc.clone() else {
                     send_json(
@@ -453,8 +521,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     );
                     continue;
                 };
+                let target_raw = message["data"]["target"].as_str().map(str::to_owned);
 
-                let (budget, private_event, public_event, scores_changed) = {
+                let mut public_events: Vec<String> = Vec::new();
+                let mut private_events: Vec<String> = Vec::new();
+                let mut victim_events: Vec<(String, String)> = Vec::new();
+                let mut players_changed = false;
+                let budget;
+
+                {
                     let mut room = room.write();
                     if room.state != RoomState::Playing {
                         send_json(
@@ -477,6 +552,47 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         continue;
                     }
 
+                    // Validate the victim before spending: a mistyped name must
+                    // not burn a use.
+                    let target_sid = if power.needs_target() {
+                        let resolved = target_raw
+                            .as_deref()
+                            .and_then(|needle| room.resolve_victim(needle, &sid));
+                        match resolved {
+                            Some(victim) => Some(victim),
+                            None => {
+                                send_json(
+                                    &out_tx,
+                                    json!({"type": "error", "data": {
+                                        "message": "Такого игрока нет в игре",
+                                        "code": "cheat_no_target"
+                                    }}),
+                                );
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    let rewrite = if power == CheatPower::Rewrite {
+                        match parse_rewrite(&message["data"]["payload"]) {
+                            Some(input) => Some(input),
+                            None => {
+                                send_json(
+                                    &out_tx,
+                                    json!({"type": "error", "data": {
+                                        "message": "Вопрос: 3-200 символов, 2-6 вариантов, верный отмечен",
+                                        "code": "cheat_bad_question"
+                                    }}),
+                                );
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
                     let name = room
                         .players
                         .get(&sid)
@@ -486,10 +602,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         player.cheat.spend(power);
                     }
 
-                    let mut private_event: Option<String> = None;
-                    let mut public_event: Option<String> = None;
-                    let mut scores_changed = false;
-
                     match power {
                         CheatPower::Peek => {
                             let correct = room
@@ -498,7 +610,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 .and_then(|question| question["correct_index"].as_u64())
                                 .map(|value| value as usize);
                             if let Some(index) = correct {
-                                private_event = Some(
+                                private_events.push(
                                     json!({"type": "cheat_reveal", "data": {"correct_index": index}})
                                         .to_string(),
                                 );
@@ -508,7 +620,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             if let Some(player) = room.players.get_mut(&sid) {
                                 player.double_points = true;
                             }
-                            private_event = Some(
+                            private_events.push(
                                 json!({"type": "cheat_armed", "data": {"power": "double"}})
                                     .to_string(),
                             );
@@ -518,7 +630,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 room.deadline =
                                     Some(deadline + Duration::from_secs(CHEAT_FREEZE_SECS));
                             }
-                            public_event = Some(
+                            public_events.push(
                                 json!({
                                     "type": "cheat_used",
                                     "data": {"player": name, "power": "freeze", "seconds": CHEAT_FREEZE_SECS}
@@ -541,8 +653,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 if let Some(player) = room.players.get_mut(&sid) {
                                     player.score += amount;
                                 }
-                                scores_changed = true;
-                                public_event = Some(
+                                players_changed = true;
+                                public_events.push(
                                     json!({
                                         "type": "cheat_used",
                                         "data": {"player": name, "power": "steal", "points": amount}
@@ -551,28 +663,129 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 );
                             }
                         }
+                        CheatPower::Hijack => {
+                            let victim = target_sid.clone().unwrap_or_default();
+                            match room.hijack(&sid, &victim) {
+                                Some((victim_name, points)) => {
+                                    players_changed = true;
+                                    public_events.push(
+                                        json!({
+                                            "type": "cheat_used",
+                                            "data": {
+                                                "player": name,
+                                                "power": "hijack",
+                                                "target": victim_name,
+                                                "points": points
+                                            }
+                                        })
+                                        .to_string(),
+                                    );
+                                    victim_events.push((
+                                        victim,
+                                        json!({
+                                            "type": "hijacked",
+                                            "data": {"by": name, "points": points}
+                                        })
+                                        .to_string(),
+                                    ));
+                                }
+                                None => {
+                                    if let Some(player) = room.players.get_mut(&sid) {
+                                        player.cheat.refund(power);
+                                    }
+                                }
+                            }
+                        }
+                        CheatPower::Rewrite => {
+                            if let Some(input) = rewrite {
+                                if room.rewrite_question(input.text, input.options, input.correct) {
+                                    public_events.push(
+                                        json!({
+                                            "type": "cheat_used",
+                                            "data": {"player": name, "power": "rewrite"}
+                                        })
+                                        .to_string(),
+                                    );
+                                    if let Some(event) = question_event(&room) {
+                                        public_events.push(event);
+                                    }
+                                    players_changed = true;
+                                }
+                            }
+                        }
+                        CheatPower::Mute => {
+                            let victim = target_sid.clone().unwrap_or_default();
+                            let victim_name = room.players.get_mut(&victim).map(|player| {
+                                player.muted = true;
+                                player.display_name.clone()
+                            });
+                            if let Some(victim_name) = victim_name {
+                                players_changed = true;
+                                public_events.push(
+                                    json!({
+                                        "type": "cheat_used",
+                                        "data": {"player": name, "power": "mute", "target": victim_name}
+                                    })
+                                    .to_string(),
+                                );
+                                victim_events.push((
+                                    victim,
+                                    json!({"type": "muted", "data": {"by": name}}).to_string(),
+                                ));
+                            }
+                        }
+                        CheatPower::Jinx => {
+                            let victim = target_sid.clone().unwrap_or_default();
+                            let victim_name = room.players.get_mut(&victim).map(|player| {
+                                player.jinxed = true;
+                                player.display_name.clone()
+                            });
+                            if let Some(victim_name) = victim_name {
+                                players_changed = true;
+                                public_events.push(
+                                    json!({
+                                        "type": "cheat_used",
+                                        "data": {"player": name, "power": "jinx", "target": victim_name}
+                                    })
+                                    .to_string(),
+                                );
+                                victim_events.push((
+                                    victim,
+                                    json!({"type": "jinxed", "data": {"by": name}}).to_string(),
+                                ));
+                            }
+                        }
                     }
 
                     room.touch();
-                    let budget = room
+                    budget = room
                         .players
                         .get(&sid)
                         .map(|player| player.cheat.to_json())
                         .unwrap_or(serde_json::Value::Null);
-                    (budget, private_event, public_event, scores_changed)
-                };
+                }
 
-                if let Some(event) = public_event {
+                for event in public_events {
                     let _ = room.read().tx.send(event);
                 }
-                if let Some(event) = private_event {
+                for event in private_events {
                     let _ = out_tx.send(event);
+                }
+                for (victim_sid, event) in victim_events {
+                    if let Some(outbox) = room
+                        .read()
+                        .players
+                        .get(&victim_sid)
+                        .and_then(|player| player.outbox.clone())
+                    {
+                        let _ = outbox.send(event);
+                    }
                 }
                 send_json(
                     &out_tx,
                     json!({"type": "cheat_state", "data": {"powers": budget}}),
                 );
-                if scores_changed {
+                if players_changed {
                     let event = players_event(&room.read());
                     let _ = room.read().tx.send(event);
                 }
@@ -710,6 +923,62 @@ fn send_json(out: &mpsc::UnboundedSender<String>, value: Value) {
     let _ = out.send(value.to_string());
 }
 
+fn send_chat_error(out: &mpsc::UnboundedSender<String>, error: ChatError) {
+    send_json(
+        out,
+        json!({"type": "error", "data": {"message": error.message(), "code": error.code()}}),
+    );
+}
+
+/// Name and mute flag of the socket's player; `None` when the socket has not
+/// joined a room (or was removed from it).
+fn chat_sender(room: &Arc<RwLock<Room>>, sid: &str) -> Option<(String, bool)> {
+    room.read()
+        .players
+        .get(sid)
+        .map(|player| (player.display_name.clone(), player.muted))
+}
+
+/// A question a cheater typed in, already validated.
+struct RewriteInput {
+    text: String,
+    options: Vec<String>,
+    correct: usize,
+}
+
+/// Validate the `payload` of a `rewrite` cheat. Text goes through the chat
+/// sanitiser, so the same length and control-character rules apply.
+fn parse_rewrite(payload: &Value) -> Option<RewriteInput> {
+    let text = payload["question"].as_str().and_then(chat::sanitize)?;
+    if text.chars().count() < 3 || text.chars().count() > MAX_CHAT_CHARS {
+        return None;
+    }
+
+    let raw_options = payload["options"].as_array()?;
+    if !(2..=6).contains(&raw_options.len()) {
+        return None;
+    }
+    let mut options = Vec::with_capacity(raw_options.len());
+    for option in raw_options {
+        let clean = option.as_str().and_then(chat::sanitize)?;
+        if clean.chars().count() > 80 {
+            return None;
+        }
+        options.push(clean);
+    }
+
+    let correct = payload["correct_index"].as_u64()? as usize;
+    if correct >= options.len() {
+        return None;
+    }
+
+    Some(RewriteInput {
+        text,
+        options,
+        correct,
+    })
+}
+
 fn spawn_forwarder(
     mut subscription: broadcast::Receiver<String>,
     out: mpsc::UnboundedSender<String>,
@@ -798,6 +1067,7 @@ fn players_event(room: &Room) -> String {
         .values()
         .map(|player| {
             json!({
+                "id": player.sid,
                 "name": player.display_name,
                 "score": player.score,
                 "lives": player.lives,
@@ -807,6 +1077,8 @@ fn players_event(room: &Room) -> String {
                 "eliminated": player.is_spectator,
                 "disconnected": player.is_disconnected(),
                 "is_host": player.user_id == Some(room.host_user_id),
+                "muted": player.muted,
+                "hijacked": player.hijacked,
                 "is_ready": true,
             })
         })

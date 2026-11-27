@@ -43,6 +43,23 @@ All notable changes to BrainStorm are documented here. The format is based on
 - Cheater powers over the existing WebSocket protocol: reveal the correct answer (3),
   freeze the clock for ten seconds (2), steal points from the leader (1), double your
   own score for the round (2). Every power is private to the cheater who spent it.
+- Four more cheater powers, all addressed by player name and all private to the
+  cheater: `mute` silences a player in chat, `jinx` zeroes their next correct answer,
+  `hijack` eliminates them and moves their points to the cheater, and `rewrite`
+  replaces the current question. A rejected attempt (unknown victim, wrong phase) costs
+  nothing. The victim's client learns what happened, nobody learns who did it.
+- In-game chat (`chat_send` → `chat_message`) with a 50-message log, trimmed text, a
+  400 ms per-player throttle and `chat_empty` / `chat_too_fast` / `chat_muted` errors.
+  Mute is enforced on the server, so it also applies to emoji throws.
+- Emoji storms: a fixed server-side palette, `emoji` events broadcast to the room and
+  optional targeting, so a client cannot inject arbitrary content.
+- `tools/smoke_chat_cheat.py`: drives the real HTTP + WebSocket API with two accounts
+  and asserts chat, flood control, the emoji palette, mute, jinx, rewrite and hijack
+  (including that a failed attempt does not spend budget).
+- Supabase works as a drop-in database: `db.rs` adds `sslmode=require` for hosted hosts
+  and disables the prepared-statement cache when the URL points at the transaction
+  pooler (`:6543`), which otherwise fails at the first query. `.mcp.json` wires the
+  read-only Supabase MCP server; `docs/database/supabase.md` explains the rest.
 - «Внезапная смерть» (`sudden`) and «Марафон» (`marathon`) are selectable in the room
   picker, so the UI finally offers all ten modes the backend knows about; the marathon
   round is locked to 30 questions of 20 seconds each.
@@ -57,6 +74,9 @@ All notable changes to BrainStorm are documented here. The format is based on
   power-up cards each player is dealt, and the cheater budget — generated from the
   same numbers as `docs/game-modes.md`.
 - `+error.svelte`: a styled 404/500 screen with a way back to the lobby.
+- The room page no longer receives `is_cheat` in `players_updated`: the flag is private
+  and leaked the cheater's identity. `cheat_state` is the only signal, and it is only
+  sent to the cheater.
 - The room page tells a missing code apart from a game error: the server now tags the
   WebSocket reply with `code: "room_not_found"`, and the page replaces the waiting
   screen with «Комнаты XXXX нет» instead of showing a share code for a room that never
