@@ -264,11 +264,16 @@ impl RoomRegistry {
         self.rooms.read().get(code).cloned()
     }
 
+    /// Rooms worth showing in the lobby: an empty room whose players all
+    /// dropped is dead weight, so only rooms with a live socket are listed.
     pub fn list_public(&self) -> Vec<RoomSnapshot> {
         self.rooms
             .read()
             .values()
-            .map(|r| RoomSnapshot::from_room(&r.read()))
+            .filter_map(|r| {
+                let snapshot = RoomSnapshot::from_room(&r.read());
+                (snapshot.player_count > 0).then_some(snapshot)
+            })
             .collect()
     }
 
@@ -311,7 +316,11 @@ impl RoomSnapshot {
             state: room.state,
             mode: room.settings.mode.clone(),
             topic: room.settings.topic.clone(),
-            player_count: room.players.len(),
+            player_count: room
+                .players
+                .values()
+                .filter(|p| !p.is_disconnected())
+                .count(),
         }
     }
 }

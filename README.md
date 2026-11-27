@@ -184,6 +184,8 @@ installs dependencies, probes GigaChat and prints the LAN URL for phones.
 | `AUTH_RATE_LIMIT` | `10` | Auth attempts per IP per window. |
 | `ADMIN_SECRET_KEY` | — (required in prod) | Admin panel key. No hardcoded default. |
 | `CHEAT_TESTER_CODE` | — (required in prod) | Tester/cheat mode code. No hardcoded default. |
+| `OPENROUTER_API_KEY` | — | OpenRouter key. It is the default provider (`openai/gpt-4o-mini`); empty ⇒ offline question bank. |
+| `OPENAI_API_KEY` | — | Optional OpenAI key for the fallback provider. |
 | `GIGACHAT_CLIENT_ID` | — | Optional GigaChat client id. |
 | `GIGACHAT_CREDENTIALS` | — | GigaChat authorization key. Empty ⇒ offline fallback bank. |
 | `GIGACHAT_MODEL` / `GIGACHAT_SCOPE` | `GigaChat` / `GIGACHAT_API_PERS` | GigaChat model and scope. |
@@ -336,7 +338,8 @@ python run.py                    # http://localhost:5000
 
 Полная таблица переменных приведена выше в английском разделе. Ключевые: `SECRET_KEY`,
 `ADMIN_SECRET_KEY`, `CHEAT_TESTER_CODE` (в продакшене обязательны, дефолтов в коде нет),
-`GIGACHAT_CREDENTIALS` (пусто ⇒ офлайн-банк вопросов), `DATA_DIR`, `ENV`.
+`OPENROUTER_API_KEY` (провайдер по умолчанию; пусто ⇒ офлайн-банк вопросов),
+`OPENAI_API_KEY`, `GIGACHAT_CREDENTIALS`, `DATA_DIR`, `ENV`.
 
 > **Безопасность:** `.env` в `.gitignore` и не должен попадать в репозиторий. Если секрет уже
 > был закоммичен — смените его: удаления файла недостаточно.

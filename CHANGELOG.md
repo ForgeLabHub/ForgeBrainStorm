@@ -7,6 +7,10 @@ All notable changes to BrainStorm are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- AI questions through OpenRouter, the default provider: `OPENROUTER_API_KEY` from the
+  environment (or `.env`) is picked up at boot, and the question card names the provider
+  that wrote the round («ИИ · openrouter»); with no key the room falls back to the offline
+  bank and says so.
 - CI jobs for the newer stacks: `rust` (`cargo check --all-targets`, `cargo test`) and
   `frontend` (`npm ci`, `svelte-check`, `npm run build`). Nothing compiled them before.
 - README section describing the Flask monolith, the Axum server and the SvelteKit client

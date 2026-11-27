@@ -61,7 +61,8 @@ make smoke-test
 ## Переменные окружения
 
 Обязательные для compose: `SECRET_KEY`, `ADMIN_SECRET_KEY`, `CHEAT_TESTER_CODE`.
-Опциональные: `GIGACHAT_*` (без них AI выключен), `CORS_ORIGINS`,
+Опциональные: `OPENROUTER_API_KEY` (провайдер по умолчанию, без него — офлайн-банк
+вопросов), `OPENAI_API_KEY`, `GIGACHAT_*`, `CORS_ORIGINS`,
 `SESSION_COOKIE_SECURE`, `SOCKETIO_ASYNC_MODE`, `LOG_LEVEL`, `DATA_DIR`.
 
 ## Типовые ошибки
@@ -69,7 +70,7 @@ make smoke-test
 | Ошибка | Причина | Решение |
 | --- | --- | --- |
 | `set SECRET_KEY in your environment` | нет `.env` | `cp .env.example .env` |
-| AI-функции не работают | `GIGACHAT_CREDENTIALS` пуст | это ожидаемый режим; заполнить при необходимости |
+| AI-функции не работают, вопросы из офлайн-банка | `OPENROUTER_API_KEY` пуст | заполнить ключ в `.env` и перезапустить сервер |
 | `database is locked` | конкурирующие записи в SQLite | используется WAL и короткие соединения; проверить нагрузку |
 | Тесты пишут в реальные данные | не задан `DATA_DIR` | `tests/conftest.py` ставит временный каталог; не переопределяйте |
 | Секрет попал в коммит | `.env` в индексе | `git rm --cached .env`, ротация ключа, см. `docs/security/secrets.md` |
