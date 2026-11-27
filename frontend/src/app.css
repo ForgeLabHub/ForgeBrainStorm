@@ -145,6 +145,52 @@ select:focus {
 	html {
 		font-size: 14px;
 	}
+	
+	/* Убираем лаги на мобильных */
+	* {
+		-webkit-tap-highlight-color: transparent;
+		-webkit-touch-callout: none;
+	}
+	
+	/* Плавная прокрутка */
+	html {
+		scroll-behavior: smooth;
+		-webkit-overflow-scrolling: touch;
+	}
+	
+	/* Оптимизация для iOS */
+	body {
+		-webkit-text-size-adjust: 100%;
+		-ms-text-size-adjust: 100%;
+	}
+	
+	/* Убираем задержку клика на мобильных */
+	a, button {
+		touch-action: manipulation;
+	}
+	
+	/* Уменьшаем отступы на маленьких экранах */
+	.glass-card {
+		padding: 1rem;
+	}
+	
+	/* Оптимизация кнопок */
+	.btn-primary, .btn-secondary {
+		width: 100%;
+		padding: 0.875rem 1rem;
+		font-size: 0.875rem;
+	}
+	
+	/* Уменьшаем анимации для производительности */
+	.glass-card:hover {
+		transform: none;
+	}
+	
+	/* Убираем backdrop-filter на мобильных для производительности */
+	.glass-card {
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+	}
 }
 
 /* Reduced motion */

@@ -55,38 +55,38 @@
 		</div>
 
 		<!-- Features grid -->
-		<div class="mt-24 grid grid-cols-1 gap-6 sm:grid-cols-3">
+		<div class="mt-16 sm:mt-24 grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-3">
 			<!-- Feature 1 -->
-			<div class="glass-card rounded-2xl p-6 text-left group hover:scale-105 transition-all duration-300">
+			<div class="glass-card rounded-2xl p-5 sm:p-6 text-left group transition-all duration-300">
 				<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/20 group-hover:border-blue-500/40 transition">
 					<svg class="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
 					</svg>
 				</div>
 				<h3 class="mb-2 text-lg font-bold text-white">6 режимов игры</h3>
-				<p class="text-sm text-slate-400 leading-relaxed">Классика, FFA, команды, выживание и другие</p>
+				<p class="text-sm text-slate-400 leading-relaxed">Классика, FFA, команды, выживание, кооператив и Своя Игра</p>
 			</div>
 
 			<!-- Feature 2 -->
-			<div class="glass-card rounded-2xl p-6 text-left group hover:scale-105 transition-all duration-300">
+			<div class="glass-card rounded-2xl p-5 sm:p-6 text-left group transition-all duration-300">
 				<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/20 group-hover:border-purple-500/40 transition">
 					<svg class="h-6 w-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
 					</svg>
 				</div>
 				<h3 class="mb-2 text-lg font-bold text-white">AI-генерация</h3>
-				<p class="text-sm text-slate-400 leading-relaxed">GPT-4o-mini создаёт уникальные вопросы</p>
+				<p class="text-sm text-slate-400 leading-relaxed">GPT-4o-mini создаёт уникальные вопросы с адаптивной сложностью</p>
 			</div>
 
 			<!-- Feature 3 -->
-			<div class="glass-card rounded-2xl p-6 text-left group hover:scale-105 transition-all duration-300">
+			<div class="glass-card rounded-2xl p-5 sm:p-6 text-left group transition-all duration-300">
 				<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-600/20 border border-cyan-500/20 group-hover:border-cyan-500/40 transition">
 					<svg class="h-6 w-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
 					</svg>
 				</div>
-				<h3 class="mb-2 text-lg font-bold text-white">Лидерборд</h3>
-				<p class="text-sm text-slate-400 leading-relaxed">Соревнуйтесь и зарабатывайте XP</p>
+				<h3 class="mb-2 text-lg font-bold text-white">Быстрая игра</h3>
+				<p class="text-sm text-slate-400 leading-relaxed">Создайте комнату и начните игру за 30 секунд</p>
 			</div>
 		</div>
 	</div>
