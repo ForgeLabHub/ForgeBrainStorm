@@ -69,7 +69,7 @@
 	const modes = [
 		{ value: 'classic', label: 'Классика', desc: 'Все отвечают одновременно', icon: '🎯' },
 		{ value: 'ffa', label: 'Каждый за себя', desc: 'Кто быстрее ответит', icon: '⚔️' },
-		{ value: 'team', label: 'Команды', desc: 'Игра командами', icon: '👥' },
+		{ value: 'team', label: 'Команды', desc: 'Скоро — игра командами', icon: '👥', soon: true },
 		{ value: 'lives', label: 'На выживание', desc: '3 жизни — кто выживет', icon: '❤️' },
 	];
 </script>
@@ -162,12 +162,12 @@
 					</h3>
 					<div class="space-y-2">
 						{#each modes as m}
-							<label class="group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all {
+							<label class="group flex items-center gap-3 rounded-xl border p-3 transition-all {m.soon ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} {
 								mode === m.value
 									? 'border-white/20 bg-white/[0.05]'
 									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
 							}">
-								<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
+								<input type="radio" bind:group={mode} value={m.value} class="sr-only" disabled={m.soon} />
 								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-white/5'} text-lg transition-transform group-hover:scale-110">
 									{m.icon}
 								</div>
@@ -175,7 +175,9 @@
 									<div class="font-medium text-white">{m.label}</div>
 									<div class="text-xs text-slate-400">{m.desc}</div>
 								</div>
-								{#if mode === m.value}
+								{#if m.soon}
+									<span class="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-300">скоро</span>
+								{:else if mode === m.value}
 									<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
 										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
 									</svg>

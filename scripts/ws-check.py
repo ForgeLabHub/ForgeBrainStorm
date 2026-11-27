@@ -87,6 +87,26 @@ class Client:
             f"{self.name}: no {kind!r}; buffered={[m['type'] for m in self.msgs]}"
         )
 
+    def wait_any(self, kinds, timeout=30):
+        wanted = set(kinds)
+        for msg in list(self.msgs):
+            if msg["type"] in wanted:
+                self.msgs.remove(msg)
+                return msg
+        end = time.time() + timeout
+        while time.time() < end:
+            self.ws.settimeout(max(1, end - time.time()))
+            try:
+                msg = json.loads(self.ws.recv())
+            except websocket.WebSocketTimeoutException:
+                break
+            if msg["type"] in wanted:
+                return msg
+            self.msgs.append(msg)
+        raise AssertionError(
+            f"{self.name}: none of {sorted(wanted)}; buffered={[m['type'] for m in self.msgs]}"
+        )
+
     def silence(self, kind, seconds=3):
         """Drain the socket for a while; True when `kind` never shows up."""
         end = time.time() + seconds
@@ -158,6 +178,11 @@ def main():
     global BASE
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=BASE)
+    parser.add_argument(
+        "--lives",
+        action="store_true",
+        help="also play a survival game where both players lose all lives (~60 s)",
+    )
     parser.add_argument(
         "--rematch",
         action="store_true",
@@ -289,6 +314,8 @@ def main():
     error = host.wait("error")["data"]["message"]
     check("spending an empty hand is refused", "нет в запасе" in error, error)
 
+    if args.lives:
+        survival(host, guest)
     if args.rematch:
         rematch(host, guest)
 
@@ -297,6 +324,105 @@ def main():
         return 1
     print("ws-check: all checks passed")
     return 0
+
+
+def survival(host, guest):
+    """A survival game knocks players out; the last one standing ends it."""
+    print("survival")
+    room = api(
+        "/api/rooms",
+        {
+            "topic": "Общие знания",
+            "question_count": 8,
+            "options": 4,
+            "timer_seconds": 10,
+            "difficulty": "easy",
+            "mode": "lives",
+        },
+        cookie=host.cookie,
+    )
+    code = room["room"]["code"]
+    for client in (host, guest):
+        client.drain()
+        client.send("join_room", {"code": code})
+        client.wait("room_joined")
+    host.send("start_game", {})
+
+    first = host.wait("question_emitted", timeout=90)["data"]
+    if not str(first.get("source", "")).startswith("fallback"):
+        print("  [skip] survival check needs the offline question bank")
+        return
+
+    def wrong(question):
+        right = answer_index(question)
+        return 0 if right != 0 else 1
+
+    def play_round(question, host_out, guest_out):
+        """The guest stays alive while the host is knocked out, so the room has
+        someone left to keep playing; then the guest throws their lives away."""
+        if not host_out:
+            host.send("submit_answer", {"answer_index": wrong(question)})
+        if not guest_out:
+            right = answer_index(question) if not host_out else None
+            guest.send("submit_answer", {"answer_index": right if right is not None else wrong(question)})
+
+    host_out = guest_out = False
+    host_out_at = None
+    refused = False
+    early_end = None
+    seen = 0
+    play_round(first["question"], False, False)
+    while True:
+        event = host.wait_any(
+            ["players_updated", "question_emitted", "game_over"], timeout=60
+        )
+        kind, data = event["type"], event["data"]
+        if kind == "players_updated":
+            by_name = {p["name"]: p for p in data["players"]}
+            if by_name.get("wscheck", {}).get("eliminated") and not host_out:
+                host_out = True
+                host_out_at = seen
+                check(
+                    "three wrong answers knock a player out",
+                    by_name["wscheck"]["lives"] == 0,
+                    by_name["wscheck"],
+                )
+            if by_name.get("wscheck2", {}).get("eliminated"):
+                guest_out = True
+        elif kind == "question_emitted":
+            seen += 1
+            if host_out and not refused:
+                refused = True
+                host.send("submit_answer", {"answer_index": 0})
+                try:
+                    reply = host.wait("error", timeout=20)
+                except AssertionError:
+                    reply = None
+                check(
+                    "an eliminated player can no longer answer",
+                    reply is not None and "выбыли" in reply["data"]["message"].lower(),
+                    reply["data"] if reply else None,
+                )
+                check(
+                    "the game goes on without the knocked-out player",
+                    not guest_out,
+                    {"host_out_at": host_out_at, "question": seen},
+                )
+            play_round(data["question"], host_out, guest_out)
+        else:
+            scores = {p["name"]: p for p in data["scores"]}
+            early_end = seen + 1
+            check(
+                "the last player standing ends the game early",
+                early_end < 8,
+                {"questions_played": early_end},
+            )
+            check(
+                "both players finished the game out",
+                all(p.get("eliminated") for p in scores.values()),
+                scores,
+            )
+            break
 
 
 def wait_zero_scores(client, timeout=20):

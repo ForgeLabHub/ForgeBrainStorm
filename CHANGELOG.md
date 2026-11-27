@@ -16,6 +16,11 @@ All notable changes to BrainStorm are documented here. The format is based on
   events (their own hand, the two crossed-out options) that other players cannot read.
   Scoring moved to `Player::award`, so the "correct answer = 100, doubled = 200" rule is
   unit-tested instead of living in the socket handler.
+- «На выживание» works: every player starts with three lives, a wrong answer costs
+  one, the third knocks you out (your answers are refused and the room keeps playing
+  without you), and the game ends as soon as nobody is left. The final board marks
+  who fell. «Команды» is marked as coming soon instead of silently behaving like
+  classic.
 - «Играть снова» works: a finished room can start another game in place — scores,
   streaks, lives and hands reset, a new question set is generated, everyone stays
   connected. Only the host can do it, and only from the finished screen; a mid-game
@@ -42,6 +47,14 @@ All notable changes to BrainStorm are documented here. The format is based on
   keying by `ConnectInfo` is wrong behind Caddy.
 
 ### Fixed
+- A page reload no longer costs you the game: the room keeps your seat (score, streak,
+  lives, elimination, hand) while it is playing or finished, and the socket replays the
+  live question or the final board on reconnect. Players who dropped are shown dimmed
+  with an «ОФФЛАЙН» badge and their seats are cleared when the next game starts.
+- The room header shows the real mode («На выживание», «FFA» …) instead of always
+  «Классика»: `room_joined` carries `mode`.
+- The final screen says «Никто не дожил до конца» when survival wipes out every player
+  and marks each knocked-out player in the board instead of crowning the last one.
 - `./forge.sh verify` printed "локальная матрица пройдена" even when lint failed; it now
   stops at the first failing check.
 - `scripts/docs-check.sh` walked `node_modules/`, so a local run reported dozens of broken

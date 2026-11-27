@@ -9,6 +9,10 @@
 	type Player = {
 		name: string;
 		score: number;
+		lives?: number;
+		infinite_lives?: boolean;
+		eliminated?: boolean;
+		disconnected?: boolean;
 		is_host: boolean;
 		is_ready: boolean;
 		username?: string;
@@ -44,6 +48,7 @@
 	let finalLeaderboard: any[] | null = $state(null);
 	let powerUps: PowerUpKind[] = $state([]);
 	let hiddenOptions: number[] = $state([]);
+	let eliminated = $state(false);
 
 	onMount(() => {
 		ws.connect();
@@ -58,6 +63,9 @@
 				players = data.players.map((p: any) => ({
 					name: p.name ?? p.display_name ?? p.username,
 					score: p.score || 0,
+					lives: p.lives,
+					infinite_lives: p.infinite_lives,
+					eliminated: p.eliminated || false,
 					is_host: p.is_host || false,
 					is_ready: p.is_ready || false,
 					username: p.name ?? p.username,
@@ -69,6 +77,9 @@
 				players = data.players.map((p: any) => ({
 					name: p.name ?? p.display_name ?? p.username,
 					score: p.score || 0,
+					lives: p.lives,
+					infinite_lives: p.infinite_lives,
+					eliminated: p.eliminated || false,
 					is_host: p.is_host || false,
 					is_ready: p.is_ready || false,
 					username: p.name ?? p.username,
@@ -80,6 +91,9 @@
 				players = [...players, {
 					name: data.player.name ?? data.player.display_name ?? data.player.username,
 					score: data.player.score || 0,
+					lives: data.player.lives,
+					infinite_lives: data.player.infinite_lives,
+					eliminated: data.player.eliminated || false,
 					is_host: data.player.is_host || false,
 					is_ready: data.player.is_ready || false,
 					username: data.player.username,
@@ -105,6 +119,7 @@
 			gamePhase = 'preparing';
 			lastResult = null;
 			error = '';
+			eliminated = false;
 			stopTimer();
 		});
 		ws.on('question_emitted', (data: any) => {
@@ -145,6 +160,10 @@
 					username: p.name ?? p.username,
 				}));
 			}
+		});
+		ws.on('eliminated', (data: any) => {
+			eliminated = true;
+			error = data?.message || 'Жизни кончились';
 		});
 		ws.on('game_started', () => {
 			gamePhase = 'playing';
@@ -298,6 +317,11 @@
 						</div>
 					</div>
 
+					{#if eliminated}
+						<div class="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-center text-sm text-red-300">
+							Жизни кончились — вы выбыли. Досмотрите игру до конца, очки сохранятся в таблице.
+						</div>
+					{/if}
 					<!-- Power-ups: the hand is private to this player -->
 					{#if powerUps.length > 0}
 						<div class="flex flex-wrap gap-2">
@@ -338,7 +362,7 @@
 							{@const isHidden = hiddenOptions.includes(i)}
 							<button
 								onclick={() => submitAnswer(i)}
-								disabled={selectedAnswer !== null || isHidden}
+								disabled={selectedAnswer !== null || isHidden || eliminated}
 								class="group relative overflow-hidden rounded-xl border p-5 text-left transition-all {
 									isHidden
 										? 'border-white/5 bg-white/[0.01] opacity-30 line-through'
@@ -421,7 +445,11 @@
 						<h2 class="mb-2 text-3xl font-bold text-white">Игра окончена!</h2>
 						{#if players.length > 0}
 							<p class="text-slate-400">
-								Победитель: <span class="font-semibold text-yellow-400">{players[0]?.name}</span>
+								{#if players.every(p => p.eliminated)}
+									Никто не дожил до конца
+								{:else}
+									Победитель: <span class="font-semibold text-yellow-400">{players[0]?.name}</span>
+								{/if}
 							</p>
 						{/if}
 
@@ -434,6 +462,9 @@
 											{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
 										</span>
 										<span class="font-semibold text-white">{player.name}</span>
+										{#if player.eliminated}
+											<span class="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-400">ВЫБЫЛ</span>
+										{/if}
 									</div>
 									<span class="text-xl font-bold text-white">{player.score} <span class="text-sm text-slate-400">pts</span></span>
 								</div>
@@ -466,7 +497,7 @@
 				<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">Игроки</h3>
 				<div class="space-y-2">
 					{#each players.sort((a, b) => b.score - a.score) as player}
-						<div class="flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 p-3 transition-all hover:bg-white/[0.05]">
+						<div class="flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 p-3 transition-all hover:bg-white/[0.05] {player.disconnected ? 'opacity-50' : ''}">
 							<div class="flex items-center gap-3">
 								<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-bold text-white">
 									{player.name.charAt(0).toUpperCase()}
@@ -474,12 +505,25 @@
 								<div>
 									<div class="flex items-center gap-2">
 										<span class="text-sm font-medium text-white">{player.name}</span>
-										{#if player.is_host}
+										{#if player.disconnected}
+										<span class="rounded bg-slate-500/20 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">ОФФЛАЙН</span>
+									{/if}
+									{#if player.is_host}
 											<span class="rounded bg-yellow-500/20 px-1.5 py-0.5 text-[10px] font-bold text-yellow-400">HOST</span>
+										{/if}
+										{#if player.eliminated}
+											<span class="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-400">ВЫБЫЛ</span>
 										{/if}
 									</div>
 								</div>
 							</div>
+							{#if !player.infinite_lives && typeof player.lives === 'number'}
+								<div class="mb-1 text-right text-xs tracking-tight">
+									{#each Array(3) as _, i}
+										<span class={i < (player.lives ?? 0) ? 'text-red-400' : 'text-slate-700'}>{i < (player.lives ?? 0) ? '❤' : '♡'}</span>
+									{/each}
+								</div>
+							{/if}
 							<span class="text-sm font-bold text-white">{player.score}</span>
 						</div>
 					{/each}

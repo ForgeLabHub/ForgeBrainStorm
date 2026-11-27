@@ -37,6 +37,9 @@ pub struct Player {
     pub outbox: Option<UnboundedSender<String>>,
 }
 
+/// Lives handed out at the start of a survival game.
+pub const PLAYER_LIVES: u8 = 3;
+
 impl Player {
     pub fn new(
         sid: String,
@@ -55,7 +58,7 @@ impl Player {
             answered: false,
             answer_index: None,
             answer_time: None,
-            lives: 3,
+            lives: PLAYER_LIVES,
             infinite_lives: false,
             is_spectator: false,
             is_cheat: false,
@@ -120,7 +123,8 @@ impl Player {
         self.answered = false;
         self.answer_index = None;
         self.answer_time = None;
-        self.lives = 3;
+        self.lives = PLAYER_LIVES;
+        self.is_spectator = false;
         self.double_points = false;
         self.power_ups = PowerUp::STARTING_HAND.to_vec();
     }
@@ -132,6 +136,35 @@ mod tests {
 
     fn player() -> Player {
         Player::new("sid".into(), "Аня".into(), Some(1), Some("anya".into()))
+    }
+
+    #[test]
+    fn a_survival_game_takes_one_life_per_wrong_answer() {
+        let mut p = player();
+        for left in [2, 1, 0] {
+            p.award(false, true);
+            assert_eq!(p.lives, left);
+        }
+    }
+
+    #[test]
+    fn a_classic_game_never_touches_lives() {
+        let mut p = player();
+        p.award(false, false);
+        assert_eq!(p.lives, PLAYER_LIVES);
+    }
+
+    #[test]
+    fn a_new_game_brings_a_knocked_out_player_back() {
+        let mut p = player();
+        p.lives = 0;
+        p.is_spectator = true;
+        p.score = 400;
+
+        p.reset_for_new_game();
+        assert_eq!(p.lives, PLAYER_LIVES);
+        assert!(!p.is_spectator);
+        assert_eq!(p.score, 0);
     }
 
     #[test]

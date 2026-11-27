@@ -66,8 +66,8 @@ smoke-test: ## Проверить живой инстанс
 ws-check: ## Прогнать WebSocket-протокол игры на живом инстансе (нужен websocket-client)
 	@$(PYTHON) scripts/ws-check.py --base $(BASE_URL)
 
-ws-check-full: ## То же + полная партия и повторная игра в той же комнате (~90 с)
-	@$(PYTHON) scripts/ws-check.py --base $(BASE_URL) --rematch
+ws-check-full: ## То же + полная партия, повторная игра и режим на выживание (~3 мин)
+	@$(PYTHON) scripts/ws-check.py --base $(BASE_URL) --rematch --lives
 
 docs-pdf: ## Собрать PDF документации (оба языка)
 	$(PYTHON) tools/docs_pdf.py

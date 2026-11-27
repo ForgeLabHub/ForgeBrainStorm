@@ -25,7 +25,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::domain::player::Player;
+use crate::domain::player::{Player, PLAYER_LIVES};
 use crate::domain::power_up::{self, PowerUp, FREEZE_SECS};
 use crate::domain::room::{Room, RoomState};
 use crate::middleware::auth::AuthContext;
@@ -96,7 +96,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     continue;
                 };
 
-                let (topic, is_host, players, subscription) = {
+                let (topic, mode, is_host, players, subscription) = {
                     let mut room = room.write();
                     // A reload opens a new socket for the same account: carry the score over
                     // instead of leaving a ghost player behind.
@@ -112,9 +112,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                 player.lives,
                                 player.power_ups.clone(),
                                 player.double_points,
+                                player.is_spectator,
+                                player.infinite_lives,
                             )
                         })
-                        .unwrap_or((0, 0, 0, 3, Vec::new(), false));
+                        .unwrap_or((0, 0, 0, 3, Vec::new(), false, false, false));
                     room.players
                         .retain(|_, player| player.user_id != Some(auth.user_id));
                     let mut player = Player::new(
@@ -129,11 +131,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     player.lives = carried.3;
                     player.power_ups = carried.4;
                     player.double_points = carried.5;
+                    player.is_spectator = carried.6;
+                    player.infinite_lives = carried.7;
                     player.outbox = Some(out_tx.clone());
                     room.players.insert(sid.clone(), player);
                     room.touch();
                     (
                         room.settings.topic.clone(),
+                        room.settings.mode.clone(),
                         room.host_user_id == auth.user_id,
                         players_event(&room),
                         room.tx.subscribe(),
@@ -150,15 +155,26 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     &out_tx,
                     json!({
                         "type": "room_joined",
-                        "data": { "code": code, "is_host": is_host, "topic": topic }
+                        "data": { "code": code, "is_host": is_host, "topic": topic, "mode": mode }
                     }),
                 );
-                let hand = room
-                    .read()
-                    .players
-                    .get(&sid)
-                    .map(|player| player.power_ups.clone())
-                    .unwrap_or_default();
+                let (replay, hand) = {
+                    let room = room.read();
+                    let replay = match room.state {
+                        RoomState::Playing => question_event(&room),
+                        RoomState::Finished => Some(game_over_event(&room)),
+                        _ => None,
+                    };
+                    let hand = room
+                        .players
+                        .get(&sid)
+                        .map(|player| player.power_ups.clone())
+                        .unwrap_or_default();
+                    (replay, hand)
+                };
+                if let Some(event) = replay {
+                    let _ = out_tx.send(event);
+                }
                 send_json(
                     &out_tx,
                     json!({"type": "power_ups", "data": {"items": hand.iter().map(|kind| kind.as_str()).collect::<Vec<_>>()}}),
@@ -255,9 +271,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     let mut room = room.write();
                     room.set_questions(questions, &source);
                     let mut hands = Vec::new();
+                    let lives_mode = room.settings.mode == "lives";
                     for player in room.players.values_mut() {
                         player.power_ups = PowerUp::STARTING_HAND.to_vec();
                         player.double_points = false;
+                        player.is_spectator = false;
+                        player.lives = PLAYER_LIVES;
+                        player.infinite_lives = !lives_mode;
                         if let Some(outbox) = player.outbox.as_ref() {
                             hands.push((outbox.clone(), power_ups_event(&player.power_ups)));
                         }
@@ -373,7 +393,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 };
                 let index = message["data"]["answer_index"].as_u64().unwrap_or(0) as usize;
 
-                let (advance, token, players) = {
+                let (advance, token, players, notice, eliminated) = {
                     let mut room = room.write();
                     if room.state != RoomState::Playing {
                         continue;
@@ -388,21 +408,53 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     };
                     let lives_mode = room.settings.mode == "lives";
 
+                    let mut knocked_out = false;
+                    let mut eliminated = false;
                     if let Some(player) = room.players.get_mut(&sid) {
-                        if !player.answered {
+                        eliminated = player.is_spectator;
+                        if !eliminated && !player.answered {
                             player.answered = true;
                             player.answer_index = Some(index);
                             player.answer_time = Some(Instant::now());
                             player.award(index == correct, lives_mode);
+                            if lives_mode && player.lives == 0 {
+                                player.is_spectator = true;
+                                player.instant_answer = false;
+                                knocked_out = true;
+                            }
                         }
                     }
 
                     let advance = room.all_answered();
                     let token = room.question_token;
                     room.touch();
-                    (advance, token, Some(players_event(&room)))
+                    let notice = if knocked_out {
+                        room.players.get(&sid).and_then(|p| p.outbox.clone())
+                    } else {
+                        None
+                    };
+                    (
+                        advance,
+                        token,
+                        Some(players_event(&room)),
+                        notice,
+                        eliminated,
+                    )
                 };
 
+                if eliminated {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Вы выбыли из игры"}}),
+                    );
+                    continue;
+                }
+                if let Some(outbox) = notice {
+                    let _ = outbox.send(
+                        json!({"type": "eliminated", "data": {"message": "Жизни кончились"}})
+                            .to_string(),
+                    );
+                }
                 if let Some(event) = players {
                     let _ = room.read().tx.send(event);
                 }
@@ -447,7 +499,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
     if let Some(room) = room_arc {
         let event = {
             let mut room = room.write();
-            room.players.remove(&sid);
+            if room.state == RoomState::Waiting {
+                room.players.remove(&sid);
+            } else if let Some(player) = room.players.get_mut(&sid) {
+                player.disconnected_at = Some(Instant::now());
+            }
             room.touch();
             players_event(&room)
         };
@@ -490,6 +546,22 @@ fn power_ups_event(hand: &[PowerUp]) -> String {
     .to_string()
 }
 
+fn game_over_event(room: &Room) -> String {
+    let scores: Vec<Value> = room
+        .players
+        .values()
+        .map(|player| {
+            json!({
+                "name": player.display_name,
+                "score": player.score,
+                "lives": player.lives,
+                "eliminated": player.is_spectator,
+            })
+        })
+        .collect();
+    json!({"type": "game_over", "data": {"scores": scores}}).to_string()
+}
+
 fn players_event(room: &Room) -> String {
     let players: Vec<Value> = room
         .players
@@ -498,6 +570,10 @@ fn players_event(room: &Room) -> String {
             json!({
                 "name": player.display_name,
                 "score": player.score,
+                "lives": player.lives,
+                "infinite_lives": player.infinite_lives,
+                "eliminated": player.is_spectator,
+                "disconnected": player.is_disconnected(),
                 "is_host": player.user_id == Some(room.host_user_id),
                 "is_ready": true,
             })
@@ -560,15 +636,17 @@ async fn reveal_and_advance(room: Arc<RwLock<Room>>, token: u64, pool: Option<Pg
         room.current_q += 1;
         room.question_token += 1;
 
-        if room.current_q >= room.questions.len() {
-            room.state = RoomState::Finished;
-            room.deadline = None;
-            let scores: Vec<Value> = room
+        // In survival mode the last player standing ends the game early.
+        let out_of_lives = room.settings.mode == "lives"
+            && room
                 .players
                 .values()
-                .map(|player| json!({"name": player.display_name, "score": player.score}))
-                .collect();
-            events.push(json!({"type": "game_over", "data": {"scores": scores}}).to_string());
+                .all(|player| player.is_spectator || player.is_disconnected());
+
+        if room.current_q >= room.questions.len() || out_of_lives {
+            room.state = RoomState::Finished;
+            room.deadline = None;
+            events.push(game_over_event(&room));
             events.push(players_event(&room));
 
             let mut results = room

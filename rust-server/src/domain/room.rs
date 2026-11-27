@@ -174,6 +174,7 @@ impl Room {
         self.deadline = None;
         // Bump the token so any in-flight timer becomes a no-op.
         self.question_token += 1;
+        self.players.retain(|_, player| !player.is_disconnected());
         for player in self.players.values_mut() {
             player.reset_for_new_game();
         }
