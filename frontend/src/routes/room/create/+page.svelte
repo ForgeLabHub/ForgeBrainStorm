@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { loadRoomDefaults } from '$lib/settings';
 
 	let topic = $state('');
 	let difficulty = $state('medium');
@@ -18,6 +19,13 @@
 
 
 	onMount(() => {
+		const saved = loadRoomDefaults();
+		mode = saved.mode;
+		difficulty = saved.difficulty;
+		questionCount = saved.questions;
+		numOptions = saved.options;
+		timerSeconds = saved.timer;
+
 		const timer = setTimeout(() => (visible = true), 100);
 		return () => clearTimeout(timer);
 	});

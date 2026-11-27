@@ -59,6 +59,7 @@
 	let topic = $state('');
 	let mode = $state('');
 	let error = $state('');
+	let roomMissing = $state(false);
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 	type ResultKind = 'correct' | 'wrong' | 'timeout';
 	let lastResult: { kind: ResultKind; correctIndex: number; explanation: string; player_answers?: any[] } | null = $state(null);
@@ -258,6 +259,10 @@
 			serverTeams = [];
 		});
 		ws.on('error', (data: any) => {
+			if (data?.code === 'room_not_found') {
+				roomMissing = true;
+				return;
+			}
 			error = data.message || 'Ошибка';
 		});
 	});
@@ -330,16 +335,37 @@
 					<span class="text-sm text-slate-400">{modeTitle || modeLabel(mode)}</span>
 				{/if}
 			</div>
-			<h1 class="mt-2 text-2xl font-bold text-white">{topic || 'Без темы'}</h1>
+			{#if !roomMissing}
+				<h1 class="mt-2 text-2xl font-bold text-white">{topic || 'Без темы'}</h1>
+			{/if}
 		</div>
-		<div class="flex items-center gap-4">
-			<div class="text-right">
-				<div class="text-xs text-slate-500">Игроков</div>
-				<div class="text-2xl font-bold text-white">{players.length}</div>
+		{#if !roomMissing}
+			<div class="flex items-center gap-4">
+				<div class="text-right">
+					<div class="text-xs text-slate-500">Игроков</div>
+					<div class="text-2xl font-bold text-white">{players.length}</div>
+				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
 
+	{#if roomMissing}
+		<div class="rounded-2xl border border-white/5 bg-white/[0.02] p-10 text-center">
+			<div class="mb-4 flex justify-center text-slate-500"><Icon name="cross" class="h-12 w-12" /></div>
+			<h2 class="mb-2 text-xl font-bold text-white">Комнаты {roomCode} нет</h2>
+			<p class="mb-6 text-slate-400">
+				Код мог устареть, а комнату — закрыть хост. Проверьте код или создайте свою.
+			</p>
+			<div class="flex flex-wrap justify-center gap-3">
+				<a href="/lobby" class="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-2.5 font-semibold text-white shadow-lg transition hover:shadow-blue-500/20">
+					К комнатам
+				</a>
+				<a href="/room/create" class="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 font-semibold text-slate-200 transition hover:bg-white/10">
+					Создать комнату
+				</a>
+			</div>
+		</div>
+	{:else}
 	{#if error}
 		<div class="mb-4 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-400">
 			<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -690,4 +716,5 @@
 			</div>
 		</div>
 	</div>
+{/if}
 </div>

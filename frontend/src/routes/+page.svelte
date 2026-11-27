@@ -11,18 +11,21 @@ return () => clearTimeout(timer);
 const features = [
 {
 icon: '🎯',
+href: '/rules',
 title: '10 режимов игры',
 text: 'Классика, блиц, команды, выживание, кооператив, «Своя игра», марафон и другие',
 accent: 'hover:border-blue-500/30'
 },
 {
 icon: '👥',
+href: '/lobby',
 title: 'Игра в компании',
 text: 'До 30 человек в комнате, общий счёт в командах и кооперативе, объявления ведущего',
 accent: 'hover:border-purple-500/30'
 },
 {
 icon: '🏆',
+href: '/leaderboard',
 title: 'Рейтинг',
 text: 'Соревнуйтесь, зарабатывайте XP и монеты, поднимайтесь в таблице лидеров',
 accent: 'hover:border-cyan-500/30'
@@ -86,8 +89,9 @@ class="flex items-center justify-center gap-3 rounded-2xl border border-white/10
 <div class="relative z-10 mx-auto max-w-6xl px-4 pb-20">
 <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
 {#each features as feature (feature.title)}
-<div
-class="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm transition-all duration-300 {feature.accent}"
+<a
+href={feature.href}
+class="group relative block overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-8 backdrop-blur-sm transition-all duration-300 {feature.accent}"
 >
 <div class="relative z-10">
 <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 text-2xl">
@@ -96,7 +100,7 @@ class="group relative overflow-hidden rounded-2xl border border-white/5 bg-white
 <h3 class="mb-2 text-xl font-bold text-white">{feature.title}</h3>
 <p class="text-sm leading-relaxed text-slate-400">{feature.text}</p>
 </div>
-</div>
+</a>
 {/each}
 </div>
 </div>

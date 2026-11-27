@@ -35,6 +35,18 @@ All notable changes to BrainStorm are documented here. The format is based on
 - Prometheus metrics at `/metrics` (`brainstorm_*`): active sockets, games started per
   mode, answers by correctness, AI generation latency per provider, HTTP duration by
   matched route, and live room count.
+- `/settings` page: account summary (role, level, XP, coins) plus room defaults
+  (mode, difficulty, question count, answer options, timer) that `room/create`
+  pre-fills. Stored in `localStorage` via `$lib/settings`, so they survive reloads and
+  work for signed-out hosts too; values are clamped to the ranges the API accepts.
+- `/rules` page: every mode with its clock, lives and scoring formula, the three
+  power-up cards each player is dealt, and the cheater budget — generated from the
+  same numbers as `docs/game-modes.md`.
+- `+error.svelte`: a styled 404/500 screen with a way back to the lobby.
+- The room page tells a missing code apart from a game error: the server now tags the
+  WebSocket reply with `code: "room_not_found"`, and the page replaces the waiting
+  screen with «Комнаты XXXX нет» instead of showing a share code for a room that never
+  existed.
 
 ### Changed
 - `README.md` rewritten for the stack that actually ships (Rust/axum + SvelteKit +

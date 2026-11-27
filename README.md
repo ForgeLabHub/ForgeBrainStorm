@@ -62,7 +62,8 @@ frontend/ (SvelteKit, adapter-node)          rust-server/ (axum + tokio)
 │ /auth/login|register       │              │           ai, leaderboard…)   │
 │ /lobby  /room/create       │              │ ws/       игровой цикл       │
 │ /room/[code]  /profile     │ ◀─────────── │ domain/   правила без I/O    │
-│ /settings  /leaderboard    │   события    │ services/ AI, БД, кэш        │
+│ /leaderboard  /admin       │              │                              │
+│ /settings  /rules          │   события    │ services/ AI, БД, кэш        │
 └───────────────────────────┘              └──────────────┬───────────────┘
                                                           │ sqlx
                                                    PostgreSQL 16+

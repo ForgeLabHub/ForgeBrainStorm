@@ -97,7 +97,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 let Some(room) = state.rooms.get_arc(&code) else {
                     send_json(
                         &out_tx,
-                        json!({"type": "error", "data": {"message": "Комната не найдена"}}),
+                        json!({"type": "error", "data": {"message": "Комната не найдена", "code": "room_not_found"}}),
                     );
                     continue;
                 };
