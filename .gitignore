@@ -34,7 +34,9 @@ Thumbs.db
 .run/
 
 # Rust
-rust-server/target/
+target/
+crates/*/target/
+*.rs.bk
 
 # Node / SvelteKit
 frontend/node_modules/
@@ -46,8 +48,4 @@ frontend/build/
 
 # Локальный рантайм
 .run/
-frontend/.svelte-kit/
-frontend/build/
-frontend/node_modules/
-rust-server/target/
 deploy/.env.production

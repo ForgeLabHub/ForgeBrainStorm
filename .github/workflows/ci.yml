@@ -24,9 +24,6 @@ jobs:
     name: Rust formatting, build, Clippy and tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: rust-server
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -34,24 +31,23 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust-server
+          workspaces: |
+            .
+            crates/server
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Check all targets
-        run: cargo check --all-targets --locked
+        run: cargo check --workspace --all-targets --locked
       - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         # Tests that need a live database are #[ignore]d and require DATABASE_URL.
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
   security-audit:
     name: Security audit (cargo audit)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: rust-server
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

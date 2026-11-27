@@ -1,0 +1,87 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/ForgeLabHub/ForgeBrainStorm"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# Web framework
+axum = { version = "0.7", features = ["ws", "macros"] }
+axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "chrono",
+    "uuid",
+    "migrate",
+    "json",
+] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# HTTP
+http = "1.1"
+tower = { version = "0.4", features = ["timeout", "limit", "filter"] }
+tower-http = { version = "0.5", features = [
+    "cors",
+    "trace",
+    "fs",
+    "catch-panic",
+    "set-header",
+    "request-id",
+    "util",
+] }
+
+# Config
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
+
+# Concurrency
+dashmap = "6.1"
+parking_lot = "0.12"
+
+# Env
+dotenvy = "0.15"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+opt-level = 3
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
