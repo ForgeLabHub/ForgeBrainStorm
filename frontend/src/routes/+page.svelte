@@ -1,5 +1,4 @@
 <script lang="ts">
-<<<<<<< HEAD
 	import { onMount } from 'svelte';
 	let visible = $state(false);
 
@@ -7,13 +6,6 @@
 		const timer = setTimeout(() => (visible = true), 100);
 		return () => clearTimeout(timer);
 	});
-=======
-	let visible = $state(false);
-
-	$: if (typeof window !== 'undefined') {
-		setTimeout(() => (visible = true), 100);
-	}
->>>>>>> 4808142 (Merge pull request #15 from ForgeLabHub/arena/ca3aa14f-forgebrainstorm)
 </script>
 
 <div class="flex min-h-[85vh] flex-col items-center justify-center px-4 text-center relative">
