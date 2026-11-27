@@ -29,7 +29,10 @@ services:
       retries: 5
 
   app:
-    build: .
+    # The crate is a workspace member: the build context is the repo root.
+    build:
+      context: ../..
+      dockerfile: crates/server/Dockerfile
     ports:
       - "5000:5000"
     environment:

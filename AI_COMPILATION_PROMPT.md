@@ -6,25 +6,25 @@
 
 **Репозиторий**: `ForgeLabHub/ForgeBrainStorm`
 **Язык бэкенда**: Rust (Axum + PostgreSQL + Tokio)
-**Расположение кода**: `rust-server/`
+**Расположение кода**: `crates/server/`
 **Статус**: Код написан, но **никогда не компилировался**. Ожидается много ошибок.
 
 **Что есть**:
-- `rust-server/Cargo.toml` — зависимости
-- `rust-server/src/main.rs` — точка входа
-- `rust-server/src/config.rs` — конфигурация (figment)
-- `rust-server/src/db.rs` — PostgreSQL pool (sqlx)
-- `rust-server/src/error.rs` — ошибки (thiserror)
-- `rust-server/src/domain/` — Room, Player модели
-- `rust-server/src/services/` — business logic, включая multi-AI
-- `rust-server/src/services/ai/` — multi-AI провайдеры (GigaChat, OpenAI, Ollama)
-- `rust-server/src/routes/` — HTTP handlers
-- `rust-server/src/middleware/` — auth, CORS, rate-limit
-- `rust-server/src/ws/` — WebSocket handler
-- `rust-server/src/security.rs` — HMAC, утилиты
-- `rust-server/migrations/` — SQL схема
-- `rust-server/config/default.toml` — конфиг
-- `rust-server/Dockerfile` + `docker-compose.yml`
+- `crates/server/Cargo.toml` — зависимости
+- `crates/server/src/main.rs` — точка входа
+- `crates/server/src/config.rs` — конфигурация (figment)
+- `crates/server/src/db.rs` — PostgreSQL pool (sqlx)
+- `crates/server/src/error.rs` — ошибки (thiserror)
+- `crates/server/src/domain/` — Room, Player модели
+- `crates/server/src/services/` — business logic, включая multi-AI
+- `crates/server/src/services/ai/` — multi-AI провайдеры (GigaChat, OpenAI, Ollama)
+- `crates/server/src/routes/` — HTTP handlers
+- `crates/server/src/middleware/` — auth, CORS, rate-limit
+- `crates/server/src/ws/` — WebSocket handler
+- `crates/server/src/security.rs` — HMAC, утилиты
+- `crates/server/migrations/` — SQL схема
+- `crates/server/config/default.toml` — конфиг
+- `crates/server/Dockerfile` + `docker-compose.yml`
 
 **Что НЕ сделано**:
 - Код не проверен компилятором (`cargo check`)
@@ -74,8 +74,8 @@ git checkout main
 git reset --hard origin/main
 
 # Проверь, что файлы на месте
-ls rust-server/Cargo.toml
-ls rust-server/src/main.rs
+ls crates/server/Cargo.toml
+ls crates/server/src/main.rs
 ls AI_COMPILATION_PROMPT.md
 ```
 
@@ -88,16 +88,16 @@ ls AI_COMPILATION_PROMPT.md
 ### Этап 1: Проверка Rust-кода
 
 ```bash
-cd rust-server
+# Из корня репозитория (Cargo-workspace)
 
 # 1.1. Проверь синтаксис и типы
-cargo check 2>&1 | tee /tmp/check1.log
+cargo check --workspace 2>&1 | tee /tmp/check1.log
 
 # 1.2. Если есть ошибки — исправь их ОДНУ ЗА ДРУГОЙ
 # После каждых 3-5 исправлений запускай cargo check снова
 
 # 1.3. Когда cargo check проходит — запусти clippy
-cargo clippy -- -D warnings 2>&1 | tee /tmp/clippy.log
+cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee /tmp/clippy.log
 
 # 1.4. Исправь все clippy warnings
 
@@ -118,7 +118,7 @@ cargo build
 cargo build --release
 
 # 2.3. Запусти тесты (если есть)
-cargo test
+cargo test --workspace
 ```
 
 ### Этап 3: Проверка Docker
@@ -331,7 +331,7 @@ uuid = { version = "1", features = ["v4"] }
 2. ...
 
 ## Проверки
-- [x] cargo check
+- [x] cargo check --workspace
 - [x] cargo clippy
 - [x] cargo fmt
 - [x] cargo build
@@ -391,6 +391,6 @@ uuid = { version = "1", features = ["v4"] }
 
 ## 🏁 НАЧАЛИ
 
-Готов? Начинай с `cargo check` в `rust-server/`.
+Готов? Начинай с `cargo check` в `crates/server/`.
 
 Удачи! 🚀

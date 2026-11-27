@@ -79,21 +79,20 @@ docs-check: ## Проверить документацию, переводы и 
 verify: lint test docs-check ## Локальная матрица
 	@echo "verify: ok (образ и compose проверяются в CI)"
 
-# --- Rust server (rust-server/) ---------------------------------------------
-RUST_DIR ?= rust-server
+# --- Rust workspace (crates/, xtask/) ----------------------------------------
 CARGO    ?= cargo
 
 rust-fmt: ## rustfmt --check
-	cd $(RUST_DIR) && $(CARGO) fmt --all -- --check
+	$(CARGO) fmt --all -- --check
 
-rust-check: ## cargo check --all-targets
-	cd $(RUST_DIR) && $(CARGO) check --all-targets --locked
+rust-check: ## cargo check --workspace --all-targets
+	$(CARGO) check --workspace --all-targets --locked
 
 rust-lint: ## clippy, warnings are errors
-	cd $(RUST_DIR) && $(CARGO) clippy --all-targets --locked -- -D warnings
+	$(CARGO) clippy --workspace --all-targets --locked -- -D warnings
 
 rust-test: ## cargo test
-	cd $(RUST_DIR) && $(CARGO) test --locked
+	$(CARGO) test --workspace --locked
 
 rust-verify: rust-fmt rust-check rust-lint rust-test ## Rust matrix
 

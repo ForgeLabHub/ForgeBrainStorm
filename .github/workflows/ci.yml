@@ -24,37 +24,42 @@ jobs:
     name: Rust formatting, build, Clippy and tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: rust-server
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned toolchain
+        # Keep in sync with rust-toolchain.toml; the next step fails loudly if it drifts.
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.89.0
           components: rustfmt, clippy
+      - name: Toolchain matches rust-toolchain.toml
+        run: |
+          want=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          got=$(rustc --version | awk '{print $2}')
+          echo "rust-toolchain.toml: $want / installed: $got"
+          [ "$want" = "$got" ] || { echo "::error::rust-toolchain.toml wants $want, CI installed $got"; exit 1; }
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust-server
+          workspaces: .
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Check all targets
-        run: cargo check --all-targets --locked
+        run: cargo check --workspace --all-targets --locked
       - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         # Tests that need a live database are #[ignore]d and require DATABASE_URL.
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
   security-audit:
     name: Security audit (cargo audit)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: rust-server
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.89.0
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run security audit
@@ -148,7 +153,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build the Rust server image
-        run: docker build -t brainstorm-rust:ci rust-server
+        run: docker build -f crates/server/Dockerfile -t brainstorm-rust:ci .
       - name: Run and probe /health
         run: |
           docker run -d --name brainstorm-rust-ci --network host \

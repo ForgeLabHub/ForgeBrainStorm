@@ -6,6 +6,20 @@ All notable changes to BrainStorm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- The Rust backend is a Cargo workspace: `rust-server/` moved to `crates/server/`
+  (same crate name, `brainstorm`), shared dependencies live in the root
+  `[workspace.dependencies]`, and `xtask/` adds `cargo xtask ci` — the exact
+  `fmt --check` + `clippy -D warnings` + `test` gate CI runs. Build artifacts move to
+  the repository-root `target/`; scripts, Makefile, Docker and compose files follow.
+- The toolchain is pinned in `rust-toolchain.toml` (1.89.0) and CI verifies the pin
+  instead of floating on `stable`. The previously declared `rust-version = "1.85"` was
+  wrong — `Cargo.lock` already required 1.89 (`uuid 1.29.3`), so the crate could not be
+  built on its stated MSRV. See `docs/adr/0001-cargo-workspace.md`.
+- `docs/ARCHITECTURE.md` maps every current module to its target crate and states the
+  layer rules; `.github/PULL_REQUEST_TEMPLATE.md` and issue templates encode the
+  review contract (one topic per PR, tests, changelog, docs).
+
 ### Added
 - Six game modes, driven by `domain::mode::GameMode` instead of string comparisons:
   `classic` (flat 100), `ffa` (speed-scaled 40…100), `lives` (three lives, last player

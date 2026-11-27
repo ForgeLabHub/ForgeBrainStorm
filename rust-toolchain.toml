@@ -1,0 +1,7 @@
+# Single source of truth for the compiler: `rustup` and CI both read this file.
+# 1.89 is the highest MSRV in Cargo.lock (uuid 1.29.3), verified with
+# `cargo metadata`; the previously declared 1.85 could not build the lockfile.
+[toolchain]
+channel = "1.89.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

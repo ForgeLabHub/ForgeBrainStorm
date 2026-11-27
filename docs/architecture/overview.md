@@ -1,6 +1,6 @@
 # Устройство продукта
 
-Карта актуальной системы: `rust-server/` + `frontend/`. Legacy-монолит Flask
+Карта актуальной системы: `crates/server/` + `frontend/`. Legacy-монолит Flask
 (`app/`) описан отдельно в [system-context.md](system-context.md) и в сборку
 продукта не входит.
 
@@ -13,7 +13,7 @@
 frontend/ (SvelteKit, adapter-node)
   │  проксирует /api и /ws на бэкенд
   ▼
-rust-server/ (axum + tokio + sqlx) :5000
+crates/server/ (axum + tokio + sqlx) :5000
   ├── PostgreSQL :5432   комнаты, пользователи, история, рейтинг
   └── Redis :6379        кэш ответов AI (опционально)
         │
@@ -22,7 +22,7 @@ rust-server/ (axum + tokio + sqlx) :5000
 ```
 
 Локально: `docker compose up -d postgres redis`, затем `cargo run` в
-`rust-server` и `npm run dev` в `frontend` ([BUILD.md](../../BUILD.md)).
+`cargo run -p brainstorm` в корне и `npm run dev` в `frontend` ([BUILD.md](../../BUILD.md)).
 
 ## Слои бэкенда
 
@@ -68,7 +68,7 @@ rust-server/ (axum + tokio + sqlx) :5000
 
 ## Конфигурация и секреты
 
-`rust-server/src/config.rs` собирает конфиг из `config/default.toml` и
+`crates/server/src/config.rs` собирает конфиг из `config/default.toml` и
 переменных с префиксом `BRAINSTORM_`, вложенность — через `__`
 (`BRAINSTORM__DEFAULT_AI_PROVIDER`). Обязательные ключи (`SECRET_KEY`,
 `ADMIN_SECRET_KEY`, `DATABASE_URL`) проверяются на старте, чтобы сервис падал

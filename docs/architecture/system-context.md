@@ -1,7 +1,7 @@
 # Контекст системы (legacy-монолит)
 
 > Документ описывает **legacy**-приложение Flask + Socket.IO (`app/`).
-> Актуальная система — `rust-server/` + `frontend/`:
+> Актуальная система — `crates/server/` + `frontend/`:
 > см. [overview.md](overview.md).
 
 ## Что это

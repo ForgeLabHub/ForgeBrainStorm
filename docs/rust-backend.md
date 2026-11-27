@@ -1,6 +1,6 @@
 # Rust-бэкенд: устройство и правила
 
-Бэкенд — `rust-server/`, около 4 700 строк: axum 0.7 + tokio, sqlx/PostgreSQL,
+Бэкенд — `crates/server/` (Cargo-workspace: корневой `Cargo.toml`, `crates/`, `xtask/`), около 4 700 строк: axum 0.7 + tokio, sqlx/PostgreSQL,
 собственный WebSocket-игровой цикл. Здесь описано, как он разрезан на слои и что
 можно менять, не ломая остальное.
 
