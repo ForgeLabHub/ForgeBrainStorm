@@ -18,6 +18,7 @@
 | Чем доказано, что работает | [verification/matrix.md](verification/matrix.md), CI |
 | Что исправлено при аудите | [audit/portability-audit-2026-10-29.md](audit/portability-audit-2026-10-29.md) |
 | Планы и изменения | [../ROADMAP.md](../ROADMAP.md), [../CHANGELOG.md](../CHANGELOG.md) |
+| Эксперименты (не в сборке) | [experimental/README.md](experimental/README.md) |
 
 ## Что актуально
 

@@ -19,6 +19,41 @@ env:
   PYTHON_VERSION: "3.12"
 
 jobs:
+  rust:
+    name: Rust formatting, build, Clippy and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust and verification components
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          cargo --version
+      - name: Verify Rust
+        run: make agent-verify
+
+  frontend:
+    name: Svelte type check and production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check Svelte and TypeScript
+        run: npm run check
+      - name: Build frontend
+        run: npm run build
+
   backend:
     name: Tests, lint and a runnable app
     runs-on: ubuntu-latest

@@ -170,6 +170,7 @@ python scripts/e2e-modes.py   # живая проверка режимов че�
 | `deploy/` | production-стек: PostgreSQL + backend + frontend + Caddy |
 | `docs/` | архитектура, API, БД, эксплуатация, безопасность, верификация |
 | `scripts/` | `docs-check`, `ws-check`, `e2e-modes`, вспомогательные скрипты |
+| `rust-server/experimental/` | прототипы из веток `arena/*` (RAG, DDA, Redis pub/sub, альтернативный WS-цикл) — **не в сборке**, см. [README](rust-server/experimental/README.md) |
 | `app/`, `templates/`, `static/`, `run.py` | **legacy**: старый Flask + Socket.IO монолит, оставлен для прежнего деплоя |
 
 ## Документация
