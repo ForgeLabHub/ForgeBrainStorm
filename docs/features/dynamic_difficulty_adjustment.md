@@ -280,4 +280,4 @@ Potential improvements for DDA:
 
 - [Flow Theory](https://en.wikipedia.org/wiki/Flow_(psychology)) - Psychological basis for DDA
 - [Dynamic Game Difficulty Balancing](https://en.wikipedia.org/wiki/Dynamic_game_difficulty_balancing) - Game design concept
-- [AI Question Generation](./ai_question_generation.md) - How DDA integrates with AI
+- [AI service](../modules/ai-service.md) - Question generation contract and behavior

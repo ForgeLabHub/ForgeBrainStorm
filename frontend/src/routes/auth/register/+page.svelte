@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 
 	let username = $state('');
-	let displayName = $state('');
 	let password = $state('');
 	let confirmPassword = $state('');
 	let error = $state('');
@@ -25,13 +24,13 @@
 		return { score: 100, label: 'Отличный', color: 'bg-emerald-500' };
 	}
 
-	$: passwordStrength = getPasswordStrength(password);
-	$: passwordsMatch = password === confirmPassword && confirmPassword.length > 0;
+	const passwordStrength = $derived(getPasswordStrength(password));
+	const passwordsMatch = $derived(password === confirmPassword && confirmPassword.length > 0);
 
 	async function handleSubmit() {
 		error = '';
 		
-		if (!username.trim() || !displayName.trim() || !password) {
+		if (!username.trim() || !password) {
 			error = 'Заполните все поля';
 			return;
 		}
@@ -41,14 +40,14 @@
 			return;
 		}
 
-		if (password.length < 8) {
-			error = 'Пароль должен быть не менее 8 символов';
+		if (password.length < 12 || password.length > 128) {
+			error = 'Пароль должен содержать от 12 до 128 символов';
 			return;
 		}
 
 		loading = true;
 		try {
-			const response = await api.register(username.trim(), displayName.trim(), password);
+			const response = await api.register(username.trim(), password);
 			if (response.ok) {
 				goto('/lobby');
 			} else {
@@ -90,17 +89,6 @@
 					/>
 				</div>
 
-				<div>
-					<label for="displayName" class="block text-sm font-medium text-slate-300 mb-2">Отображаемое имя</label>
-					<input
-						id="displayName"
-						type="text"
-						bind:value={displayName}
-						placeholder="Ваше имя"
-						class="input-modern w-full rounded-xl px-4 py-3 text-white placeholder-slate-600"
-						disabled={loading}
-					/>
-				</div>
 
 				<div>
 					<label for="password" class="block text-sm font-medium text-slate-300 mb-2">Пароль</label>

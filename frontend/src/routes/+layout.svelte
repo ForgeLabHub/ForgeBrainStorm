@@ -12,7 +12,7 @@
 	let mobileMenuOpen = $state(false);
 	let scrolled = $state(false);
 
-	onMount(async () => {
+	async function loadSession() {
 		try {
 			const response = await api.me();
 			if (response.user) {
@@ -23,10 +23,15 @@
 			// Not logged in
 		}
 
+	}
+
+	onMount(() => {
+		void loadSession();
 		// Track scroll for header effect
 		const handleScroll = () => {
 			scrolled = window.scrollY > 20;
 		};
+		handleScroll();
 		window.addEventListener('scroll', handleScroll);
 		return () => window.removeEventListener('scroll', handleScroll);
 	});

@@ -10,13 +10,8 @@
 	let joinError = $state('');
 	let joining = $state(false);
 
-<<<<<<< HEAD
 	onMount(() => {
 		void loadRooms();
-=======
-	onMount(async () => {
-		await loadRooms();
->>>>>>> 4808142 (Merge pull request #15 from ForgeLabHub/arena/ca3aa14f-forgebrainstorm)
 		const interval = setInterval(loadRooms, 5000);
 		return () => clearInterval(interval);
 	});

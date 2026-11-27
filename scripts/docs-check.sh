@@ -43,7 +43,7 @@ while IFS= read -r line; do
   case "$target" in http*|mailto:*|\#*|/*) continue ;; esac
   base="$(dirname "$file")"
   if [ ! -e "$base/$target" ] && [ ! -e "$target" ]; then bad "$file -> $target (битая ссылка)"; broken=$((broken+1)); fi
-done < <(grep -rnoE '\[[^]]*\]\([^)]+\)' --include='*.md' . 2>/dev/null)
+done < <(grep -rnoE '\[[^]]*\]\([^)]+\)' --exclude-dir=node_modules --exclude-dir=.svelte-kit --include='*.md' . 2>/dev/null)
 [ "$broken" -eq 0 ] && ok "битых относительных ссылок нет"
 
 printf '\nОтладочные артефакты\n'
