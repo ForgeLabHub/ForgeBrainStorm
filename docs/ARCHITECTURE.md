@@ -1,51 +1,148 @@
-# Архитектура ForgeBrainStorm
+# Карта архитектуры: текущее состояние → целевая структура
 
-## Текущее состояние → Целевая структура
+## Текущая структура (`rust-server/`)
 
-### Карта модулей
+```
+rust-server/
+├── src/
+│   ├── main.rs              # Entry point → server
+│   ├── config.rs            # Figment config → server
+│   ├── db.rs                # PgPool + migrations → server
+│   ├── error.rs             # AppError → server
+│   ├── middleware/          # auth, cors, rate_limit → server
+│   ├── routes/              # HTTP handlers → server
+│   │   ├── auth.rs
+│   │   ├── rooms.rs
+│   │   ├── ai.rs
+│   │   ├── leaderboard.rs
+│   │   ├── profile.rs
+│   │   ├── admin.rs
+│   │   └── health.rs
+│   ├── ws/                  # WebSocket game loop → server
+│   ├── domain/              # Pure logic (НО с I/O зависимостями!) → domain
+│   │   ├── room.rs
+│   │   ├── player.rs
+│   │   ├── mode.rs
+│   │   ├── power_up.rs
+│   │   ├── role.rs
+│   │   └── cheat.rs
+│   └── services/            # I/O and external systems
+│       ├── accounts.rs      → storage (postgres)
+│       ├── history.rs       → storage (postgres)
+│       ├── leaderboard.rs   → storage (postgres)
+│       ├── audit.rs         → storage (postgres)
+│       ├── questions.rs     → ai
+│       └── ai/              → ai
+│           ├── router.rs
+│           ├── cache.rs
+│           └── providers/
+│               ├── openai.rs
+│               ├── gigachat.rs
+│               └── ollama.rs
+├── migrations/              → migrations/ (workspace root)
+└── tests/                   → crates/server/tests/
+```
 
-| Текущий путь | Целевой crate | Обоснование |
-|--------------|---------------|-------------|
-| `rust-server/src/domain/*` | `crates/domain` | Чистая логика без I/O — основа системы |
-| `rust-server/src/services/ai/*` | `crates/ai` | AI-провайдеры, роутер, кэш, quality gate |
-| `rust-server/src/services/*` (остальные) | `crates/server/src/services` | Бизнес-логика, БД, аудит |
-| `rust-server/src/routes/*` | `crates/server/src/routes` | HTTP endpoints |
-| `rust-server/src/ws/*` | `crates/server/src/ws` | WebSocket game loop |
-| `rust-server/src/middleware/*` | `crates/server/src/middleware` | Auth, CORS, rate limit |
-| `rust-server/src/config.rs` | `crates/server/src/config.rs` | Конфигурация сервера |
-| `rust-server/src/error.rs` | `crates/server/src/error.rs` | AppError тип |
-| `rust-server/src/main.rs` | `crates/server/src/main.rs` | Entry point |
-| `rust-server/src/lib.rs` | `crates/server/src/lib.rs` | Library exports |
-| `rust-server/migrations/` | `migrations/` | SQL миграции (общие) |
-| НОВОЕ | `crates/protocol` | Общие типы: DTO, WS сообщения, ID newtypes, валидация |
-| НОВОЕ | `crates/storage` | Репозитории: Postgres, Redis |
-| НОВОЕ | `crates/cli` | CLI утилита `forge` |
-| НОВОЕ | `crates/loadtest` | Load tester |
-| НОВОЕ | `xtask/` | Cargo xtask для dev/bench/migrate |
+## Целевая структура (workspace)
 
-### Правила зависимостей
+```
+forgebrain/
+├── Cargo.toml               # [workspace], resolver 2
+├── rust-toolchain.toml      # pinned toolchain
+├── .cargo/config.toml       # aliases
+├── crates/
+│   ├── protocol/            # Общие типы (backend + wasm)
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── messages.rs  # WS-протокол (postcard-ready)
+│   │   │   ├── dto.rs       # request/response DTO
+│   │   │   ├── ids.rs       # newtype'ы: RoomCode, UserId, Qid
+│   │   │   └── validation.rs
+│   │   └── Cargo.toml
+│   │
+│   ├── domain/              # Чистая логика, БЕЗ tokio/axum/sqlx
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── room.rs
+│   │   │   ├── player.rs
+│   │   │   ├── mode.rs
+│   │   │   ├── powerup.rs
+│   │   │   └── scoring/
+│   │   └── Cargo.toml
+│   │
+│   ├── storage/             # Репозитории: Postgres, Redis
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── postgres/
+│   │   │   └── redis/
+│   │   └── Cargo.toml
+│   │
+│   ├── ai/                  # AI провайдеры + router + cache
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── router.rs
+│   │   │   ├── cache.rs
+│   │   │   ├── quality.rs
+│   │   │   └── providers/
+│   │   │       ├── openai.rs
+│   │   │       ├── gigachat.rs
+│   │   │       └── ollama.rs
+│   │   └── Cargo.toml
+│   │
+│   └── server/              # axum + ws + services (собирает всё)
+│       ├── src/
+│       │   ├── main.rs
+│       │   ├── config.rs
+│       │   ├── state.rs
+│       │   ├── error.rs
+│       │   ├── middleware/
+│       │   ├── routes/
+│       │   ├── ws/
+│       │   └── services/
+│       └── Cargo.toml
+│
+├── migrations/              # sqlx migrations (из rust-server/migrations)
+└── docs/
+    ├── ARCHITECTURE.md
+    ├── PROTOCOL.md
+    └── adr/
+```
+
+## Правила зависимостей
 
 ```
 protocol ← domain (только типы, никакого I/O)
 storage  ← domain, protocol
 ai       ← protocol (возвращает domain-типы)
 server   → domain, storage, ai, protocol
-cli      → server (dev), storage (migrate)
 ```
 
 **Запрещено:**
 - `domain` зависит от `tokio`/`axum`/`sqlx`/`redis`
 - `protocol` зависит от чего-либо внутри workspace (только serde/validator)
 
+## Карта миграции файлов
+
+| Текущий путь | Целевой crate | Обоснование |
+|--------------|---------------|-------------|
+| `rust-server/src/domain/*` | `crates/domain` | Чистая логика, но нужно убрать I/O зависимости |
+| `rust-server/src/services/ai/*` | `crates/ai` | AI провайдеры, router, cache |
+| `rust-server/src/services/{accounts,history,leaderboard,audit}.rs` | `crates/storage` | Postgres репозитории |
+| `rust-server/src/routes/*` | `crates/server` | HTTP handlers |
+| `rust-server/src/ws/*` | `crates/server` | WebSocket game loop |
+| `rust-server/src/middleware/*` | `crates/server` | Auth, CORS, rate limit |
+| `rust-server/src/config.rs` | `crates/server` | Конфигурация |
+| `rust-server/src/error.rs` | `crates/server` | AppError |
+| `rust-server/src/main.rs` | `crates/server` | Entry point |
+| `rust-server/migrations/*` | `migrations/` | SQL миграции (workspace root) |
+
 ## Фазы миграции
 
 ### Phase 1: Workspace skeleton (ПР-1.1)
-- Создать `crates/`, `xtask/`
-- Перенести `rust-server/` → `crates/server/`
-- Workspace `Cargo.toml` с resolver = "2"
-- `rust-toolchain.toml` (фиксированный toolchain)
-- `.cargo/config.toml` (алиасы)
-- CI обновлён для workspace
+- ✅ Создать `crates/`, `xtask/`
+- ✅ Перенести `rust-server/` → `crates/server/`
+- ✅ Workspace `Cargo.toml`, `rust-toolchain.toml`, `.cargo/config.toml`
+- ✅ CI обновлён
 - **Никакой логики не двигаем**
 
 ### Phase 2: Extract protocol (ПР-1.2)
@@ -54,71 +151,39 @@ cli      → server (dev), storage (migrate)
 - Тесты сериализации (roundtrip)
 
 ### Phase 3: Extract domain (ПР-1.3)
-- Room, Player, GameMode, PowerUp, scoring
+- Room, Player, GameMode, PowerUp
+- **Убрать I/O зависимости из domain**
 - `#![deny(clippy::unwrap_used)]`
 - Property-based тесты (proptest)
-- Snapshot тесты (insta)
 
-### Phase 4: Performance (ПР-1.4)
-- Release profile оптимизации
+### Phase 4: Extract storage (ПР-2.1)
+- accounts, history, leaderboard, audit → `crates/storage`
+- Postgres + Redis repositories
+
+### Phase 5: Extract ai (ПР-4.x)
+- AI providers, router, cache → `crates/ai`
+
+### Phase 6: Performance (ПР-1.4)
+- Release profile optimizations
 - mimalloc global allocator
-- Criterion бенчи
-- CI bench job с порогом регрессии
+- Criterion benchmarks
 
-### Phase 5: Persistence (ПР-2.x)
-- Redis room store с rkyv snapshots
-- Redis Streams для events + resume
-- Graceful shutdown + reconnect
-- WS binary protocol (postcard)
+## Проблемы текущего `domain/`
 
-### Phase 6: Security & Observability (ПР-3.x)
-- CSRF + strict cookies
-- Answer rate-limit + server-side timing
-- Prometheus metrics + /metrics
-- Health endpoints (/livez, /readyz)
-- Audit log expansion
-- cargo-audit + cargo-deny в CI
+Текущий `domain/` **не является чисто domain слоем**:
+- `room.rs` имеет зависимости на `tokio::time::Instant`
+- `player.rs` имеет `outbox: Option<tokio::sync::mpsc::Sender<String>>`
+- `mode.rs` имеет зависимости на `serde_json::Value`
 
-### Phase 7: AI improvements (ПР-4.x)
-- Dedup via fastembed
-- Quality gate + token tracker
-- SSE streaming generation
-- L1/L2/L3 cache
-
-### Phase 8: Quiz features (ПР-5.x)
-- QuestionKind (multi/truefalse/numeric)
-- Per-question stats + podium
-- Share-PNG via resvg
-- Spectator role
-- Emote bar + reactions
-
-## Принципы
-
-1. **Один PR = одна тема** — не смешивать рефакторинг с фичами
-2. **Тесты обязательны** — новая логика без тестов не принимается
-3. **Никаких unwrap()/expect()** в prod-коде (кроме main и тестов)
-4. **Документировать pub API** — `///` на pub элементах
-5. **Conventional Commits** — feat:, fix:, refactor:, perf:, test:, docs:, chore:, build:, ci:
-6. **Feature flags** — ломающие изменения за `#[cfg(feature = "...")]`
-7. **Обоснование зависимостей** — каждый новый crate в описании PR
-
-## Definition of Done (каждый PR)
-
-- [ ] `cargo build --workspace` зелёный
-- [ ] `cargo test --workspace` зелёный
-- [ ] `cargo clippy --workspace -- -D warnings` зелёный
-- [ ] `cargo fmt --check` зелёный
-- [ ] Coverage не упал
-- [ ] Публичный API задокументирован
-- [ ] Обновлён CHANGELOG.md
-- [ ] Обновлены docs/ при изменении поведения
+**Решение в PR-1.3:**
+1. Заменить `Instant` на `Duration` или собственный тип
+2. Заменить `mpsc::Sender` на trait или event queue
+3. Вынести JSON serialization в `protocol` crate
 
 ## Метрики успеха
 
 - **Domain coverage**: ≥85%
 - **Server routes coverage**: ≥70%
-- **WS echo p99**: <5ms
-- **SubmitAnswer p99**: <500µs
-- **Concurrent WS**: 20k на 8 vCPU
-- **RAM/room**: <20KB
+- **Workspace builds**: все crates компилируются независимо
+- **Test time**: <30s для всего workspace
 - **Cold start**: <150ms
