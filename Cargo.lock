@@ -240,6 +240,7 @@ dependencies = [
  "dashmap",
  "dotenvy",
  "figment",
+ "forgebrain-protocol",
  "futures",
  "hmac",
  "http",
@@ -261,6 +262,17 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "validator",
+]
+
+[[package]]
+name = "forgebrain-protocol"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
 ]
 
 [[package]]
