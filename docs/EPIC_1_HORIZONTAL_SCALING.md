@@ -28,7 +28,7 @@ Epic 1 реализует полную поддержку горизонталь
 - Health check интеграция
 
 **Документация:**
-- [Redis Client Documentation](../../rust-server/src/infrastructure/README.md)
+- [Redis Client Documentation](../rust-server/src/infrastructure/README.md)
 
 ### 2. Redis Pub/Sub (PR #15)
 
@@ -55,7 +55,7 @@ Instance A                  Redis                  Instance B
 ```
 
 **Документация:**
-- [Pub/Sub Documentation](../../rust-server/src/infrastructure/PUBSUB.md)
+- [Pub/Sub Documentation](../rust-server/src/infrastructure/PUBSUB.md)
 
 ### 3. Distributed Session Cache (PR #16)
 
@@ -91,7 +91,7 @@ Instance A                  Redis                  Instance B
 - Shared knowledge base
 
 **Документация:**
-- [Distributed Cache Documentation](../../rust-server/src/services/ai/DISTRIBUTED_CACHE.md)
+- [Distributed Cache Documentation](../rust-server/src/services/ai/DISTRIBUTED_CACHE.md)
 
 ## Архитектура
 
@@ -351,8 +351,8 @@ curl http://localhost:5001/readyz | jq
 
 ## Связанные документы
 
-- [Redis Client Documentation](../../rust-server/src/infrastructure/README.md)
-- [Pub/Sub Documentation](../../rust-server/src/infrastructure/PUBSUB.md)
-- [Distributed Cache Documentation](../../rust-server/src/services/ai/DISTRIBUTED_CACHE.md)
-- [Deployment Guide](../operations/deployment.md)
-- [Monitoring Guide](../operations/monitoring.md)
+- [Redis Client Documentation](../rust-server/src/infrastructure/README.md)
+- [Pub/Sub Documentation](../rust-server/src/infrastructure/PUBSUB.md)
+- [Distributed Cache Documentation](../rust-server/src/services/ai/DISTRIBUTED_CACHE.md)
+- [Deployment Guide](./operations/deployment.md)
+- [Monitoring Guide](./operations/monitoring.md)

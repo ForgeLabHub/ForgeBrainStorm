@@ -217,4 +217,4 @@ maxmemory-policy allkeys-lru
 
 - [Redis Client Documentation](../../infrastructure/README.md)
 - [AI Router Documentation](./router.rs)
-- [Epic 1: Horizontal Scaling](../../docs/EPIC_1_HORIZONTAL_SCALING.md)
+- [Epic 1: Horizontal Scaling](../../../../docs/EPIC_1_HORIZONTAL_SCALING.md)
