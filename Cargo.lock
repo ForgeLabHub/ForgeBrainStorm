@@ -240,7 +240,6 @@ dependencies = [
  "dashmap",
  "dotenvy",
  "figment",
- "forgebrain-protocol",
  "futures",
  "hmac",
  "http",
