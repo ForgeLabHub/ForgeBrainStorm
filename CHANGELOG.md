@@ -7,6 +7,26 @@ All notable changes to BrainStorm are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Six game modes, driven by `domain::mode::GameMode` instead of string comparisons:
+  `classic` (flat 100), `ffa` (speed-scaled 40…100), `lives` (three lives, last player
+  standing ends the round), `blitz` (forced 10-second clock, streak multiplier up to ×2),
+  `team` (alternating seats, team totals in `game_over`) and `sandbox` (unranked practice,
+  nothing written to the leaderboard, history or XP). `POST /api/rooms` validates the mode
+  and lists the accepted values in the error; legacy aliases (`survival`, `teams`,
+  `practice`) still work.
+- `scripts/e2e-modes.py`: plays real games over the HTTP + WebSocket API and asserts the
+  mode rules — team seating and totals, elimination at zero lives, the forced blitz clock,
+  and that a training game leaves `games_played` untouched.
+
+### Changed
+- `README.md` rewritten for the stack that actually ships (Rust/axum + SvelteKit +
+  PostgreSQL): modes table, verified quick start, environment reference, API/WS summary,
+  and an honest note that `app/`, `templates/`, `run.py` are the legacy Flask monolith.
+- `docs/game-modes.md` and `docs/rust-backend.md` added: mode formulas and edge cases,
+  backend layering, WebSocket game loop and extension recipes.
+- «Команды» is playable, so the «скоро» badge and the disabled radio are gone from the
+  room-creation picker.
+
 - AI questions through OpenRouter, the default provider: `OPENROUTER_API_KEY` from the
   environment (or `.env`) is picked up at boot, and the question card names the provider
   that wrote the round («ИИ · openrouter»); with no key the room falls back to the offline

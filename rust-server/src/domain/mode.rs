@@ -13,10 +13,11 @@ pub const SURVIVAL_LIVES: u8 = 3;
 pub const TEAM_NAMES: [&str; 2] = ["Синие", "Красные"];
 
 /// The modes a room can be played in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GameMode {
     /// Everyone answers at once, a flat 100 points per correct answer.
+    #[default]
     Classic,
     /// Free-for-all: the faster the answer, the more it is worth.
     FreeForAll,
@@ -28,12 +29,6 @@ pub enum GameMode {
     Team,
     /// Practice: no lives, no persistence, nothing on the leaderboard.
     Sandbox,
-}
-
-impl Default for GameMode {
-    fn default() -> Self {
-        Self::Classic
-    }
 }
 
 impl GameMode {

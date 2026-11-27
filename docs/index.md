@@ -5,6 +5,9 @@
 | Вопрос | Документ |
 | --- | --- |
 | Запустить с нуля | [../BUILD.md](../BUILD.md) |
+| Что уже работает и как играть | [../README.md](../README.md) |
+| Правила режимов игры | [game-modes.md](game-modes.md) |
+| Как устроен Rust-бэкенд | [rust-backend.md](rust-backend.md) |
 | Понять устройство | [architecture/system-context.md](architecture/system-context.md) |
 | Где лежат данные | [database/storage.md](database/storage.md) |
 | API и ошибки | [api/conventions.md](api/conventions.md) |
@@ -15,6 +18,17 @@
 | Чем доказано, что работает | [verification/matrix.md](verification/matrix.md), CI |
 | Что исправлено при аудите | [audit/portability-audit-2026-10-29.md](audit/portability-audit-2026-10-29.md) |
 | Планы и изменения | [../ROADMAP.md](../ROADMAP.md), [../CHANGELOG.md](../CHANGELOG.md) |
+
+## Что актуально
+
+Продукт — `rust-server/` (axum + tokio + sqlx, WebSocket-игровой цикл) и
+`frontend/` (SvelteKit). Их документация: [rust-backend.md](rust-backend.md),
+[game-modes.md](game-modes.md), [modules/](modules/), [api/conventions.md](api/conventions.md).
+
+`app/`, `templates/`, `static/`, `run.py`, `wsgi.py` и корневой `Dockerfile` —
+**legacy**-монолит Flask + Socket.IO. Он остаётся в репозитории ради старого
+деплоя; новые фичи туда не добавляются. Часть документов в `modules/` описывает
+именно его — сверяйтесь с кодом `rust-server/`, если сомневаетесь.
 
 ## Правила
 
