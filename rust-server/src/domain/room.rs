@@ -151,6 +151,35 @@ impl Room {
         }
     }
 
+    /// Take the room into a new game. A waiting room starts as it is; a finished
+    /// one is wiped first, so the host can run another round without the players
+    /// rejoining. Anything in between is refused — a mid-game call would let the
+    /// host erase the scores being played for.
+    pub fn begin(&mut self) -> bool {
+        match self.state {
+            RoomState::Waiting => {}
+            RoomState::Finished => self.reset_for_rematch(),
+            _ => return false,
+        }
+        self.state = RoomState::Starting;
+        true
+    }
+
+    /// Clear the previous game and put the room back in `Waiting`.
+    pub fn reset_for_rematch(&mut self) {
+        self.state = RoomState::Waiting;
+        self.questions.clear();
+        self.current_q = 0;
+        self.started_at = None;
+        self.deadline = None;
+        // Bump the token so any in-flight timer becomes a no-op.
+        self.question_token += 1;
+        for player in self.players.values_mut() {
+            player.reset_for_new_game();
+        }
+        self.touch();
+    }
+
     pub fn all_answered(&self) -> bool {
         self.players
             .values()
@@ -301,4 +330,54 @@ fn gen_code() -> String {
             (b'A' + idx) as char
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::player::Player;
+
+    fn room_with_player(score: i64) -> Room {
+        let settings = RoomSettings {
+            topic: "Космос".into(),
+            ..RoomSettings::default()
+        };
+        let mut room = Room::new("TEST01".into(), 1, "host".into(), settings);
+        let mut player = Player::new("sid".into(), "host".into(), Some(1), Some("host".into()));
+        player.score = score;
+        room.players.insert("sid".into(), player);
+        room.questions = vec![serde_json::json!({"question": "q"})];
+        room
+    }
+
+    #[test]
+    fn a_finished_room_can_play_again_from_zero() {
+        let mut room = room_with_player(900);
+        room.state = RoomState::Finished;
+
+        assert!(room.begin());
+        assert_eq!(room.state, RoomState::Starting);
+        assert_eq!(room.players["sid"].score, 0);
+        assert!(room.questions.is_empty());
+        assert_eq!(room.current_q, 0);
+        assert!(room.started_at.is_none());
+    }
+
+    #[test]
+    fn a_running_game_cannot_be_restarted_under_the_players() {
+        let mut room = room_with_player(300);
+        room.state = RoomState::Playing;
+
+        assert!(!room.begin());
+        assert_eq!(room.state, RoomState::Playing);
+        assert_eq!(room.players["sid"].score, 300);
+    }
+
+    #[test]
+    fn a_second_start_on_a_starting_room_is_refused() {
+        let mut room = room_with_player(0);
+        room.state = RoomState::Starting;
+
+        assert!(!room.begin());
+    }
 }

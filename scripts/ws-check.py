@@ -38,9 +38,10 @@ FAILURES: list[str] = []
 class Client:
     def __init__(self, name, base):
         self.name = name
+        self.cookie = self.session()
         self.ws = websocket.create_connection(
             base.replace("http://", "ws://").replace("https://", "wss://") + "/ws",
-            header=[f"Cookie: {self.session()}"],
+            header=[f"Cookie: {self.cookie}"],
             timeout=120,
         )
         self.msgs = []
@@ -157,6 +158,11 @@ def main():
     global BASE
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=BASE)
+    parser.add_argument(
+        "--rematch",
+        action="store_true",
+        help="also play a full game and start another one in the same room (~90 s)",
+    )
     args = parser.parse_args()
     BASE = args.base.rstrip("/")
 
@@ -283,11 +289,83 @@ def main():
     error = host.wait("error")["data"]["message"]
     check("spending an empty hand is refused", "нет в запасе" in error, error)
 
+    if args.rematch:
+        rematch(host, guest)
+
     if FAILURES:
         print(f"ws-check: {len(FAILURES)} failure(s): {FAILURES}")
         return 1
     print("ws-check: all checks passed")
     return 0
+
+
+def wait_zero_scores(client, timeout=20):
+    end = time.time() + timeout
+    seen = []
+    while time.time() < end:
+        try:
+            players = client.wait("players_updated", timeout=max(1, end - time.time()))
+        except AssertionError:
+            break
+        seen.append({p["name"]: p["score"] for p in players["data"]["players"]})
+        if all(score == 0 for score in seen[-1].values()):
+            return True, seen
+    return False, seen
+
+
+def rematch(host, guest):
+    """A finished room must be playable again without anyone rejoining."""
+    print("rematch")
+    room = api(
+        "/api/rooms",
+        {
+            "topic": "Общие знания",
+            "question_count": 5,
+            "options": 4,
+            "timer_seconds": 10,
+            "difficulty": "easy",
+            "mode": "classic",
+        },
+        cookie=host.cookie,
+    )
+    code = room["room"]["code"]
+    for client in (host, guest):
+        client.drain()
+        client.send("join_room", {"code": code})
+        client.wait("room_joined")
+    host.send("start_game", {})
+
+    first = host.wait("question_emitted", timeout=90)["data"]["question"]
+    host.send("use_power_up", {"power_up": "double_points"})
+    index = answer_index(first)
+    if index is None:
+        print("  [skip] rematch score check: answer unknown")
+        return
+    host.send("submit_answer", {"answer_index": index})
+
+    over = host.wait("game_over", timeout=150)["data"]["scores"]
+    check(
+        "the game ends with the doubled score",
+        {p["name"]: p["score"] for p in over}.get("wscheck") == 200,
+        over,
+    )
+
+    host.drain()
+    guest.drain()
+    host.send("start_game", {})
+    check("the same room starts another game", host.wait("game_preparing") is not None)
+    hand = host.wait("power_ups")["data"]["items"]
+    check(
+        "a fresh hand is dealt",
+        sorted(hand) == ["double_points", "freeze_time", "remove_two_options"],
+        hand,
+    )
+    # The leaderboard of the finished game is still in flight, so read until a
+    # snapshot actually shows the reset instead of trusting the first one.
+    ok, seen = wait_zero_scores(host)
+    check("scores are back to zero", ok, seen)
+    again = host.wait("question_emitted", timeout=90)["data"]
+    check("the new game starts from the first question", again["index"] == 0, again["index"])
 
 
 if __name__ == "__main__":

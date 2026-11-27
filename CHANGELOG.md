@@ -16,6 +16,10 @@ All notable changes to BrainStorm are documented here. The format is based on
   events (their own hand, the two crossed-out options) that other players cannot read.
   Scoring moved to `Player::award`, so the "correct answer = 100, doubled = 200" rule is
   unit-tested instead of living in the socket handler.
+- «Играть снова» works: a finished room can start another game in place — scores,
+  streaks, lives and hands reset, a new question set is generated, everyone stays
+  connected. Only the host can do it, and only from the finished screen; a mid-game
+  call is refused so the host cannot wipe a score that is still being played for.
 - A room now plays exactly the number of questions the host asked for: providers
   routinely answer with ten regardless of the request, so the count is trimmed before
   the first question goes out (`fit_count`, unit-tested).

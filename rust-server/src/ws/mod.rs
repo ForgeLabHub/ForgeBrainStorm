@@ -175,7 +175,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     continue;
                 };
 
-                let (is_host, topic, count, difficulty, num_options, waiting) = {
+                let (is_host, topic, count, difficulty, num_options) = {
                     let room = room.read();
                     (
                         room.host_user_id == auth.user_id,
@@ -183,7 +183,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         room.settings.question_count,
                         room.settings.difficulty.clone(),
                         room.settings.num_options,
-                        room.state == RoomState::Waiting,
                     )
                 };
 
@@ -194,7 +193,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     );
                     continue;
                 }
-                if !waiting || !room.write().try_start() {
+                if !room.write().begin() {
                     send_json(
                         &out_tx,
                         json!({"type": "error", "data": {"message": "Игра уже началась"}}),
@@ -421,20 +420,12 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     if room.host_user_id != auth.user_id {
                         continue;
                     }
-                    room.state = RoomState::Waiting;
-                    room.questions.clear();
-                    room.current_q = 0;
-                    room.started_at = None;
-                    // Bump the token so any in-flight timer becomes a no-op.
-                    room.question_token += 1;
-                    room.deadline = None;
-                    for player in room.players.values_mut() {
-                        player.reset_for_new_game();
+                    room.reset_for_rematch();
+                    for player in room.players.values() {
                         if let Some(outbox) = player.outbox.as_ref() {
                             let _ = outbox.send(power_ups_event(&player.power_ups));
                         }
                     }
-                    room.touch();
                     Some(players_event(&room))
                 };
                 if let Some(event) = players {

@@ -134,9 +134,10 @@
 		ws.on('game_over', (data: any) => {
 			gamePhase = 'finished';
 			stopTimer();
-			if (data?.final_leaderboard) {
-				finalLeaderboard = data.final_leaderboard;
-				players = data.final_leaderboard.map((p: any) => ({
+			const board = data?.final_leaderboard ?? data?.scores;
+			if (board) {
+				finalLeaderboard = board;
+				players = board.map((p: any) => ({
 					name: p.name ?? p.username,
 					score: p.score,
 					is_host: false,
@@ -443,12 +444,16 @@
 							<a href="/lobby" class="rounded-xl bg-white/5 border border-white/10 px-6 py-3 font-medium text-white hover:bg-white/10 transition-all">
 								В лобби
 							</a>
-							<button onclick={startGame} class="relative group">
-								<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur-md opacity-40 group-hover:opacity-70 transition-opacity"></div>
-								<div class="relative rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-3 font-medium text-white">
-									Играть снова
-								</div>
-							</button>
+							{#if isHost}
+								<button onclick={startGame} class="relative group">
+									<div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur-md opacity-40 group-hover:opacity-70 transition-opacity"></div>
+									<div class="relative rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-3 font-medium text-white">
+										Играть снова
+									</div>
+								</button>
+							{:else}
+								<p class="self-center text-sm text-slate-400">Новую игру начнёт хост — останьтесь в комнате</p>
+							{/if}
 						</div>
 					</div>
 				</div>

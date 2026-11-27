@@ -15,7 +15,7 @@ BASE_URL     ?= http://localhost:$(PORT)
 .PHONY: help doctor install install-dev run test lint coverage build-image \
         compose-up compose-down compose-logs smoke-test docs-check docs-pdf lock verify clean \
         rust-fmt rust-check rust-lint rust-test rust-verify frontend-check agent-verify agent-verify-all \
-        ws-check
+        ws-check ws-check-full
 
 help: ## Список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -65,6 +65,9 @@ smoke-test: ## Проверить живой инстанс
 
 ws-check: ## Прогнать WebSocket-протокол игры на живом инстансе (нужен websocket-client)
 	@$(PYTHON) scripts/ws-check.py --base $(BASE_URL)
+
+ws-check-full: ## То же + полная партия и повторная игра в той же комнате (~90 с)
+	@$(PYTHON) scripts/ws-check.py --base $(BASE_URL) --rematch
 
 docs-pdf: ## Собрать PDF документации (оба языка)
 	$(PYTHON) tools/docs_pdf.py
