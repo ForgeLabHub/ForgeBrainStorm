@@ -10,9 +10,11 @@ COPY Cargo.toml Cargo.lock* ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release && rm -rf src
 
-# Copy real source and build.
+# Copy real source and build. config/ is required at compile time:
+# config.rs embeds ../config/default.toml with include_str!.
 COPY src/ src/
 COPY migrations/ migrations/
+COPY config/ config/
 RUN touch src/main.rs && cargo build --release
 
 # ── Runtime ───────────────────────────────────────────────────
