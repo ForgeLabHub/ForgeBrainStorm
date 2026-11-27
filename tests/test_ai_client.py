@@ -165,3 +165,20 @@ class TestFallbackBank:
 class TestBackendReporting:
     def test_active_backend_without_credentials(self):
         assert "Fallback" in ai_client.active_backend()
+
+
+class TestExpandedFallbackBank:
+    @pytest.mark.parametrize("num_options", [2, 3, 4, 5, 6])
+    def test_preserves_each_correct_answer_and_source_bank(self, num_options):
+        original = {q["question"]: tuple(q["options"]) for q in ai_client.FALLBACK_QUESTIONS}
+        expected = {q["question"]: q["options"][q["correct"]] for q in ai_client.FALLBACK_QUESTIONS}
+        questions = ai_client._get_fallback_questions(len(original), num_options)
+        assert len(questions) == len(original)
+        for question in questions:
+            assert len(set(question["options"])) == num_options
+            assert question["options"][question["correct"]] == expected[question["question"]]
+        assert original == {q["question"]: tuple(q["options"]) for q in ai_client.FALLBACK_QUESTIONS}
+
+    def test_longest_offline_round_has_50_distinct_questions(self):
+        questions = ai_client.generate_questions("разные темы", 50, "medium", 4)
+        assert len(questions) == len({ai_client.question_hash(q) for q in questions}) == 50

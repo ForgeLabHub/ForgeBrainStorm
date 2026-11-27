@@ -8,6 +8,8 @@ Optional generation of questions and hints through GigaChat. Without a key the m
 disabled and the offline question bank is used.
 It does not sit on the critical path of the game and keeps no secrets in code.
 
+The Flask fallback bank supports up to 50 distinct questions in a fresh round. Reducing the option count preserves the correct answer. This is a general-purpose bank, not a topic-specific generator.
+
 ## 2. Use scenarios
 
 - Requesting questions for a campaign topic.

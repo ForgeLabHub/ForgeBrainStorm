@@ -485,23 +485,24 @@ def generate_questions(topic: str, count: int, difficulty: str, num_options: int
 def _get_fallback_questions(count: int, num_options: int, seen: set | None = None) -> list[dict]:
     """Return up to ``count`` questions from the curated local bank."""
     seen = seen if seen is not None else set()
-    pool = [dict(q) for q in FALLBACK_QUESTIONS]
+    pool = list(FALLBACK_QUESTIONS)
     random.shuffle(pool)
     result: list[dict] = []
-    for candidate in pool:
+    for source in pool:
         if len(result) >= count:
             break
-        options = list(candidate["options"])
-        while len(options) < num_options:
-            options.append(f"Вариант {len(options) + 1}")
-        candidate = dict(candidate)
-        candidate["options"] = options[:num_options]
-        candidate["correct"] = min(int(candidate.get("correct", 0)), num_options - 1)
+        digest = question_hash(source)
+        if digest in seen:
+            continue
+        options = list(source["options"][:num_options])
+        correct = source["correct"]
+        if correct >= len(options):
+            # Keep the true answer when the host asks for fewer choices.
+            options[-1] = source["options"][correct]
+            correct = len(options) - 1
+        candidate = {**source, "options": options, "correct": correct}
         normalised = normalise_question(candidate, num_options)
         if not normalised:
-            continue
-        digest = question_hash(normalised)
-        if digest in seen:
             continue
         seen.add(digest)
         result.append(normalised)
@@ -540,7 +541,7 @@ FALLBACK_QUESTIONS: list[dict] = [
     {"question": "Основной газ атмосферы Земли?", "options": ["Кислород", "Углекислый газ", "Аргон", "Азот"], "correct": 3, "explanation": "Азот ~78%."},
     {"question": "Самый лёгкий металл?", "options": ["Алюминий", "Магний", "Литий", "Натрий"], "correct": 2, "explanation": "Литий 0.53 г/см³."},
     {"question": "В каком году человек впервые полетел в космос?", "options": ["1957", "1959", "1961", "1965"], "correct": 2, "explanation": "Гагарин 12 апреля 1961."},
-    {"question": "Самая длинная река в мире?", "options": ["Амазонка", "Нил", "Янцзы", "Миссисипи"], "correct": 1, "explanation": "Нил ~6670 км."},
+    {"question": "Какая река протекает через Каир?", "options": ["Амазонка", "Нил", "Янцзы", "Миссисипи"], "correct": 1, "explanation": "Каир расположен на берегах Нила."},
     {"question": "Сколько костей у взрослого человека?", "options": ["186", "206", "226", "246"], "correct": 1, "explanation": "206 костей."},
     {"question": "Столица Японии?", "options": ["Осака", "Киото", "Токио", "Иокогама"], "correct": 2, "explanation": "Токио с 1869."},
     {"question": "Кто написал «Мастер и Маргарита»?", "options": ["Пастернак", "Булгаков", "Есенин", "Ахматова"], "correct": 1, "explanation": "Булгаков (1928-1940)."},
@@ -572,4 +573,20 @@ FALLBACK_QUESTIONS: list[dict] = [
     {"question": "Кто первым совершил кругосветное плавание?", "options": ["Колумб", "Васко да Гама", "Магеллан-Элькано", "Дрейк"], "correct": 2, "explanation": "Магеллан-Элькано 1522."},
     {"question": "Что означает www?", "options": ["Wide Web World", "World Wide Web", "Web World Wide", "Wire Web World"], "correct": 1, "explanation": "World Wide Web 1989."},
     {"question": "Основной орган кровообращения?", "options": ["Печень", "Лёгкие", "Сердце", "Почки"], "correct": 2, "explanation": "Сердце."},
+    {"question": "Какая страна подарила США Статую Свободы?", "options": ["Канада", "Франция", "Италия", "Испания"], "correct": 1, "explanation": "Французский монумент открыли в Нью-Йорке в 1886 году."},
+    {"question": "Как называется граница чёрной дыры, за которой свет уже не может уйти наружу?", "options": ["Горизонт событий", "Орбита", "Магнитосфера", "Фотосфера"], "correct": 0, "explanation": "Сигнал изнутри горизонта событий не достигает внешнего наблюдателя."},
+    {"question": "Какой инструмент измеряет атмосферное давление?", "options": ["Анемометр", "Гигрометр", "Барометр", "Термометр"], "correct": 2, "explanation": "Барометр измеряет давление воздуха."},
+    {"question": "Какой элемент обозначают символом W?", "options": ["Ванадий", "Вольфрам", "Висмут", "Водород"], "correct": 1, "explanation": "Символ W происходит от названия Wolfram."},
+    {"question": "Какое озеро самое глубокое в мире?", "options": ["Танганьика", "Байкал", "Титикака", "Виктория"], "correct": 1, "explanation": "Максимальная глубина Байкала — около 1642 м."},
+    {"question": "Кто написал цикл концертов «Времена года» для скрипки?", "options": ["Бах", "Гендель", "Вивальди", "Гайдн"], "correct": 2, "explanation": "Антонио Вивальди создал четыре концерта, по одному на каждый сезон."},
+    {"question": "Как называется японская поэтическая форма, традиционно построенная по схеме 5–7–5?", "options": ["Сонет", "Хайку", "Ода", "Баллада"], "correct": 1, "explanation": "В японском хайку схема относится к звуковым единицам он, а не строго к слогам."},
+    {"question": "Какой шахматной фигурой выполняют ход буквой Г?", "options": ["Слон", "Пешка", "Ладья", "Конь"], "correct": 3, "explanation": "Конь движется на две клетки вдоль одной оси и на одну вдоль другой."},
+    {"question": "В каком виде спорта используют волан?", "options": ["Теннис", "Сквош", "Бадминтон", "Падел"], "correct": 2, "explanation": "В бадминтоне ракеткой ударяют по волану."},
+    {"question": "Какая структура данных работает по принципу «последним пришёл — первым вышел»?", "options": ["Очередь", "Стек", "Множество", "Граф"], "correct": 1, "explanation": "У стека добавление и извлечение происходят с одной стороны."},
+    {"question": "Сколько разных значений можно записать одним байтом из восьми бит?", "options": ["64", "128", "255", "256"], "correct": 3, "explanation": "Восемь двоичных разрядов дают 2⁸ = 256 комбинаций."},
+    {"question": "Кто создал картину «Звёздная ночь», написанную в 1889 году?", "options": ["Клод Моне", "Поль Сезанн", "Винсент ван Гог", "Эдгар Дега"], "correct": 2, "explanation": "Ван Гог написал полотно во время пребывания в Сен-Реми."},
+    {"question": "В какой стране находится древний город Петра?", "options": ["Египет", "Иордания", "Греция", "Турция"], "correct": 1, "explanation": "Петра — древний набатейский город на юге Иордании."},
+    {"question": "Какой древнегреческий бог считался покровителем кузнецов?", "options": ["Гермес", "Аполлон", "Гефест", "Посейдон"], "correct": 2, "explanation": "Гефест связан с огнём, ковкой и ремеслом."},
+    {"question": "Какая планета вращается вокруг своей оси быстрее остальных планет Солнечной системы?", "options": ["Марс", "Земля", "Юпитер", "Нептун"], "correct": 2, "explanation": "Юпитер совершает оборот примерно за десять часов."},
+    {"question": "Какое явление создаёт цветные полосы на тонкой мыльной плёнке?", "options": ["Интерференция света", "Тепловое излучение", "Магнитная индукция", "Испарение воды"], "correct": 0, "explanation": "Лучам, отражённым от двух поверхностей плёнки, свойственно усиливать или ослаблять друг друга."},
 ]

@@ -7,6 +7,8 @@ All notable changes to BrainStorm are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- Expanded the Flask offline question bank with 16 new questions. Reduced-choice
+  rounds now retain the correct answer instead of grading a distractor as correct.
 - The Rust backend is a Cargo workspace: `rust-server/` moved to `crates/server/`
   (same crate name, `brainstorm`), shared dependencies live in the root
   `[workspace.dependencies]`, and `xtask/` adds `cargo xtask ci` — the exact
