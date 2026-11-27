@@ -22,7 +22,7 @@ use super::{
     AiCapability, AiError, AiProvider, GenerationRequest, GenerationResponse, ProviderConfig,
     ProviderType,
 };
-use crate::services::ai::cache::AiCache;
+use crate::services::ai::distributed_cache::DistributedAiCache;
 use crate::services::ai::providers::{GigaChatProvider, OllamaProvider, OpenAIProvider};
 
 /// Circuit breaker state for a provider.
@@ -111,12 +111,12 @@ impl CircuitBreaker {
 pub struct AiRouter {
     providers: Vec<ProviderBox>,
     circuits: RwLock<Vec<CircuitBreaker>>,
-    cache: Arc<AiCache>,
+    cache: Arc<DistributedAiCache>,
     default_provider: RwLock<usize>,
 }
 
 impl AiRouter {
-    pub fn new(configs: Vec<ProviderConfig>) -> Self {
+    pub fn new(configs: Vec<ProviderConfig>, cache: Arc<DistributedAiCache>) -> Self {
         let mut providers = Vec::new();
         let mut circuits = Vec::new();
 
@@ -144,7 +144,7 @@ impl AiRouter {
         Self {
             providers,
             circuits: RwLock::new(circuits),
-            cache: Arc::new(AiCache::new(Duration::from_secs(3600))), // 1 hour cache
+            cache,
             default_provider: RwLock::new(0),
         }
     }
@@ -192,7 +192,7 @@ impl AiRouter {
             request.topic, request.difficulty, request.count, request.num_options
         );
 
-        if let Some(cached) = self.cache.get(&cache_key) {
+        if let Some(cached) = self.cache.get(&cache_key).await {
             info!("Serving questions from cache");
             return Ok(cached);
         }
@@ -226,7 +226,7 @@ impl AiRouter {
                     }
 
                     // Cache the response
-                    self.cache.set(cache_key, response.clone());
+                    self.cache.set(cache_key, response.clone()).await;
 
                     info!(
                         provider = provider.name(),
@@ -269,7 +269,7 @@ impl AiRouter {
     pub async fn generate_hint(&self, question: &str) -> Result<String, AiError> {
         // Check cache
         let cache_key = format!("hint:{}", question);
-        if let Some(cached) = self.cache.get_hint(&cache_key) {
+        if let Some(cached) = self.cache.get_hint(&cache_key).await {
             return Ok(cached);
         }
 
@@ -281,7 +281,7 @@ impl AiRouter {
         let hint = provider.generate_hint(question).await?;
 
         // Cache the hint
-        self.cache.set_hint(cache_key, hint.clone());
+        self.cache.set_hint(cache_key, hint.clone()).await;
 
         Ok(hint)
     }
@@ -330,12 +330,12 @@ impl AiRouter {
     }
 
     /// Get cache statistics.
-    pub fn cache_stats(&self) -> super::cache::CacheStats {
-        self.cache.stats()
+    pub async fn cache_stats(&self) -> super::cache::CacheStats {
+        self.cache.stats().await
     }
 
     /// Clear cache.
-    pub fn clear_cache(&self) {
-        self.cache.clear();
+    pub async fn clear_cache(&self) {
+        let _ = self.cache.clear().await;
     }
 }

@@ -60,7 +60,7 @@ async fn switch_provider(
 async fn cache_stats(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    let stats = state.ai_router.cache_stats();
+    let stats = state.ai_router.cache_stats().await;
 
     Ok(Json(serde_json::json!({
         "ok": true,
@@ -72,7 +72,7 @@ async fn cache_stats(
 async fn clear_cache(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    state.ai_router.clear_cache();
+    state.ai_router.clear_cache().await;
 
     Ok(Json(serde_json::json!({
         "ok": true,
