@@ -194,4 +194,4 @@ spec:
 ## Related
 
 - [Redis Client Documentation](./README.md)
-- [Epic 1: Horizontal Scaling](../../docs/EPIC_1_HORIZONTAL_SCALING.md)
+- [Horizontal scaling roadmap](../../../ROADMAP.md)
