@@ -21,7 +21,8 @@
 //! ```
 
 #![deny(missing_docs)]
-#![deny(clippy::unwrap_used)]
+// Allow unwrap in tests - production code should use proper error handling
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 pub mod ids;
 pub mod messages;
