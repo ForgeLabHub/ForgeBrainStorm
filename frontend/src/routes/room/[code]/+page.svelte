@@ -3,7 +3,7 @@
 	import { api, ws } from '$lib/api';
 	import { onMount, onDestroy } from 'svelte';
 
-	const roomCode = $derived(($page.params.code ?? '').toUpperCase());
+		const roomCode = $derived(($page.params.code ?? '').toUpperCase());
 
 	type Player = {
 		name: string;
