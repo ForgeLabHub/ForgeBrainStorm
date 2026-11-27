@@ -10,6 +10,7 @@
 pub mod providers;
 pub mod router;
 pub mod cache;
+pub mod distributed_cache;
 pub mod mock;
 
 pub use mock::{MockProvider, MockAiRouter};
