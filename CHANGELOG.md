@@ -6,6 +6,30 @@ All notable changes to BrainStorm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Four more cheater powers: `leech` (25 points from every opponent), `blind`
+  (victim cannot answer for 10 seconds — the server refuses `submit_answer`),
+  `swap` (trade scores with the leader) and `hint` (two wrong options hidden for
+  the cheater only). The panel shows all twelve powers with their remaining uses.
+- Admin panel: room detail with live players, scores and active effects, kicking a
+  player out of a room, per-room announcements, chat freeze and chat clear, a
+  sessions tab with per-account session revocation, user search by role with
+  pagination, and audit-log paging/filtering.
+- `Player::status` on join: a reload no longer launders a mute, a curse or a blind.
+
+### Fixed
+- Bans did not touch an already-issued session: `auth_middleware` now rejects a
+  session whose account has an active ban, and `POST /api/admin/ban` revokes the
+  target's sessions and removes them from live rooms.
+- Ban/unban keyed by username never matched, because `bans.identifier` stores the
+  user id — both endpoints now resolve a nickname to an id first.
+- Role changes kept the old role in the session cache until it expired; the cache
+  entry is dropped on role change and on account deletion.
+- A cheater power that had no effect still burned a use; the budget is refunded and
+  the client is told why via `cheat_no_effect`.
+- `POST /api/admin/rooms/close` left attached sockets working; the room is now
+  marked closed and every further message is refused.
+
 ### Changed
 - The Rust backend is a Cargo workspace: `rust-server/` moved to `crates/server/`
   (same crate name, `brainstorm`), shared dependencies live in the root

@@ -27,7 +27,14 @@ pub fn routes(session_cache: SessionCache) -> Router<AppState> {
         .route("/ban", post(ban_user))
         .route("/unban", post(unban_user))
         .route("/rooms", get(list_rooms))
+        .route("/rooms/detail", get(room_detail))
         .route("/rooms/close", post(close_room))
+        .route("/rooms/kick", post(kick_player))
+        .route("/rooms/announce", post(room_announce))
+        .route("/rooms/chat_lock", post(set_chat_lock))
+        .route("/rooms/chat_clear", post(clear_chat))
+        .route("/sessions", get(list_sessions))
+        .route("/sessions/revoke", post(revoke_session))
         .route("/broadcast", post(broadcast))
         .route("/audit_log", get(audit_log))
         .route("/ai", get(ai_status))
@@ -37,6 +44,75 @@ pub fn routes(session_cache: SessionCache) -> Router<AppState> {
             crate::middleware::auth::admin_middleware,
         ))
         .layer(Extension(session_cache))
+}
+
+// ── Shared helpers ──────────────────────────────────────────
+
+/// Drop every session of `user_id` — cache first, then the database rows.
+/// A ban or a demotion that leaves the old session alive is theatre.
+async fn revoke_sessions(state: &AppState, user_id: i64) -> AppResult<u64> {
+    state.session_cache.invalidate_user(user_id);
+    let result = sqlx::query(
+        "UPDATE sessions SET revoked_at = NOW()
+         WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(state.db.pool())
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Accept either a numeric id or a username. The ban table stores ids as text,
+/// so a username written straight into it would never match anything.
+async fn resolve_user_id(state: &AppState, identifier: &str) -> AppResult<i64> {
+    let trimmed = identifier.trim();
+    if let Ok(id) = trimmed.parse::<i64>() {
+        return Ok(id);
+    }
+    sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE lower(username::text) = lower($1)")
+        .bind(trimmed)
+        .fetch_optional(state.db.pool())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Пользователь не найден"))
+}
+
+/// Remove a user from every live room. Their socket gets `kicked` and the room
+/// sees them leave, exactly as if they had closed the tab.
+fn kick_from_rooms(state: &AppState, user_id: i64, message: &str) -> usize {
+    let mut kicked = 0;
+    for snapshot in state.rooms.list_public() {
+        let Some(room) = state.rooms.get_arc(&snapshot.code) else {
+            continue;
+        };
+        let mut room = room.write();
+        let sids: Vec<String> = room
+            .players
+            .values()
+            .filter(|player| player.user_id == Some(user_id))
+            .map(|player| player.sid.clone())
+            .collect();
+        if sids.is_empty() {
+            continue;
+        }
+        for sid in sids {
+            if let Some(player) = room.players.remove(&sid) {
+                if let Some(outbox) = player.outbox {
+                    let _ = outbox.send(
+                        serde_json::json!({
+                            "type": "kicked",
+                            "data": {"message": message}
+                        })
+                        .to_string(),
+                    );
+                }
+                kicked += 1;
+            }
+        }
+        let event = crate::ws::players_event(&room);
+        room.touch();
+        let _ = room.tx.send(event);
+    }
+    kicked
 }
 
 // ── Dashboard ───────────────────────────────────────────────
@@ -60,6 +136,12 @@ async fn stats(State(state): State<AppState>) -> AppResult<impl axum::response::
         .fetch_one(state.db.pool())
         .await?;
 
+    let live_sessions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sessions WHERE revoked_at IS NULL AND expires_at > NOW()",
+    )
+    .fetch_one(state.db.pool())
+    .await?;
+
     let rooms = state.rooms.list_public();
     Ok(Json(serde_json::json!({
         "users": users,
@@ -68,6 +150,7 @@ async fn stats(State(state): State<AppState>) -> AppResult<impl axum::response::
         "games": games,
         "total_score": score,
         "active_bans": active_bans,
+        "live_sessions": live_sessions,
         "live_rooms": rooms.len(),
         "live_players": rooms.iter().map(|r| r.player_count).sum::<usize>(),
     })))
@@ -78,6 +161,9 @@ async fn stats(State(state): State<AppState>) -> AppResult<impl axum::response::
 #[derive(Deserialize)]
 struct UserQuery {
     q: Option<String>,
+    role: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 }
 
 async fn list_users(
@@ -85,6 +171,10 @@ async fn list_users(
     Query(query): Query<UserQuery>,
 ) -> AppResult<impl axum::response::IntoResponse> {
     let pattern = format!("%{}%", query.q.unwrap_or_default());
+    let role = query.role.filter(|role| Role::parse(role).is_some());
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let offset = query.offset.unwrap_or(0).max(0);
+
     let rows = sqlx::query_as::<_, (i64, String, String, i64, i32, i32, i32, bool)>(
         "SELECT u.id, u.username, u.role, u.xp, u.coins, u.games_played, u.wins,
                 EXISTS (
@@ -93,11 +183,15 @@ async fn list_users(
                       AND b.expires_at > NOW()
                 ) AS banned
          FROM users u
-         WHERE u.username ILIKE $1
+         WHERE u.username::text ILIKE $1
+           AND ($2::TEXT IS NULL OR u.role = $2)
          ORDER BY u.xp DESC, u.id
-         LIMIT 100",
+         LIMIT $3 OFFSET $4",
     )
     .bind(&pattern)
+    .bind(&role)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(state.db.pool())
     .await?;
 
@@ -146,6 +240,11 @@ async fn set_role(
             .await?;
     let target = target.ok_or_else(|| AppError::NotFound("Пользователь не найден"))?;
 
+    // The role is cached with the session, so the change only takes effect
+    // after a re-login. Forcing it here also stops a demoted admin from
+    // finishing whatever they had open with admin rights.
+    let revoked = revoke_sessions(&state, input.user_id).await?;
+
     audit::log(
         state.db.pool(),
         auth.user_id,
@@ -155,7 +254,9 @@ async fn set_role(
         role.as_str(),
     )
     .await?;
-    Ok(Json(serde_json::json!({"ok": true, "role": role.as_str()})))
+    Ok(Json(
+        serde_json::json!({"ok": true, "role": role.as_str(), "sessions_revoked": revoked}),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -212,6 +313,10 @@ async fn delete_user(
             .await?;
     let target = target.ok_or_else(|| AppError::NotFound("Пользователь не найден"))?;
 
+    // Sessions cascade with the user row, but the in-memory cache would keep
+    // answering for them until its TTL runs out.
+    state.session_cache.invalidate_user(input.user_id);
+
     audit::log(
         state.db.pool(),
         auth.user_id,
@@ -248,30 +353,56 @@ async fn ban_user(
         )));
     }
     let duration = input.duration_minutes.unwrap_or(60).clamp(1, 60 * 24 * 30);
+    let reason = input.reason.as_deref().unwrap_or("");
+
+    // A ban keyed by username is a ban that matches nothing: the session check
+    // compares against `users.id`. Resolve first, then store the id.
+    let (identifier, user_id) = if kind == "user" {
+        let id = resolve_user_id(&state, &input.identifier).await?;
+        if id == auth.user_id {
+            return Err(AppError::Forbidden("Нельзя заблокировать себя"));
+        }
+        (id.to_string(), Some(id))
+    } else {
+        let ip: std::net::IpAddr = input.identifier.trim().parse().map_err(|_| {
+            AppError::Validation(ValidationError::new("identifier", "Неверный IP-адрес"))
+        })?;
+        (ip.to_string(), None)
+    };
+
     sqlx::query(
         "INSERT INTO bans (identifier, kind, reason, issued_by, expires_at)
          VALUES ($1, $2, $3, $4, NOW() + make_interval(mins => $5))
          ON CONFLICT (identifier, kind) DO UPDATE SET
             reason = EXCLUDED.reason, expires_at = EXCLUDED.expires_at",
     )
-    .bind(&input.identifier)
+    .bind(&identifier)
     .bind(kind)
-    .bind(input.reason.as_deref().unwrap_or(""))
+    .bind(reason)
     .bind(auth.user_id)
     .bind(duration)
     .execute(state.db.pool())
     .await?;
+
+    let mut revoked = 0;
+    let mut kicked = 0;
+    if let Some(user_id) = user_id {
+        revoked = revoke_sessions(&state, user_id).await?;
+        kicked = kick_from_rooms(&state, user_id, "Аккаунт заблокирован администратором");
+    }
 
     audit::log(
         state.db.pool(),
         auth.user_id,
         &auth.username,
         "ban",
-        &input.identifier,
-        input.reason.as_deref().unwrap_or(""),
+        &identifier,
+        reason,
     )
     .await?;
-    Ok(Json(serde_json::json!({"ok": true})))
+    Ok(Json(
+        serde_json::json!({"ok": true, "sessions_revoked": revoked, "kicked": kicked}),
+    ))
 }
 
 async fn unban_user(
@@ -280,8 +411,17 @@ async fn unban_user(
     Json(input): Json<BanInput>,
 ) -> AppResult<impl axum::response::IntoResponse> {
     let kind = input.kind.as_deref().unwrap_or("user");
+    // The ban row is keyed by id, so a username has to be resolved first —
+    // otherwise "unban" silently matches nothing and the user stays locked out.
+    let identifier = if kind == "user" {
+        resolve_user_id(&state, &input.identifier)
+            .await?
+            .to_string()
+    } else {
+        input.identifier.clone()
+    };
     sqlx::query("DELETE FROM bans WHERE identifier = $1 AND kind = $2")
-        .bind(&input.identifier)
+        .bind(&identifier)
         .bind(kind)
         .execute(state.db.pool())
         .await?;
@@ -290,7 +430,7 @@ async fn unban_user(
         auth.user_id,
         &auth.username,
         "unban",
-        &input.identifier,
+        &identifier,
         "",
     )
     .await?;
@@ -339,11 +479,14 @@ async fn close_room(
         return Err(AppError::NotFound("Комната не найдена"));
     };
     {
-        let room = room.read();
+        // Mark first: the sockets keep their `Arc` after the registry entry is
+        // gone, and the read loop refuses further messages once `closed` is set.
+        let mut room = room.write();
+        room.closed = true;
         let _ = room.tx.send(
             serde_json::json!({
                 "type": "error",
-                "data": {"message": "Комната закрыта администратором"}
+                "data": {"message": "Комната закрыта администратором", "code": "room_closed"}
             })
             .to_string(),
         );
@@ -359,6 +502,344 @@ async fn close_room(
     )
     .await?;
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+#[derive(Deserialize)]
+struct KickInput {
+    code: String,
+    /// Numeric id of the account to remove. Guests have no id, so a name works
+    /// too — the same rule the cheater powers use.
+    user_id: Option<i64>,
+    username: Option<String>,
+    reason: Option<String>,
+}
+
+async fn kick_player(
+    Extension(auth): Extension<AuthContext>,
+    State(state): State<AppState>,
+    Json(input): Json<KickInput>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    let code = input.code.to_uppercase();
+    let Some(room) = state.rooms.get_arc(&code) else {
+        return Err(AppError::NotFound("Комната не найдена"));
+    };
+
+    let needle = input.username.as_deref().map(|name| name.to_lowercase());
+    let (name, sid) = {
+        let room = room.read();
+        let found = room.players.values().find(|player| {
+            input.user_id.is_some_and(|id| player.user_id == Some(id))
+                || needle
+                    .as_deref()
+                    .is_some_and(|name| player.display_name.to_lowercase() == name)
+        });
+        match found {
+            Some(player) => (player.display_name.clone(), player.sid.clone()),
+            None => return Err(AppError::NotFound("Игрок не в комнате")),
+        }
+    };
+
+    let reason = input
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .unwrap_or("Вас удалили из комнаты");
+    {
+        let mut room = room.write();
+        if let Some(player) = room.players.remove(&sid) {
+            if let Some(outbox) = player.outbox {
+                let _ = outbox.send(
+                    serde_json::json!({"type": "kicked", "data": {"message": reason}}).to_string(),
+                );
+            }
+        }
+        let event = crate::ws::players_event(&room);
+        room.touch();
+        let _ = room.tx.send(event);
+    }
+
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        "kick",
+        &format!("{code}/{name}"),
+        reason,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({"ok": true, "player": name})))
+}
+
+async fn room_detail(
+    State(state): State<AppState>,
+    Query(query): Query<RoomRef>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    let code = query.code.to_uppercase();
+    let Some(room) = state.rooms.get_arc(&code) else {
+        return Err(AppError::NotFound("Комната не найдена"));
+    };
+    let room = room.read();
+
+    let mut players: Vec<serde_json::Value> = room
+        .players
+        .values()
+        .map(|player| {
+            serde_json::json!({
+                "sid": player.sid,
+                "user_id": player.user_id,
+                "name": player.display_name,
+                "score": player.score,
+                "lives": player.lives,
+                "team": player.team,
+                "spectator": player.is_spectator,
+                "connected": !player.is_disconnected(),
+                "muted": player.muted,
+                "jinxed": player.jinxed,
+                "hijacked": player.hijacked,
+                "blind_seconds": player.blind_until.map(|until| {
+                    until.saturating_duration_since(std::time::Instant::now()).as_secs()
+                }),
+                "cheat_left": player.is_cheat.then(|| player.cheat.to_json()),
+            })
+        })
+        .collect();
+    players.sort_by_key(|player| std::cmp::Reverse(player["score"].as_i64().unwrap_or(0)));
+
+    Ok(Json(serde_json::json!({
+        "code": room.code,
+        "state": room.state,
+        "host": room.host_name,
+        "host_user_id": room.host_user_id,
+        "topic": room.settings.topic,
+        "mode": room.settings.mode,
+        "difficulty": room.settings.difficulty,
+        "question_count": room.questions.len(),
+        "current_question": room.current_q,
+        "seconds_left": room.deadline.map(|deadline| {
+            deadline.saturating_duration_since(std::time::Instant::now()).as_secs()
+        }),
+        "chat_locked": room.chat_locked,
+        "chat_messages": room.chat.len(),
+        "question_source": room.question_source,
+        "players": players,
+    })))
+}
+
+#[derive(Deserialize)]
+struct AnnounceInput {
+    code: String,
+    message: String,
+}
+
+async fn room_announce(
+    Extension(auth): Extension<AuthContext>,
+    State(state): State<AppState>,
+    Json(input): Json<AnnounceInput>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    let text = input.message.trim().chars().take(200).collect::<String>();
+    if text.is_empty() {
+        return Err(AppError::Validation(ValidationError::new(
+            "message",
+            "Пустое сообщение",
+        )));
+    }
+    let code = input.code.to_uppercase();
+    let Some(room) = state.rooms.get_arc(&code) else {
+        return Err(AppError::NotFound("Комната не найдена"));
+    };
+    let delivered = room
+        .read()
+        .tx
+        .send(serde_json::json!({"type": "announcement", "data": {"message": text}}).to_string())
+        .is_ok();
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        "room_announce",
+        &code,
+        &text,
+    )
+    .await?;
+    Ok(Json(
+        serde_json::json!({"ok": true, "delivered": delivered}),
+    ))
+}
+
+#[derive(Deserialize)]
+struct ChatLockInput {
+    code: String,
+    locked: bool,
+}
+
+async fn set_chat_lock(
+    Extension(auth): Extension<AuthContext>,
+    State(state): State<AppState>,
+    Json(input): Json<ChatLockInput>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    let code = input.code.to_uppercase();
+    let Some(room) = state.rooms.get_arc(&code) else {
+        return Err(AppError::NotFound("Комната не найдена"));
+    };
+    {
+        let mut room = room.write();
+        room.chat_locked = input.locked;
+        room.touch();
+        let _ = room.tx.send(
+            serde_json::json!({
+                "type": "chat_locked",
+                "data": {"locked": input.locked}
+            })
+            .to_string(),
+        );
+    }
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        if input.locked {
+            "chat_lock"
+        } else {
+            "chat_unlock"
+        },
+        &code,
+        "",
+    )
+    .await?;
+    Ok(Json(
+        serde_json::json!({"ok": true, "locked": input.locked}),
+    ))
+}
+
+async fn clear_chat(
+    Extension(auth): Extension<AuthContext>,
+    State(state): State<AppState>,
+    Json(input): Json<RoomRef>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    let code = input.code.to_uppercase();
+    let Some(room) = state.rooms.get_arc(&code) else {
+        return Err(AppError::NotFound("Комната не найдена"));
+    };
+    {
+        let mut room = room.write();
+        room.chat.clear();
+        room.touch();
+        let _ = room
+            .tx
+            .send(serde_json::json!({"type": "chat_cleared", "data": {}}).to_string());
+    }
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        "chat_clear",
+        &code,
+        "",
+    )
+    .await?;
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+// ── Sessions ────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct SessionQuery {
+    user_id: Option<i64>,
+}
+
+async fn list_sessions(
+    State(state): State<AppState>,
+    Query(query): Query<SessionQuery>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    // The session token is a credential, so the panel only ever sees a hash
+    // prefix as a row id.
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            i64,
+            String,
+            chrono::DateTime<chrono::Utc>,
+            chrono::DateTime<chrono::Utc>,
+            Option<chrono::DateTime<chrono::Utc>>,
+            Option<String>,
+        ),
+    >(
+        "SELECT left(md5(s.token), 12), s.user_id, u.username, s.created_at, s.expires_at,
+                s.revoked_at, host(s.ip_address)
+         FROM sessions s
+         JOIN users u ON u.id = s.user_id
+         WHERE ($1::BIGINT IS NULL OR s.user_id = $1)
+         ORDER BY s.created_at DESC
+         LIMIT 200",
+    )
+    .bind(query.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let sessions: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.0,
+                "user_id": r.1,
+                "username": r.2,
+                "created_at": r.3,
+                "expires_at": r.4,
+                "revoked_at": r.5,
+                "ip": r.6,
+            })
+        })
+        .collect();
+    Ok(Json(sessions))
+}
+
+#[derive(Deserialize)]
+struct SessionRevokeInput {
+    user_id: Option<i64>,
+    token: Option<String>,
+}
+
+async fn revoke_session(
+    Extension(auth): Extension<AuthContext>,
+    State(state): State<AppState>,
+    Json(input): Json<SessionRevokeInput>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    if let Some(token) = input.token.as_deref().filter(|token| !token.is_empty()) {
+        state.session_cache.invalidate(token);
+        sqlx::query(
+            "UPDATE sessions SET revoked_at = NOW() WHERE token = $1 AND revoked_at IS NULL",
+        )
+        .bind(token)
+        .execute(state.db.pool())
+        .await?;
+        audit::log(
+            state.db.pool(),
+            auth.user_id,
+            &auth.username,
+            "revoke_session",
+            "token",
+            "",
+        )
+        .await?;
+        return Ok(Json(serde_json::json!({"ok": true, "revoked": 1})));
+    }
+
+    let user_id = input.user_id.ok_or_else(|| {
+        AppError::Validation(ValidationError::new("user_id", "Нужен user_id или token"))
+    })?;
+    let revoked = revoke_sessions(&state, user_id).await?;
+    audit::log(
+        state.db.pool(),
+        auth.user_id,
+        &auth.username,
+        "revoke_sessions",
+        &user_id.to_string(),
+        "",
+    )
+    .await?;
+    Ok(Json(serde_json::json!({"ok": true, "revoked": revoked})))
 }
 
 #[derive(Deserialize)]
@@ -409,7 +890,24 @@ async fn broadcast(
 
 // ── Audit ───────────────────────────────────────────────────
 
-async fn audit_log(State(state): State<AppState>) -> AppResult<impl axum::response::IntoResponse> {
+#[derive(Deserialize)]
+struct AuditQuery {
+    action: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+async fn audit_log(
+    State(state): State<AppState>,
+    Query(query): Query<AuditQuery>,
+) -> AppResult<impl axum::response::IntoResponse> {
+    let action = query
+        .action
+        .map(|action| action.trim().to_string())
+        .filter(|action| !action.is_empty());
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let offset = query.offset.unwrap_or(0).max(0);
+
     let rows = sqlx::query_as::<
         _,
         (
@@ -423,8 +921,13 @@ async fn audit_log(State(state): State<AppState>) -> AppResult<impl axum::respon
         ),
     >(
         "SELECT id, actor_id, actor_name, action, target, reason, created_at
-         FROM audit_log ORDER BY created_at DESC LIMIT 100",
+         FROM audit_log
+         WHERE ($1::TEXT IS NULL OR action = $1)
+         ORDER BY created_at DESC LIMIT $2 OFFSET $3",
     )
+    .bind(&action)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(state.db.pool())
     .await?;
 

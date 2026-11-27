@@ -29,7 +29,11 @@
 		hijack: { icon: 'mask', label: 'Угон аккаунта', hint: 'Забрать очки игрока и выбить его' },
 		rewrite: { icon: 'pencil', label: 'Подмена вопроса', hint: 'Заменить вопрос на свой' },
 		mute: { icon: 'mute', label: 'Мут', hint: 'Заглушить чат игрока' },
-		jinx: { icon: 'skull', label: 'Проклятие', hint: 'Следующий ответ жертвы — 0 очков' }
+		jinx: { icon: 'skull', label: 'Проклятие', hint: 'Следующий ответ жертвы — 0 очков' },
+		leech: { icon: 'drain', label: 'Вампиризм', hint: '25 очков с каждого игрока' },
+		blind: { icon: 'blind', label: 'Ослепление', hint: 'Жертва не отвечает 10 секунд' },
+		swap: { icon: 'swap', label: 'Обмен', hint: 'Поменяться очками с лидером' },
+		hint: { icon: 'bulb', label: 'Подсказка', hint: 'Убрать два неверных варианта' }
 	};
 
 	let victim = $state('');

@@ -167,8 +167,11 @@ playerRank: (username: string) => request<PlayerRankResponse>(`/api/leaderboard/
 // Admin panel
 adminStats: () => request<AdminStats>('/api/admin/stats'),
 
-adminUsers: (query = '') =>
-request<AdminUser[]>(`/api/admin/users?q=${encodeURIComponent(query)}`),
+adminUsers: (query = '', role?: Role, limit = 50, offset = 0) => {
+const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) });
+if (role) params.set('role', role);
+return request<AdminUser[]>(`/api/admin/users?${params.toString()}`);
+},
 
 adminSetRole: (userId: number, role: Role) =>
 request<ApiBase>('/api/admin/users/role', {
@@ -208,6 +211,42 @@ method: 'POST',
 body: JSON.stringify({ code }),
 }),
 
+adminRoomDetail: (code: string) =>
+request<AdminRoomDetail>(`/api/admin/rooms/detail?code=${encodeURIComponent(code)}`),
+
+adminKick: (code: string, user: { user_id?: number; username?: string }, reason = '') =>
+request<ApiBase>('/api/admin/rooms/kick', {
+method: 'POST',
+body: JSON.stringify({ code, ...user, reason }),
+}),
+
+adminRoomAnnounce: (code: string, message: string) =>
+request<ApiBase>('/api/admin/rooms/announce', {
+method: 'POST',
+body: JSON.stringify({ code, message }),
+}),
+
+adminChatLock: (code: string, locked: boolean) =>
+request<ApiBase>('/api/admin/rooms/chat_lock', {
+method: 'POST',
+body: JSON.stringify({ code, locked }),
+}),
+
+adminChatClear: (code: string) =>
+request<ApiBase>('/api/admin/rooms/chat_clear', {
+method: 'POST',
+body: JSON.stringify({ code }),
+}),
+
+adminSessions: (userId?: number) =>
+request<AdminSession[]>(`/api/admin/sessions${userId ? `?user_id=${userId}` : ''}`),
+
+adminRevokeSessions: (userId: number) =>
+request<ApiBase>('/api/admin/sessions/revoke', {
+method: 'POST',
+body: JSON.stringify({ user_id: userId }),
+}),
+
 adminBroadcast: (message: string) =>
 request<ApiBase>('/api/admin/broadcast', {
 method: 'POST',
@@ -234,6 +273,7 @@ cheaters: number;
 games: number;
 total_score: number;
 active_bans: number;
+live_sessions: number;
 live_rooms: number;
 live_players: number;
 }
@@ -257,6 +297,49 @@ mode: string;
 mode_title: string;
 topic: string;
 player_count: number;
+}
+
+export interface AdminRoomPlayer {
+sid: string;
+user_id: number | null;
+name: string;
+score: number;
+lives: number;
+team: number | null;
+spectator: boolean;
+connected: boolean;
+muted: boolean;
+jinxed: boolean;
+hijacked: boolean;
+blind_seconds: number | null;
+cheat_left: Record<string, number> | null;
+}
+
+export interface AdminRoomDetail {
+code: string;
+state: string;
+host: string;
+host_user_id: number;
+topic: string;
+mode: string;
+difficulty: string;
+question_count: number;
+current_question: number;
+seconds_left: number | null;
+chat_locked: boolean;
+chat_messages: number;
+question_source: string;
+players: AdminRoomPlayer[];
+}
+
+export interface AdminSession {
+id: string;
+user_id: number;
+username: string;
+created_at: string;
+expires_at: string;
+revoked_at: string | null;
+ip: string | null;
 }
 
 export interface AdminAuditEntry {

@@ -10,8 +10,13 @@
 //!   * `chat_send`     `{ text }`
 //!   * `emoji`         `{ emoji, target? }`  (palette is server-side)
 //!   * `cheat_power`   `{ power, target?, payload? }` — `target` is a player
-//!     id or display name for `hijack`/`mute`/`jinx`, `payload` is
+//!     id or display name for `hijack`/`mute`/`jinx`/`blind`, `payload` is
 //!     `{ question, options, correct_index }` for `rewrite`
+//!
+//! Cheat powers: `peek`, `freeze`, `steal`, `double`, `hijack`, `rewrite`,
+//! `mute`, `jinx`, `leech`, `blind`, `swap`, `hint`. A power that changes
+//! nothing (already cursed, nobody to steal from) is refunded and answered
+//! with `cheat_no_effect`.
 //!
 //! Server → client uses the same envelope. Per-socket writer and per-room
 //! broadcast forwarder run as separate tasks so the read loop never blocks on
@@ -32,7 +37,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::domain::chat::{self, ChatError, MAX_CHAT_CHARS};
-use crate::domain::cheat::{CheatPower, CHEAT_FREEZE_SECS, STEAL_POINTS};
+use crate::domain::cheat::{CheatPower, BLIND_SECS, CHEAT_FREEZE_SECS, STEAL_POINTS};
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 use crate::domain::power_up::{self, PowerUp, FREEZE_SECS};
@@ -93,6 +98,20 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
             continue;
         };
 
+        // An admin can close a room while its sockets are still attached. The
+        // `Arc` survives the registry entry, so the room itself has to refuse
+        // further messages instead of pretending the game goes on.
+        if room_arc.as_ref().is_some_and(|room| room.read().closed) {
+            send_json(
+                &out_tx,
+                json!({"type": "error", "data": {
+                    "message": "Комната закрыта администратором",
+                    "code": "room_closed"
+                }}),
+            );
+            break;
+        }
+
         match message["type"].as_str().unwrap_or_default() {
             "join_room" => {
                 let code = message["data"]["code"]
@@ -107,6 +126,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     );
                     continue;
                 };
+
+                if room.read().closed {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Комната закрыта администратором", "code": "room_closed"}}),
+                    );
+                    continue;
+                }
 
                 let (topic, mode, is_host, players, subscription) = {
                     let mut room = room.write();
@@ -199,6 +226,23 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         &out_tx,
                         json!({"type": "cheat_state", "data": {"powers": budget}}),
                     );
+                }
+                // A reload keeps the curses: the client needs them to explain
+                // why a correct answer scored nothing or why the buttons are
+                // dead, and `players_updated` only carries the public ones.
+                let status = room.read().players.get(&sid).map(|player| {
+                    json!({
+                        "muted": player.muted,
+                        "jinxed": player.jinxed,
+                        "hijacked": player.hijacked,
+                        "eliminated": player.is_spectator,
+                        "blind_seconds": player.blind_until.map(|until| {
+                            until.saturating_duration_since(Instant::now()).as_secs()
+                        }),
+                    })
+                });
+                if let Some(data) = status {
+                    send_json(&out_tx, json!({"type": "status", "data": data}));
                 }
                 let _ = room.read().tx.send(players);
             }
@@ -439,9 +483,19 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 };
 
                 let raw = message["data"]["text"].as_str().unwrap_or_default();
-                let Some((from, muted)) = chat_sender(&room, &sid) else {
+                let Some((from, muted, locked)) = chat_sender(&room, &sid) else {
                     continue;
                 };
+                if locked {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {
+                            "message": "Чат комнаты заморожен администратором",
+                            "code": "chat_locked"
+                        }}),
+                    );
+                    continue;
+                }
                 if muted {
                     send_json(
                         &out_tx,
@@ -475,13 +529,23 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
 
                 let emoji = message["data"]["emoji"].as_str().unwrap_or_default();
                 let target = message["data"]["target"].as_str().map(str::to_owned);
-                let Some((from, muted)) = chat_sender(&room, &sid) else {
+                let Some((from, muted, locked)) = chat_sender(&room, &sid) else {
                     continue;
                 };
                 if muted {
                     send_json(
                         &out_tx,
                         json!({"type": "error", "data": {"message": "Читер запретил вам писать в чат", "code": "chat_muted"}}),
+                    );
+                    continue;
+                }
+                if locked {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {
+                            "message": "Чат комнаты заморожен администратором",
+                            "code": "chat_locked"
+                        }}),
                     );
                     continue;
                 }
@@ -575,6 +639,19 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         None
                     };
 
+                    // A power that needs a live question is rejected between
+                    // questions instead of silently doing nothing.
+                    if power.needs_question() && room.questions.get(room.current_q).is_none() {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {
+                                "message": "Сейчас нет активного вопроса",
+                                "code": "cheat_no_question"
+                            }}),
+                        );
+                        continue;
+                    }
+
                     let rewrite = if power == CheatPower::Rewrite {
                         match parse_rewrite(&message["data"]["payload"]) {
                             Some(input) => Some(input),
@@ -602,65 +679,91 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         player.cheat.spend(power);
                     }
 
-                    match power {
+                    // Every arm reports whether it actually changed something.
+                    // A no-op (nothing to steal, already cursed, clock already
+                    // stopped) refunds the use: the budget pays for effects,
+                    // not for clicks.
+                    let applied = match power {
                         CheatPower::Peek => {
                             let correct = room
                                 .questions
                                 .get(room.current_q)
                                 .and_then(|question| question["correct_index"].as_u64())
                                 .map(|value| value as usize);
-                            if let Some(index) = correct {
-                                private_events.push(
-                                    json!({"type": "cheat_reveal", "data": {"correct_index": index}})
-                                        .to_string(),
-                                );
+                            match correct {
+                                Some(index) => {
+                                    private_events.push(
+                                        json!({"type": "cheat_reveal", "data": {"correct_index": index}})
+                                            .to_string(),
+                                    );
+                                    true
+                                }
+                                None => false,
                             }
                         }
                         CheatPower::Double => {
-                            if let Some(player) = room.players.get_mut(&sid) {
-                                player.double_points = true;
+                            let armed = room
+                                .players
+                                .get(&sid)
+                                .map(|player| player.double_points)
+                                .unwrap_or(true);
+                            if armed {
+                                false
+                            } else {
+                                if let Some(player) = room.players.get_mut(&sid) {
+                                    player.double_points = true;
+                                }
+                                private_events.push(
+                                    json!({"type": "cheat_armed", "data": {"power": "double"}})
+                                        .to_string(),
+                                );
+                                true
                             }
-                            private_events.push(
-                                json!({"type": "cheat_armed", "data": {"power": "double"}})
-                                    .to_string(),
-                            );
                         }
-                        CheatPower::Freeze => {
-                            if let Some(deadline) = room.deadline {
+                        CheatPower::Freeze => match room.deadline {
+                            Some(deadline) => {
                                 room.deadline =
                                     Some(deadline + Duration::from_secs(CHEAT_FREEZE_SECS));
+                                public_events.push(
+                                    json!({
+                                        "type": "cheat_used",
+                                        "data": {"player": name, "power": "freeze", "seconds": CHEAT_FREEZE_SECS}
+                                    })
+                                    .to_string(),
+                                );
+                                true
                             }
-                            public_events.push(
-                                json!({
-                                    "type": "cheat_used",
-                                    "data": {"player": name, "power": "freeze", "seconds": CHEAT_FREEZE_SECS}
-                                })
-                                .to_string(),
-                            );
-                        }
+                            None => false,
+                        },
                         CheatPower::Steal => {
                             let leader = room
                                 .players
                                 .iter()
-                                .filter(|(other, player)| **other != sid && !player.is_spectator)
+                                .filter(|(other, player)| {
+                                    **other != sid && !player.is_spectator && player.score > 0
+                                })
                                 .map(|(other, player)| (other.clone(), player.score))
                                 .max_by_key(|(_, score)| *score);
-                            if let Some((leader_sid, leader_score)) = leader {
-                                let amount = leader_score.clamp(0, STEAL_POINTS);
-                                if let Some(player) = room.players.get_mut(&leader_sid) {
-                                    player.score -= amount;
+                            match leader {
+                                Some((leader_sid, leader_score)) => {
+                                    let amount = leader_score.clamp(0, STEAL_POINTS);
+                                    if let Some(player) = room.players.get_mut(&leader_sid) {
+                                        player.score -= amount;
+                                    }
+                                    if let Some(player) = room.players.get_mut(&sid) {
+                                        player.score += amount;
+                                    }
+                                    players_changed = true;
+                                    public_events.push(
+                                        json!({
+                                            "type": "cheat_used",
+                                            "data": {"player": name, "power": "steal", "points": amount}
+                                        })
+                                        .to_string(),
+                                    );
+                                    true
                                 }
-                                if let Some(player) = room.players.get_mut(&sid) {
-                                    player.score += amount;
-                                }
-                                players_changed = true;
-                                public_events.push(
-                                    json!({
-                                        "type": "cheat_used",
-                                        "data": {"player": name, "power": "steal", "points": amount}
-                                    })
-                                    .to_string(),
-                                );
+                                None => false,
                             }
                         }
                         CheatPower::Hijack => {
@@ -688,16 +791,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                         })
                                         .to_string(),
                                     ));
+                                    true
                                 }
-                                None => {
-                                    if let Some(player) = room.players.get_mut(&sid) {
-                                        player.cheat.refund(power);
-                                    }
-                                }
+                                None => false,
                             }
                         }
-                        CheatPower::Rewrite => {
-                            if let Some(input) = rewrite {
+                        CheatPower::Rewrite => match rewrite {
+                            Some(input) => {
                                 if room.rewrite_question(input.text, input.options, input.correct) {
                                     public_events.push(
                                         json!({
@@ -710,51 +810,166 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                                         public_events.push(event);
                                     }
                                     players_changed = true;
+                                    true
+                                } else {
+                                    false
                                 }
                             }
-                        }
+                            None => false,
+                        },
                         CheatPower::Mute => {
                             let victim = target_sid.clone().unwrap_or_default();
-                            let victim_name = room.players.get_mut(&victim).map(|player| {
-                                player.muted = true;
-                                player.display_name.clone()
-                            });
-                            if let Some(victim_name) = victim_name {
-                                players_changed = true;
-                                public_events.push(
-                                    json!({
-                                        "type": "cheat_used",
-                                        "data": {"player": name, "power": "mute", "target": victim_name}
-                                    })
-                                    .to_string(),
-                                );
-                                victim_events.push((
-                                    victim,
-                                    json!({"type": "muted", "data": {"by": name}}).to_string(),
-                                ));
+                            match room.mute(&victim) {
+                                Some(victim_name) => {
+                                    players_changed = true;
+                                    public_events.push(
+                                        json!({
+                                            "type": "cheat_used",
+                                            "data": {"player": name, "power": "mute", "target": victim_name}
+                                        })
+                                        .to_string(),
+                                    );
+                                    victim_events.push((
+                                        victim,
+                                        json!({"type": "muted", "data": {"by": name}}).to_string(),
+                                    ));
+                                    true
+                                }
+                                None => false,
                             }
                         }
                         CheatPower::Jinx => {
                             let victim = target_sid.clone().unwrap_or_default();
-                            let victim_name = room.players.get_mut(&victim).map(|player| {
-                                player.jinxed = true;
-                                player.display_name.clone()
-                            });
-                            if let Some(victim_name) = victim_name {
+                            match room.jinx(&victim) {
+                                Some(victim_name) => {
+                                    players_changed = true;
+                                    public_events.push(
+                                        json!({
+                                            "type": "cheat_used",
+                                            "data": {"player": name, "power": "jinx", "target": victim_name}
+                                        })
+                                        .to_string(),
+                                    );
+                                    victim_events.push((
+                                        victim,
+                                        json!({"type": "jinxed", "data": {"by": name}}).to_string(),
+                                    ));
+                                    true
+                                }
+                                None => false,
+                            }
+                        }
+                        CheatPower::Blind => {
+                            let victim = target_sid.clone().unwrap_or_default();
+                            match room.blind(&victim) {
+                                Some(victim_name) => {
+                                    players_changed = true;
+                                    public_events.push(
+                                        json!({
+                                            "type": "cheat_used",
+                                            "data": {
+                                                "player": name,
+                                                "power": "blind",
+                                                "target": victim_name,
+                                                "seconds": BLIND_SECS
+                                            }
+                                        })
+                                        .to_string(),
+                                    );
+                                    victim_events.push((
+                                        victim,
+                                        json!({
+                                            "type": "blinded",
+                                            "data": {"by": name, "seconds": BLIND_SECS}
+                                        })
+                                        .to_string(),
+                                    ));
+                                    true
+                                }
+                                None => false,
+                            }
+                        }
+                        CheatPower::Leech => {
+                            let (victims, taken) = room.leech(&sid);
+                            if taken > 0 {
                                 players_changed = true;
                                 public_events.push(
                                     json!({
                                         "type": "cheat_used",
-                                        "data": {"player": name, "power": "jinx", "target": victim_name}
+                                        "data": {
+                                            "player": name,
+                                            "power": "leech",
+                                            "victims": victims,
+                                            "points": taken
+                                        }
                                     })
                                     .to_string(),
                                 );
-                                victim_events.push((
-                                    victim,
-                                    json!({"type": "jinxed", "data": {"by": name}}).to_string(),
-                                ));
+                                true
+                            } else {
+                                false
                             }
                         }
+                        CheatPower::Swap => match room.swap_with_leader(&sid) {
+                            Some((leader_name, old_score, new_score)) => {
+                                players_changed = true;
+                                public_events.push(
+                                    json!({
+                                        "type": "cheat_used",
+                                        "data": {
+                                            "player": name,
+                                            "power": "swap",
+                                            "target": leader_name,
+                                            "from": old_score,
+                                            "to": new_score
+                                        }
+                                    })
+                                    .to_string(),
+                                );
+                                true
+                            }
+                            None => false,
+                        },
+                        CheatPower::Hint => {
+                            let hidden = room
+                                .questions
+                                .get(room.current_q)
+                                .map(power_up::wrong_options)
+                                .unwrap_or_default();
+                            if hidden.is_empty() {
+                                false
+                            } else {
+                                private_events.push(
+                                    json!({"type": "options_hidden", "data": {"indexes": hidden}})
+                                        .to_string(),
+                                );
+                                public_events.push(
+                                    json!({
+                                        "type": "cheat_used",
+                                        "data": {"player": name, "power": "hint"}
+                                    })
+                                    .to_string(),
+                                );
+                                true
+                            }
+                        }
+                    };
+
+                    if !applied {
+                        if let Some(player) = room.players.get_mut(&sid) {
+                            player.cheat.refund(power);
+                        }
+                        public_events.clear();
+                        private_events.clear();
+                        victim_events.clear();
+                        players_changed = false;
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {
+                                "message": cheat_no_effect_message(power),
+                                "code": "cheat_no_effect"
+                            }}),
+                        );
                     }
 
                     room.touch();
@@ -797,7 +1012,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 };
                 let index = message["data"]["answer_index"].as_u64().unwrap_or(0) as usize;
 
-                let (advance, token, players, notice, eliminated) = {
+                let (advance, token, players, notice, eliminated, blind_left) = {
                     let mut room = room.write();
                     if room.state != RoomState::Playing {
                         continue;
@@ -815,9 +1030,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
 
                     let mut knocked_out = false;
                     let mut eliminated = false;
+                    let mut blind_left: Option<u64> = None;
                     if let Some(player) = room.players.get_mut(&sid) {
                         eliminated = player.is_spectator;
-                        if !eliminated && !player.answered {
+                        if !eliminated && player.is_blind() {
+                            blind_left = player.blind_until.map(|until| {
+                                until
+                                    .saturating_duration_since(Instant::now())
+                                    .as_secs()
+                                    .max(1)
+                            });
+                        } else if !eliminated && !player.answered {
                             player.answered = true;
                             player.answer_index = Some(index);
                             player.answer_time = Some(Instant::now());
@@ -844,8 +1067,20 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         Some(players_event(&room)),
                         notice,
                         eliminated,
+                        blind_left,
                     )
                 };
+
+                if let Some(seconds) = blind_left {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {
+                            "message": format!("Вас ослепили: ответ через {seconds} с"),
+                            "code": "blinded"
+                        }}),
+                    );
+                    continue;
+                }
 
                 if eliminated {
                     send_json(
@@ -923,6 +1158,23 @@ fn send_json(out: &mpsc::UnboundedSender<String>, value: Value) {
     let _ = out.send(value.to_string());
 }
 
+/// Why a cheat power changed nothing. The use is refunded either way; the
+/// message explains what the player should have done differently.
+fn cheat_no_effect_message(power: CheatPower) -> &'static str {
+    match power {
+        CheatPower::Double => "Удвоение уже заряжено",
+        CheatPower::Steal => "Брать нечего: у соперников нет очков",
+        CheatPower::Swap => "Вы уже лидируете — меняться не с кем",
+        CheatPower::Leech => "Ни у кого нет очков",
+        CheatPower::Mute => "Игрок уже не может писать",
+        CheatPower::Jinx => "Игрок уже проклят",
+        CheatPower::Blind => "Игрок уже ослеплён",
+        CheatPower::Hijack => "Взять этого игрока не удалось",
+        CheatPower::Rewrite => "Вопрос не заменён",
+        CheatPower::Freeze | CheatPower::Peek | CheatPower::Hint => "Сейчас это не сработает",
+    }
+}
+
 fn send_chat_error(out: &mpsc::UnboundedSender<String>, error: ChatError) {
     send_json(
         out,
@@ -932,11 +1184,11 @@ fn send_chat_error(out: &mpsc::UnboundedSender<String>, error: ChatError) {
 
 /// Name and mute flag of the socket's player; `None` when the socket has not
 /// joined a room (or was removed from it).
-fn chat_sender(room: &Arc<RwLock<Room>>, sid: &str) -> Option<(String, bool)> {
-    room.read()
-        .players
+fn chat_sender(room: &Arc<RwLock<Room>>, sid: &str) -> Option<(String, bool, bool)> {
+    let room = room.read();
+    room.players
         .get(sid)
-        .map(|player| (player.display_name.clone(), player.muted))
+        .map(|player| (player.display_name.clone(), player.muted, room.chat_locked))
 }
 
 /// A question a cheater typed in, already validated.
@@ -1061,7 +1313,7 @@ fn team_standings(room: &Room) -> Option<Value> {
     Some(Value::Array(teams))
 }
 
-fn players_event(room: &Room) -> String {
+pub(crate) fn players_event(room: &Room) -> String {
     let players: Vec<Value> = room
         .players
         .values()

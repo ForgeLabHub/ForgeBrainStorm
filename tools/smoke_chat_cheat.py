@@ -17,6 +17,7 @@ import websockets
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5000").rstrip("/")
 WS = BASE.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
 CHEAT_CODE = "1778"
+ADMIN_CODE = "19112009"
 STAMP = str(int(time.time()))[-6:]
 
 
@@ -43,6 +44,15 @@ def create_room(session, topic="Космос"):
     assert response.status_code in (200, 201), (response.status_code, response.text)
     body = response.json()
     return body.get("code") or body.get("room", {}).get("code")
+
+
+def admin_call(session, path, payload=None):
+    url = f"{BASE}/api/admin{path}"
+    if payload is None:
+        response = session.get(url, timeout=10)
+    else:
+        response = session.post(url, json=payload, timeout=10)
+    return response
 
 
 def cookie_header(session):
@@ -75,6 +85,19 @@ class Peer:
 
     async def send(self, kind, data=None):
         await self.ws.send(json.dumps({"type": kind, "data": data or {}}))
+
+    async def wait_score(self, minimum, timeout=15):
+        """Wait until this player's score reaches `minimum`."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for event in list(self.events):
+                if event.get("type") != "players_updated":
+                    continue
+                for player in event["data"]["players"]:
+                    if player["name"] == self.name and player["score"] >= minimum:
+                        return player["score"]
+            await asyncio.sleep(0.05)
+        raise AssertionError(f"{self.name}: score never reached {minimum}")
 
     async def wait_for(self, kind, timeout=15):
         deadline = time.time() + timeout
@@ -109,6 +132,29 @@ async def main():
     await victim.wait_for("question_emitted", timeout=60)
     print(f"question: {question['question']['question'][:50]!r}")
 
+    # --- peek, then put points on the table ------------------------------
+    # Leech and swap need somebody with a score, and the victim is the only
+    # other player, so this comes before the curses that zero their answers.
+    await cheater.wait_for("cheat_state")
+    await cheater.send("cheat_power", {"power": "peek"})
+    reveal = await cheater.wait_for("cheat_reveal")
+    await victim.send("submit_answer", {"answer_index": reveal["correct_index"]})
+    score = await victim.wait_score(1)
+    print(f"peek ok: correct index {reveal['correct_index']}, victim at {score} points")
+
+    # --- leech: 25 from every other player -------------------------------
+    await cheater.send("cheat_power", {"power": "leech"})
+    leeched = await cheater.wait_for("cheat_used")
+    assert leeched["power"] == "leech" and leeched["points"] > 0, leeched
+    print(f"leech ok: {leeched['points']} points from {leeched['victims']} players")
+
+    # --- swap: trade places with the leader ------------------------------
+    await cheater.send("cheat_power", {"power": "swap"})
+    swapped = await cheater.wait_for("cheat_used")
+    assert swapped["power"] == "swap", swapped
+    assert swapped["to"] > swapped["from"], swapped
+    print(f"swap ok: {swapped['from']} -> {swapped['to']} points")
+
     # --- chat -------------------------------------------------------------
     await victim.send("chat_send", {"text": "  привет   всем  "})
     chat = await cheater.wait_for("chat_message")
@@ -136,7 +182,6 @@ async def main():
     print("emoji palette enforced")
 
     # --- cheater powers ---------------------------------------------------
-    await cheater.wait_for("cheat_state")
     await cheater.send("cheat_power", {"power": "mute", "target": victim.name})
     muted = await victim.wait_for("muted")
     assert muted["by"] == cheater.name, muted
@@ -146,6 +191,16 @@ async def main():
     error = await victim.wait_for("error")
     assert error["code"] == "chat_muted", error
     print("muted player is silenced")
+
+    # a repeated mute must not burn a second use
+    await cheater.wait_for("cheat_state")
+    before = cheater.powers["mute"]
+    await cheater.send("cheat_power", {"power": "mute", "target": victim.name})
+    error = await cheater.wait_for("error")
+    assert error["code"] == "cheat_no_effect", error
+    await cheater.wait_for("cheat_state")
+    assert cheater.powers["mute"] == before, (before, cheater.powers)
+    print("no-op power refunded")
 
     await cheater.send("cheat_power", {"power": "jinx", "target": victim.name})
     await victim.wait_for("jinxed")
@@ -166,7 +221,23 @@ async def main():
     assert rewritten["question"]["question"] == "Кто здесь читер?", rewritten
     print("rewrite ok")
 
+    # --- blind: the victim cannot answer while it lasts -------------------
+    await cheater.send("cheat_power", {"power": "blind", "target": victim.name})
+    blinded = await victim.wait_for("blinded")
+    assert blinded["seconds"] >= 1, blinded
+    await victim.send("submit_answer", {"answer_index": 0})
+    error = await victim.wait_for("error")
+    assert error["code"] == "blinded", error
+    print(f"blind ok: {blinded['seconds']} s, answer refused")
+
+    # --- hint: two wrong options disappear for the cheater only -----------
+    await cheater.send("cheat_power", {"power": "hint"})
+    hidden = await cheater.wait_for("options_hidden")
+    assert len(hidden["indexes"]) == 2, hidden
+    print(f"hint ok: options {hidden['indexes']} hidden")
+
     # a mistyped victim must not burn the budget
+    await cheater.wait_for("cheat_state")
     before = cheater.powers["hijack"]
     await cheater.send("cheat_power", {"power": "hijack", "target": "нет-такого"})
     error = await cheater.wait_for("error")
@@ -180,6 +251,53 @@ async def main():
     after = cheater.powers["hijack"]
     assert before == 1 and after == 0, (before, after)
     print(f"hijack ok: {hijacked['points']} points taken")
+
+    # --- admin panel ------------------------------------------------------
+    admin = register(f"admin_{STAMP}", ADMIN_CODE)
+    detail = admin_call(admin, f"/rooms/detail?code={code}")
+    assert detail.status_code == 200, (detail.status_code, detail.text)
+    detail = detail.json()
+    assert detail["code"] == code and len(detail["players"]) >= 1, detail
+    print(f"admin room detail ok: {len(detail['players'])} players, {detail['state']}")
+
+    announce = admin_call(admin, "/rooms/announce", {"code": code, "message": "тест объявления"})
+    assert announce.status_code == 200, announce.text
+    await cheater.wait_for("announcement")
+    print("admin room announcement ok")
+
+    locked = admin_call(admin, "/rooms/chat_lock", {"code": code, "locked": True})
+    assert locked.status_code == 200, locked.text
+    await asyncio.sleep(0.3)
+    await cheater.send("chat_send", {"text": "а теперь?"})
+    error = await cheater.wait_for("error")
+    assert error["code"] == "chat_locked", error
+    unlocked = admin_call(admin, "/rooms/chat_lock", {"code": code, "locked": False})
+    assert unlocked.status_code == 200, unlocked.text
+    print("chat lock ok: message refused while frozen")
+
+    cleared = admin_call(admin, "/rooms/chat_clear", {"code": code})
+    assert cleared.status_code == 200, cleared.text
+    await cheater.wait_for("chat_cleared")
+    print("chat clear ok")
+
+    kick = admin_call(admin, "/rooms/kick", {"code": code, "username": victim.name})
+    assert kick.status_code == 200, kick.text
+    await victim.wait_for("kicked")
+    detail = admin_call(admin, f"/rooms/detail?code={code}").json()
+    assert all(player["name"] != victim.name for player in detail["players"]), detail
+    print("kick ok: player removed from the room")
+
+    # --- ban: the ban must reach an already-open session ------------------
+    ban = admin_call(admin, "/ban", {"identifier": victim.name, "reason": "smoke test"})
+    assert ban.status_code == 200, ban.text
+    assert ban.json()["sessions_revoked"] >= 1, ban.json()
+    blocked = victim.session.get(f"{BASE}/api/profile/games", timeout=10)
+    assert blocked.status_code in (401, 403), (blocked.status_code, blocked.text)
+    print("ban ok: existing session rejected")
+
+    unban = admin_call(admin, "/unban", {"identifier": victim.name})
+    assert unban.status_code == 200, unban.text
+    print("unban ok")
 
     print("\nALL CHECKS PASSED")
 

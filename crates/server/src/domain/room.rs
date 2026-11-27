@@ -10,6 +10,7 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 
 use crate::domain::chat::ChatLog;
+use crate::domain::cheat::{BLIND_SECS, LEECH_POINTS};
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 use crate::error::{AppError, AppResult};
@@ -111,6 +112,12 @@ pub struct Room {
     pub question_source: String,
     /// Chat history and per-player flood control.
     pub chat: ChatLog,
+    /// Set by an admin: chat and emoji are refused until it is lifted.
+    pub chat_locked: bool,
+    /// Set when an admin closes the room. Sockets are told to leave and every
+    /// further message is refused, so a closed room cannot keep playing on a
+    /// stale `Arc`.
+    pub closed: bool,
 }
 
 impl Room {
@@ -133,6 +140,8 @@ impl Room {
             question_token: 0,
             question_source: String::new(),
             chat: ChatLog::new(),
+            chat_locked: false,
+            closed: false,
         }
     }
 
@@ -293,6 +302,94 @@ impl Room {
         let cheater = self.players.get_mut(cheater_sid)?;
         cheater.score += points;
         Some((name, points))
+    }
+
+    /// Take [`crate::domain::cheat::LEECH_POINTS`] from every other active
+    /// player. Scores never go below zero, so a player sitting at zero cannot
+    /// fund the cheater. Returns the number of victims and the points moved;
+    /// zero points means the power found nothing to do and the caller should
+    /// refund it.
+    pub fn leech(&mut self, cheater_sid: &str) -> (usize, i64) {
+        let victims: Vec<String> = self
+            .players
+            .values()
+            .filter(|player| player.sid != cheater_sid && !player.is_spectator && player.score > 0)
+            .map(|player| player.sid.clone())
+            .collect();
+
+        let mut taken = 0;
+        for victim in &victims {
+            if let Some(player) = self.players.get_mut(victim) {
+                let amount = player.score.min(LEECH_POINTS);
+                player.score -= amount;
+                taken += amount;
+            }
+        }
+        if let Some(cheater) = self.players.get_mut(cheater_sid) {
+            cheater.score += taken;
+        }
+        (victims.len(), taken)
+    }
+
+    /// Trade scores with the current leader. Returns the leader's name, the
+    /// cheater's old score and the leader's, so the room can be told what
+    /// happened. `None` when the cheater is already leading — swapping with
+    /// yourself would spend a use for nothing.
+    pub fn swap_with_leader(&mut self, cheater_sid: &str) -> Option<(String, i64, i64)> {
+        let (leader_sid, leader_score) = self
+            .players
+            .iter()
+            .filter(|(sid, player)| sid.as_str() != cheater_sid && !player.is_spectator)
+            .map(|(sid, player)| (sid.clone(), player.score))
+            .max_by_key(|(_, score)| *score)?;
+
+        let cheater_score = self.players.get(cheater_sid)?.score;
+        if leader_score <= cheater_score {
+            return None;
+        }
+
+        let leader_name = {
+            let leader = self.players.get_mut(&leader_sid)?;
+            leader.score = cheater_score;
+            leader.display_name.clone()
+        };
+        let cheater = self.players.get_mut(cheater_sid)?;
+        cheater.score = leader_score;
+
+        Some((leader_name, cheater_score, leader_score))
+    }
+
+    /// Silence `victim` for the rest of the game. `None` when they are already
+    /// muted, so the caller can refund the use.
+    pub fn mute(&mut self, victim_sid: &str) -> Option<String> {
+        let victim = self.players.get_mut(victim_sid)?;
+        if victim.muted {
+            return None;
+        }
+        victim.muted = true;
+        Some(victim.display_name.clone())
+    }
+
+    /// Curse `victim`: their next answer scores nothing. `None` when a curse is
+    /// already pending, because a second one would be wasted.
+    pub fn jinx(&mut self, victim_sid: &str) -> Option<String> {
+        let victim = self.players.get_mut(victim_sid)?;
+        if victim.jinxed {
+            return None;
+        }
+        victim.jinxed = true;
+        Some(victim.display_name.clone())
+    }
+
+    /// Blind `victim` for [`crate::domain::cheat::BLIND_SECS`]. Returns their
+    /// name, or `None` when they are already blind (the caller refunds).
+    pub fn blind(&mut self, victim_sid: &str) -> Option<String> {
+        let victim = self.players.get_mut(victim_sid)?;
+        if victim.is_blind() {
+            return None;
+        }
+        victim.blind_until = Some(Instant::now() + Duration::from_secs(BLIND_SECS));
+        Some(victim.display_name.clone())
     }
 
     /// Replace the current question with one the cheater wrote. Answers already
@@ -520,6 +617,69 @@ mod tests {
         assert!(room.players["v1"].hijacked);
         // The victim is out of the game, so they no longer count as answering.
         assert_eq!(room.resolve_victim("v1", "sid"), None);
+    }
+
+    #[test]
+    fn leeching_takes_from_everyone_but_never_below_zero() {
+        let mut room = room_with_two_players();
+        room.players.get_mut("v1").unwrap().score = 10;
+
+        let (victims, taken) = room.leech("sid");
+        assert_eq!(victims, 1);
+        assert_eq!(taken, 10);
+        assert_eq!(room.players["v1"].score, 0);
+        assert_eq!(room.players["sid"].score, 510);
+
+        // Nothing left to take: the caller refunds instead of charging again.
+        assert_eq!(room.leech("sid"), (0, 0));
+    }
+
+    #[test]
+    fn leeching_skips_spectators() {
+        let mut room = room_with_two_players();
+        room.players.get_mut("v1").unwrap().is_spectator = true;
+        assert_eq!(room.leech("sid"), (0, 0));
+    }
+
+    #[test]
+    fn swapping_scores_only_pays_off_when_behind() {
+        let mut room = room_with_two_players();
+        // The host has 500, the victim 300, so a swap would lose points.
+        assert!(room.swap_with_leader("sid").is_none());
+
+        room.players.get_mut("sid").unwrap().score = 100;
+        let (name, old, new) = room.swap_with_leader("sid").expect("swapped");
+        assert_eq!(name, "Боря");
+        assert_eq!((old, new), (100, 300));
+        assert_eq!(room.players["sid"].score, 300);
+        assert_eq!(room.players["v1"].score, 100);
+    }
+
+    #[test]
+    fn swapping_ignores_benched_players() {
+        let mut room = room_with_two_players();
+        room.players.get_mut("sid").unwrap().score = 100;
+        room.players.get_mut("v1").unwrap().is_spectator = true;
+        assert!(room.swap_with_leader("sid").is_none());
+    }
+
+    #[test]
+    fn muting_and_cursing_report_repeats() {
+        let mut room = room_with_two_players();
+        assert_eq!(room.mute("v1"), Some("Боря".into()));
+        assert_eq!(room.mute("v1"), None);
+        assert_eq!(room.jinx("v1"), Some("Боря".into()));
+        assert_eq!(room.jinx("v1"), None);
+        assert_eq!(room.mute("nobody"), None);
+    }
+
+    #[test]
+    fn blinding_sets_a_deadline_and_does_not_stack() {
+        let mut room = room_with_two_players();
+        assert_eq!(room.blind("v1"), Some("Боря".into()));
+        assert!(room.players["v1"].is_blind());
+        assert_eq!(room.blind("v1"), None, "a second blind would be wasted");
+        assert_eq!(room.blind("nobody"), None);
     }
 
     #[test]

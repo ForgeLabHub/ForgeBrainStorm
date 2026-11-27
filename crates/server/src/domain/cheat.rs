@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 pub const STEAL_POINTS: i64 = 50;
 /// Seconds added to the round clock by [`CheatPower::Freeze`].
 pub const CHEAT_FREEZE_SECS: u64 = 10;
+/// Points taken from every other player by [`CheatPower::Leech`].
+pub const LEECH_POINTS: i64 = 25;
+/// Seconds a blinded player cannot answer.
+pub const BLIND_SECS: u64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,10 +37,21 @@ pub enum CheatPower {
     Mute,
     /// Curse a player: their next answer scores nothing, even when correct.
     Jinx,
+    /// Take [`LEECH_POINTS`] from every other active player at once.
+    Leech,
+    /// Blind a player for [`BLIND_SECS`]: they cannot answer and cannot see
+    /// the options, which is worse than a curse because the round moves on.
+    Blind,
+    /// Trade scores with the current leader. A gamble: it can also drop the
+    /// cheater to last place.
+    Swap,
+    /// Remove two wrong options for the cheater only, like the ordinary
+    /// power-up but without spending the hand.
+    Hint,
 }
 
 impl CheatPower {
-    pub const ALL: [CheatPower; 8] = [
+    pub const ALL: [CheatPower; 12] = [
         CheatPower::Peek,
         CheatPower::Freeze,
         CheatPower::Steal,
@@ -45,6 +60,10 @@ impl CheatPower {
         CheatPower::Rewrite,
         CheatPower::Mute,
         CheatPower::Jinx,
+        CheatPower::Leech,
+        CheatPower::Blind,
+        CheatPower::Swap,
+        CheatPower::Hint,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -57,6 +76,10 @@ impl CheatPower {
             CheatPower::Rewrite => "rewrite",
             CheatPower::Mute => "mute",
             CheatPower::Jinx => "jinx",
+            CheatPower::Leech => "leech",
+            CheatPower::Blind => "blind",
+            CheatPower::Swap => "swap",
+            CheatPower::Hint => "hint",
         }
     }
 
@@ -64,7 +87,22 @@ impl CheatPower {
     pub fn needs_target(self) -> bool {
         matches!(
             self,
-            CheatPower::Hijack | CheatPower::Mute | CheatPower::Jinx
+            CheatPower::Hijack | CheatPower::Mute | CheatPower::Jinx | CheatPower::Blind
+        )
+    }
+
+    /// Powers that only make sense while a question is live. Spending one of
+    /// these between questions would be a silent no-op, so the handler rejects
+    /// it instead of burning the budget.
+    pub fn needs_question(self) -> bool {
+        matches!(
+            self,
+            CheatPower::Peek
+                | CheatPower::Freeze
+                | CheatPower::Double
+                | CheatPower::Rewrite
+                | CheatPower::Blind
+                | CheatPower::Hint
         )
     }
 
@@ -83,6 +121,10 @@ impl CheatPower {
             CheatPower::Rewrite => 2,
             CheatPower::Mute => 2,
             CheatPower::Jinx => 2,
+            CheatPower::Leech => 1,
+            CheatPower::Blind => 2,
+            CheatPower::Swap => 1,
+            CheatPower::Hint => 2,
         }
     }
 }
@@ -98,6 +140,10 @@ pub struct CheatPowers {
     rewrite: u8,
     mute: u8,
     jinx: u8,
+    leech: u8,
+    blind: u8,
+    swap: u8,
+    hint: u8,
 }
 
 impl Default for CheatPowers {
@@ -117,6 +163,10 @@ impl CheatPowers {
             rewrite: CheatPower::Rewrite.budget(),
             mute: CheatPower::Mute.budget(),
             jinx: CheatPower::Jinx.budget(),
+            leech: CheatPower::Leech.budget(),
+            blind: CheatPower::Blind.budget(),
+            swap: CheatPower::Swap.budget(),
+            hint: CheatPower::Hint.budget(),
         }
     }
 
@@ -130,6 +180,10 @@ impl CheatPowers {
             CheatPower::Rewrite => self.rewrite,
             CheatPower::Mute => self.mute,
             CheatPower::Jinx => self.jinx,
+            CheatPower::Leech => self.leech,
+            CheatPower::Blind => self.blind,
+            CheatPower::Swap => self.swap,
+            CheatPower::Hint => self.hint,
         }
     }
 
@@ -144,6 +198,10 @@ impl CheatPowers {
             CheatPower::Rewrite => &mut self.rewrite,
             CheatPower::Mute => &mut self.mute,
             CheatPower::Jinx => &mut self.jinx,
+            CheatPower::Leech => &mut self.leech,
+            CheatPower::Blind => &mut self.blind,
+            CheatPower::Swap => &mut self.swap,
+            CheatPower::Hint => &mut self.hint,
         };
         if *slot == 0 {
             return false;
@@ -164,6 +222,10 @@ impl CheatPowers {
             CheatPower::Rewrite => &mut self.rewrite,
             CheatPower::Mute => &mut self.mute,
             CheatPower::Jinx => &mut self.jinx,
+            CheatPower::Leech => &mut self.leech,
+            CheatPower::Blind => &mut self.blind,
+            CheatPower::Swap => &mut self.swap,
+            CheatPower::Hint => &mut self.hint,
         };
         *slot = slot.saturating_add(1).min(power.budget());
     }
@@ -236,10 +298,37 @@ mod tests {
         for power in CheatPower::ALL {
             let expected = matches!(
                 power,
-                CheatPower::Hijack | CheatPower::Mute | CheatPower::Jinx
+                CheatPower::Hijack | CheatPower::Mute | CheatPower::Jinx | CheatPower::Blind
             );
             assert_eq!(power.needs_target(), expected, "{power:?}");
         }
+    }
+
+    #[test]
+    fn question_powers_are_flagged_so_they_cannot_fizzle() {
+        for power in CheatPower::ALL {
+            let expected = !matches!(
+                power,
+                CheatPower::Steal
+                    | CheatPower::Hijack
+                    | CheatPower::Mute
+                    | CheatPower::Jinx
+                    | CheatPower::Leech
+                    | CheatPower::Swap
+            );
+            assert_eq!(power.needs_question(), expected, "{power:?}");
+        }
+    }
+
+    #[test]
+    fn the_new_powers_are_rationed_too() {
+        let mut powers = CheatPowers::new();
+        assert_eq!(powers.remaining(CheatPower::Swap), 1);
+        assert_eq!(powers.remaining(CheatPower::Leech), 1);
+        assert_eq!(powers.remaining(CheatPower::Blind), 2);
+        assert_eq!(powers.remaining(CheatPower::Hint), 2);
+        assert!(powers.spend(CheatPower::Swap));
+        assert!(!powers.spend(CheatPower::Swap));
     }
 
     #[test]

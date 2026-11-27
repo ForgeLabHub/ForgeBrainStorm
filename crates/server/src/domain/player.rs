@@ -41,6 +41,8 @@ pub struct Player {
     pub jinxed: bool,
     /// Account taken over by a cheater; the player watches as a spectator.
     pub hijacked: bool,
+    /// Until when a cheater's `blind` keeps this player from answering.
+    pub blind_until: Option<Instant>,
     /// This player's own socket. Private events (a hand, hidden options) must
     /// not go through the room broadcast or everyone would see them.
     pub outbox: Option<UnboundedSender<String>>,
@@ -62,6 +64,7 @@ pub struct ReconnectState {
     pub muted: bool,
     pub jinxed: bool,
     pub hijacked: bool,
+    pub blind_until: Option<Instant>,
     pub cheat: CheatPowers,
     pub team: Option<u8>,
 }
@@ -97,12 +100,19 @@ impl Player {
             muted: false,
             jinxed: false,
             hijacked: false,
+            blind_until: None,
             outbox: None,
         }
     }
 
     pub fn is_disconnected(&self) -> bool {
         self.disconnected_at.is_some()
+    }
+
+    /// True while a `blind` power is in force. The deadline lives on the
+    /// server, so a client that ignores the event still cannot answer.
+    pub fn is_blind(&self) -> bool {
+        self.blind_until.is_some_and(|until| until > Instant::now())
     }
 
     /// Apply an answer and return the points it earned.
@@ -164,6 +174,7 @@ impl Player {
         self.muted = false;
         self.jinxed = false;
         self.hijacked = false;
+        self.blind_until = None;
         self.power_ups = PowerUp::STARTING_HAND.to_vec();
         self.cheat.reset();
     }
@@ -181,6 +192,7 @@ impl Player {
             muted: self.muted,
             jinxed: self.jinxed,
             hijacked: self.hijacked,
+            blind_until: self.blind_until,
             cheat: self.cheat,
             team: self.team,
         }
@@ -198,6 +210,7 @@ impl Player {
         self.muted = state.muted;
         self.jinxed = state.jinxed;
         self.hijacked = state.hijacked;
+        self.blind_until = state.blind_until;
         self.cheat = state.cheat;
         self.team = state.team;
     }

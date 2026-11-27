@@ -5,6 +5,7 @@
 	let {
 		messages = [],
 		muted = false,
+		locked = false,
 		canChat = true,
 		targets = [],
 		onSend,
@@ -12,6 +13,7 @@
 	}: {
 		messages?: ChatMessage[];
 		muted?: boolean;
+		locked?: boolean;
 		canChat?: boolean;
 		targets?: CheatTarget[];
 		onSend?: (text: string) => void;
@@ -33,13 +35,13 @@
 
 	function send() {
 		const text = draft.trim();
-		if (!text || !canChat || muted) return;
+		if (!text || !canChat || muted || locked) return;
 		onSend?.(text);
 		draft = '';
 	}
 
 	function throwEmoji(emoji: string) {
-		if (!canChat || muted) return;
+		if (!canChat || muted || locked) return;
 		onEmoji?.(emoji, victim || null);
 	}
 </script>
@@ -58,6 +60,8 @@
 		<span class="flex items-center gap-2">
 			{#if muted}
 				<span class="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-300">ЗАГЛУШЁН</span>
+			{:else if locked}
+				<span class="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">ЗАМОРОЖЕН</span>
 			{/if}
 			<span class="text-xs text-slate-500">{open ? 'свернуть' : 'открыть'}</span>
 		</span>
@@ -102,7 +106,7 @@
 					<button
 						type="button"
 						onclick={() => throwEmoji(emoji)}
-						disabled={muted || !canChat}
+						disabled={muted || locked || !canChat}
 						class="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-base leading-none transition hover:border-blue-400/40 hover:bg-blue-500/10 disabled:opacity-40"
 						title="Кинуть {emoji}"
 					>
@@ -112,7 +116,7 @@
 				{#if targets.length > 0}
 					<select
 						bind:value={victim}
-						disabled={muted || !canChat}
+						disabled={muted || locked || !canChat}
 						class="ml-auto rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-slate-300"
 						aria-label="В кого кинуть эмодзи"
 					>
@@ -135,8 +139,8 @@
 					<input
 						bind:value={draft}
 						maxlength={MAX_CHAT_CHARS}
-						disabled={muted || !canChat}
-						placeholder={muted ? 'Вас заглушили' : 'Сообщение…'}
+						disabled={muted || locked || !canChat}
+						placeholder={muted ? 'Вас заглушили' : locked ? 'Чат заморожен' : 'Сообщение…'}
 						class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-blue-400/50 focus:outline-none disabled:opacity-50"
 						aria-label="Сообщение в чат"
 					/>
@@ -146,7 +150,7 @@
 				</div>
 				<button
 					type="submit"
-					disabled={muted || !canChat || draft.trim().length === 0}
+					disabled={muted || locked || !canChat || draft.trim().length === 0}
 					class="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-3 py-2 text-sm font-semibold text-white transition disabled:opacity-40"
 				>
 					Отправить

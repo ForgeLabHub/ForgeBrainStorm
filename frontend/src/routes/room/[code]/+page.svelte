@@ -74,6 +74,9 @@
 	let myId = $state('');
 	let chatMessages = $state<ChatMessage[]>([]);
 	let chatMuted = $state(false);
+	let chatLocked = $state(false);
+	let blindSeconds = $state(0);
+	let blindTimer: ReturnType<typeof setInterval> | null = null;
 	let throws = $state<EmojiThrow[]>([]);
 	let throwSeq = 0;
 	let cheatReveal: number | null = $state(null);
@@ -248,6 +251,39 @@
 		ws.on('jinxed', (data: any) => {
 			cheatNotice = `${data?.by ?? 'Читер'} проклял вас: следующий ответ не принесёт очков`;
 		});
+		ws.on('blinded', (data: any) => {
+			// The server refuses the answer anyway; this only makes the wait
+			// visible and disables the buttons.
+			blindSeconds = typeof data?.seconds === 'number' ? data.seconds : 10;
+			cheatNotice = `${data?.by ?? 'Читер'} ослепил вас на ${blindSeconds} с`;
+			if (blindTimer) clearInterval(blindTimer);
+			blindTimer = setInterval(() => {
+				blindSeconds = Math.max(0, blindSeconds - 1);
+				if (blindSeconds === 0 && blindTimer) {
+					clearInterval(blindTimer);
+					blindTimer = null;
+				}
+			}, 1000);
+		});
+		ws.on('status', (data: any) => {
+			// Sent on join: a reload must not launder a mute, a curse or a blind.
+			if (typeof data?.muted === 'boolean') chatMuted = data.muted;
+			if (typeof data?.eliminated === 'boolean') eliminated = data.eliminated;
+			if (data?.jinxed) cheatNotice = 'На вас лежит проклятие: следующий ответ не принесёт очков';
+			if (typeof data?.blind_seconds === 'number' && data.blind_seconds > 0) {
+				blindSeconds = data.blind_seconds;
+			}
+		});
+		ws.on('chat_locked', (data: any) => {
+			chatLocked = Boolean(data?.locked);
+		});
+		ws.on('chat_cleared', () => {
+			chatMessages = [];
+		});
+		ws.on('kicked', (data: any) => {
+			roomMissing = true;
+			error = data?.message || 'Вас удалили из комнаты';
+		});
 		ws.on('announcement', (data: any) => {
 			if (data?.message) cheatNotice = data.message;
 		});
@@ -332,12 +368,21 @@
 				roomMissing = true;
 				return;
 			}
+			if (typeof data?.code === 'string' && data.code.startsWith('cheat')) {
+				cheatNotice = data.message || 'Способность не сработала';
+				return;
+			}
+			if (data?.code === 'blinded') {
+				cheatNotice = data.message || 'Вас ослепили';
+				return;
+			}
 			error = data.message || 'Ошибка';
 		});
 	});
 
 	onDestroy(() => {
 		stopTimer();
+		if (blindTimer) clearInterval(blindTimer);
 	});
 
 	function startTimer() {
@@ -357,6 +402,7 @@
 
 	function submitAnswer(index: number) {
 		if (selectedAnswer !== null || gamePhase !== 'playing') return;
+		if (blindSeconds > 0) return;
 		selectedAnswer = index;
 		ws.send('submit_answer', { answer_index: index });
 	}
@@ -549,14 +595,21 @@
 						</div>
 					</div>
 
+					{#if blindSeconds > 0}
+						<div class="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+							<Icon name="blind" class="h-5 w-5 shrink-0" />
+							<span>Вас ослепили: отвечать можно через {blindSeconds} с</span>
+						</div>
+					{/if}
+
 					<!-- Options -->
-					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 {blindSeconds > 0 ? 'pointer-events-none blur-sm' : ''}">
 						{#each question.options as option, i}
 							{@const isSelected = selectedAnswer === i}
 							{@const isHidden = hiddenOptions.includes(i)}
 							<button
 								onclick={() => submitAnswer(i)}
-								disabled={selectedAnswer !== null || isHidden || eliminated}
+								disabled={selectedAnswer !== null || isHidden || eliminated || blindSeconds > 0}
 								class="group relative overflow-hidden rounded-xl border p-5 text-left transition-all {
 									isHidden
 										? 'border-white/5 bg-white/[0.01] opacity-30 line-through'
@@ -776,6 +829,7 @@
 			<ChatPanel
 				messages={chatMessages}
 				muted={chatMuted}
+				locked={chatLocked}
 				canChat={gamePhase === 'playing' || gamePhase === 'waiting'}
 				targets={cheatTargets}
 				onSend={sendChat}

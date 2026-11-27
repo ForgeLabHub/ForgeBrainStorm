@@ -32,11 +32,15 @@ export type CheatPowerKind =
 	| 'hijack'
 	| 'rewrite'
 	| 'mute'
-	| 'jinx';
+	| 'jinx'
+	| 'leech'
+	| 'blind'
+	| 'swap'
+	| 'hint';
 
 export type CheatBudget = Record<CheatPowerKind, number>;
 
 /** Powers that need a victim picked from the player list. */
-export const TARGET_POWERS: CheatPowerKind[] = ['hijack', 'mute', 'jinx'];
+export const TARGET_POWERS: CheatPowerKind[] = ['hijack', 'mute', 'jinx', 'blind'];
 
 export type CheatTarget = { id: string; name: string };

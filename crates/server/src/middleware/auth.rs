@@ -69,8 +69,16 @@ impl SessionCache {
             }
         }
 
-        let row = sqlx::query_as::<_, (i64, String, String)>(
-            "SELECT u.id, u.username, u.role
+        // The ban check rides along with the session lookup: a banned account
+        // must not keep playing on a session it already had. Cached sessions
+        // skip this query, which is why banning also calls `invalidate_user`.
+        let row = sqlx::query_as::<_, (i64, String, String, bool)>(
+            "SELECT u.id, u.username, u.role,
+                    EXISTS (
+                        SELECT 1 FROM bans b
+                        WHERE b.kind = 'user' AND b.identifier = u.id::text
+                          AND b.expires_at > NOW()
+                    ) AS banned
              FROM sessions s
              JOIN users u ON u.id = s.user_id
              WHERE s.token = $1 AND s.expires_at > NOW() AND s.revoked_at IS NULL",
@@ -79,6 +87,10 @@ impl SessionCache {
         .fetch_optional(&self.pool)
         .await?
         .ok_or(AppError::Unauthorized)?;
+
+        if row.3 {
+            return Err(AppError::Forbidden("Аккаунт заблокирован"));
+        }
 
         let ctx = AuthContext {
             user_id: row.0,
@@ -100,6 +112,13 @@ impl SessionCache {
 
     pub fn invalidate(&self, token: &str) {
         self.inner.remove(token);
+    }
+
+    /// Drop every cached session of one account. Needed after a ban or a role
+    /// change: the cache would otherwise serve the old role, or ignore the ban,
+    /// for the rest of its TTL.
+    pub fn invalidate_user(&self, user_id: i64) {
+        self.inner.retain(|_, cached| cached.ctx.user_id != user_id);
     }
 
     pub fn pool(&self) -> &PgPool {
