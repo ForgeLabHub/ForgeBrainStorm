@@ -177,8 +177,10 @@ fn set_session_cookie(jar: CookieJar, token: &str, state: &AppState) -> CookieJa
 }
 
 async fn fetch_user_response(pool: &sqlx::PgPool, user_id: i64) -> AppResult<serde_json::Value> {
-    let row = sqlx::query_as::<_, (String, i64, i32, i32, i32)>(
-        "SELECT username, xp, coins, games_played, wins FROM users WHERE id = $1",
+    let row = sqlx::query_as::<_, (String, i64, i32, i32, i32, i64)>(
+        "SELECT u.username, u.xp, u.coins, u.games_played, u.wins, \
+         COALESCE(l.total_score, 0) \
+         FROM users u LEFT JOIN leaderboard l ON l.user_id = u.id WHERE u.id = $1",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -191,6 +193,7 @@ async fn fetch_user_response(pool: &sqlx::PgPool, user_id: i64) -> AppResult<ser
         "coins": row.2,
         "games_played": row.3,
         "wins": row.4,
+        "total_score": row.5,
         "level": level,
     }))
 }

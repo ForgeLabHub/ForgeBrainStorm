@@ -10,6 +10,7 @@ xp: number;
 coins: number;
 games_played: number;
 wins: number;
+total_score?: number;
 level: number;
 }
 

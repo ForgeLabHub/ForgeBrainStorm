@@ -314,7 +314,7 @@
 						</div>
 					</div>
 					<div class="text-2xl font-bold text-blue-400">
-						{user.games_played > 0 ? Math.round(user.xp / user.games_played) : 0}
+						{user.games_played > 0 ? Math.round((user.total_score ?? 0) / user.games_played) : 0}
 					</div>
 				</div>
 			</div>
