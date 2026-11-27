@@ -595,6 +595,13 @@ fn team_standings(room: &Room) -> Option<Value> {
             }
         }
     }
+    if room.settings.mode.is_coop() {
+        return Some(Value::Array(vec![json!({
+            "team": 0,
+            "name": "Все вместе",
+            "score": totals[0]
+        })]));
+    }
     let teams: Vec<Value> = TEAM_NAMES
         .iter()
         .enumerate()

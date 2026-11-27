@@ -6,7 +6,9 @@ export const MODES: Record<string, { label: string; hint: string }> = {
   lives: { label: 'На выживание', hint: 'Три жизни, ошибки выбивают' },
   blitz: { label: 'Блиц', hint: '10 секунд на вопрос, серия умножает очки' },
   team: { label: 'Команды', hint: 'Две команды на одном счёте' },
-  sandbox: { label: 'Тренировка', hint: 'Без рейтинга и жизней' }
+  sandbox: { label: 'Тренировка', hint: 'Без рейтинга и жизней' },
+  coop: { label: 'Кооператив', hint: 'Одна общая копилка очков' },
+  svoyaigra: { label: 'Своя Игра', hint: '15 секунд, очки растут с ответом' }
 };
 
 export const DIFFICULTIES: Record<string, string> = {

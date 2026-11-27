@@ -201,9 +201,15 @@ impl Room {
             .map(|player| (player.joined_at, player.sid.clone()))
             .collect();
         seats.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        let coop = self.settings.mode.is_coop();
         for (index, (_, sid)) in seats.iter().enumerate() {
             if let Some(player) = self.players.get_mut(sid) {
-                player.team = Some((index % TEAM_NAMES.len()) as u8);
+                // Coop has a single side, so every player scores into the same pool.
+                player.team = Some(if coop {
+                    0
+                } else {
+                    (index % TEAM_NAMES.len()) as u8
+                });
             }
         }
     }

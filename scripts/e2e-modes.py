@@ -164,6 +164,28 @@ async def main() -> int:
     if sandbox["host_delta"] != 0 or sandbox["guest_delta"] != 0:
         failures.append(f"sandbox: stats changed {sandbox['host_delta']}/{sandbox['guest_delta']}")
 
+    coop = await play("coop", 12, 3)
+    over = coop["game_over"]
+    print("coop game_over:", json.dumps(over, ensure_ascii=False)[:300])
+    coop_teams = over.get("teams") or []
+    if len(coop_teams) != 1:
+        failures.append(f"coop: expected one shared side, got {coop_teams}")
+    elif coop_teams[0].get("name") != "Все вместе":
+        failures.append(f"coop: shared side named {coop_teams[0].get('name')}")
+    if any(player.get("team") != 0 for player in over["scores"]):
+        failures.append("coop: players must all sit on the shared side")
+    if not any(player["score"] > 0 for player in over["scores"]):
+        failures.append("coop: correct answers must score")
+
+    # Svoyaigra overrides the host timer to 15s, like blitz does to 10s.
+    svoyaigra = await play("svoyaigra", 90, 3)
+    if svoyaigra["game_over"].get("mode") != "svoyaigra":
+        failures.append("svoyaigra: mode missing in game_over")
+    if any(limit != 15 for limit in svoyaigra["time_limits"]):
+        failures.append(f"svoyaigra: clock must be 15s, got {svoyaigra['time_limits']}")
+    if not any(player["score"] > 0 for player in svoyaigra["game_over"]["scores"]):
+        failures.append("svoyaigra: correct answers must score")
+
     print("failures:", failures or "none")
     return 1 if failures else 0
 

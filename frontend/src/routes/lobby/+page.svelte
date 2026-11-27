@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { modeLabel } from '$lib/ui';
 	import Icon from '$lib/Icon.svelte';
 	import { api } from '$lib/api';
 	import type { Room } from '$lib/api';
@@ -50,18 +51,6 @@
 		}
 	}
 
-	function getModeLabel(mode: string): string {
-		const labels: Record<string, string> = {
-			classic: 'Классика',
-			ffa: 'Каждый за себя',
-			team: 'Команды',
-			lives: 'На выживание',
-			blitz: 'Блиц',
-			sandbox: 'Тренировка',
-		};
-		return labels[mode] || mode;
-	}
-
 	function getModeColor(mode: string): string {
 		const colors: Record<string, string> = {
 			classic: 'from-blue-500 to-cyan-500',
@@ -69,6 +58,8 @@
 			team: 'from-purple-500 to-pink-500',
 			lives: 'from-red-500 to-rose-500',
 			blitz: 'from-amber-400 to-orange-500',
+			coop: 'from-green-500 to-emerald-500',
+			svoyaigra: 'from-cyan-500 to-blue-500',
 			sandbox: 'from-teal-500 to-emerald-500',
 		};
 		return colors[mode] || 'from-slate-500 to-slate-600';
@@ -81,6 +72,8 @@
 			team: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
 			lives: 'bg-red-500/10 text-red-400 border-red-500/20',
 			blitz: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+			coop: 'bg-green-500/10 text-green-400 border-green-500/20',
+			svoyaigra: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
 			sandbox: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
 		};
 		return badges[mode] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
@@ -196,7 +189,7 @@
 
 							<div class="flex items-center justify-between">
 								<span class="inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium {getModeBadge(room.mode)}">
-									{getModeLabel(room.mode)}
+									{modeLabel(room.mode)}
 								</span>
 								<span class="flex items-center gap-1.5 text-sm text-slate-400">
 									<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

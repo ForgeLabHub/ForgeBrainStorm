@@ -10,7 +10,7 @@
 	let questionCount = $state(10);
 	let numOptions = $state(4);
 	let timerSeconds = $state(30);
-	let timerLocked = $derived(mode === 'blitz');
+	let timerLocked = $derived(mode === 'blitz' || mode === 'svoyaigra');
 	let creating = $state(false);
 	let error = $state('');
 	let visible = $state(false);
@@ -62,30 +62,34 @@
 		}
 	}
 
-	const difficulties: { value: string; label: string; desc: string; icon: IconName; color: string }[] = [
-		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих', icon: 'seedling', color: 'from-green-500 to-emerald-500' },
-		{ value: 'medium', label: 'Средняя', desc: 'Для всех', icon: 'bolt', color: 'from-blue-500 to-cyan-500' },
-		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов', icon: 'flame', color: 'from-red-500 to-orange-500' },
+	const difficulties = [
+		{ value: 'easy', label: 'Лёгкая', desc: 'Для начинающих', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+		{ value: 'medium', label: 'Средняя', desc: 'Для всех', color: 'text-blue-400', bg: 'bg-blue-500/10' },
+		{ value: 'hard', label: 'Сложная', desc: 'Для экспертов', color: 'text-orange-400', bg: 'bg-orange-500/10' },
 	];
 
-	const modes: { value: string; label: string; desc: string; icon: IconName }[] = [
-		{ value: 'classic', label: 'Классика', desc: '100 очков за верный ответ', icon: 'target' },
-		{ value: 'ffa', label: 'Каждый за себя', desc: 'Чем быстрее ответ, тем больше очков', icon: 'swords' },
-		{ value: 'lives', label: 'На выживание', desc: '3 жизни — ошибка их отнимает', icon: 'heart' },
-		{ value: 'blitz', label: 'Блиц', desc: '10 секунд на вопрос, серия умножает очки', icon: 'bolt' },
-		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', icon: 'users' },
-		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', icon: 'cap' },
+	const modes = [
+		{ value: 'classic', label: 'Классика', desc: '100 очков за верный ответ', accent: 'border-blue-500/30' },
+		{ value: 'ffa', label: 'Каждый за себя', desc: 'Чем быстрее ответ, тем больше очков', accent: 'border-amber-500/30' },
+		{ value: 'lives', label: 'На выживание', desc: '3 жизни — ошибка их отнимает', accent: 'border-red-500/30' },
+		{ value: 'blitz', label: 'Блиц', desc: '10 секунд, серия умножает очки', accent: 'border-yellow-500/30' },
+		{ value: 'team', label: 'Команды', desc: 'Две команды, счёт общий', accent: 'border-purple-500/30' },
+		{ value: 'coop', label: 'Кооператив', desc: 'Работайте вместе ради общей цели', accent: 'border-green-500/30' },
+		{ value: 'svoyaigra', label: 'Своя Игра', desc: '15 секунд на вопрос, очки растут с ответом', accent: 'border-cyan-500/30' },
+		{ value: 'sandbox', label: 'Тренировка', desc: 'Без рейтинга и жизней', accent: 'border-slate-500/30' },
 	];
 
-	const BLITZ_TIMER = 10;
+	const FIXED_TIMERS: Record<string, number> = { blitz: 10, svoyaigra: 15 };
 </script>
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6">
 	<!-- Header -->
 	<div class="mb-8 transition-all duration-700 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
 		<div class="flex items-center gap-3">
-			<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-				<Icon name="gamepad" class="h-5 w-5" />
+			<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600">
+				<svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+				</svg>
 			</div>
 			<div>
 				<h1 class="text-2xl font-bold text-white sm:text-3xl">Создать комнату</h1>
@@ -137,8 +141,16 @@
 									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
 							}">
 								<input type="radio" bind:group={difficulty} value={d.value} class="sr-only" />
-								<div class="flex h-10 w-10 items-center justify-center rounded-lg {difficulty === d.value ? `bg-gradient-to-br ${d.color} text-white` : 'bg-white/5 text-slate-300'} transition-transform group-hover:scale-110">
-									<Icon name={d.icon} />
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {difficulty === d.value ? d.bg : 'bg-white/5'} transition-all">
+									<svg class="h-5 w-5 {difficulty === d.value ? d.color : 'text-slate-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										{#if d.value === 'easy'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+										{:else if d.value === 'medium'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+										{:else}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"></path>
+										{/if}
+									</svg>
 								</div>
 								<div class="min-w-0 flex-1">
 									<div class="font-medium text-white">{d.label}</div>
@@ -170,12 +182,31 @@
 						{#each modes as m}
 							<label class="group flex items-center gap-3 rounded-xl border p-3 transition-all cursor-pointer {
 								mode === m.value
-									? 'border-white/20 bg-white/[0.05]'
+									? `border-white/20 bg-white/[0.05] ${m.accent}`
 									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
 							}">
 								<input type="radio" bind:group={mode} value={m.value} class="sr-only" />
-								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white' : 'bg-white/5 text-slate-300'} transition-transform group-hover:scale-110">
-									<Icon name={m.icon} />
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {mode === m.value ? 'bg-white/10' : 'bg-white/5'} transition-all">
+									<svg class="h-5 w-5 {mode === m.value ? 'text-white' : 'text-slate-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										{#if m.value === 'classic'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+										{:else if m.value === 'ffa'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+										{:else if m.value === 'lives'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+										{:else if m.value === 'blitz'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+										{:else if m.value === 'team'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+										{:else if m.value === 'coop'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+										{:else if m.value === 'svoyaigra'}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+										{:else}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+										{/if}
+									</svg>
 								</div>
 								<div class="min-w-0 flex-1">
 									<div class="font-medium text-white">{m.label}</div>
@@ -236,7 +267,7 @@
 						<span class="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">Время (сек)</span>
 						<input
 							type="number"
-							value={timerLocked ? BLITZ_TIMER : timerSeconds}
+							value={timerLocked ? (FIXED_TIMERS[mode] || 30) : timerSeconds}
 							oninput={(event) => (timerSeconds = Number(event.currentTarget.value))}
 							disabled={timerLocked}
 							min="10"
@@ -244,7 +275,7 @@
 							class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xl font-bold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:text-slate-400"
 						/>
 						<span class="mt-1 block text-xs text-slate-500">
-							{timerLocked ? 'В блице время фиксировано — 10 секунд' : '10–120'}
+							{timerLocked ? `Фиксировано: ${FIXED_TIMERS[mode]}с` : '10–120'}
 						</span>
 					</label>
 				</div>
