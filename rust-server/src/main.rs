@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod domain;
 mod error;
+mod metrics;
 mod middleware;
 mod routes;
 mod security;

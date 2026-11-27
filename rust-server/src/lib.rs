@@ -7,6 +7,7 @@ pub mod config;
 pub mod db;
 pub mod domain;
 pub mod error;
+pub mod metrics;
 pub mod middleware;
 pub mod security;
 pub mod services;

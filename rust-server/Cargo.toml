@@ -23,6 +23,9 @@ tower = { version = "0.4", features = ["timeout", "limit", "filter"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "fs", "catch-panic", "set-header", "request-id", "util"] }
 http = "1.1"
 
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
+
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

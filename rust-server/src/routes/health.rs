@@ -8,12 +8,15 @@ use axum::{Json, Router};
 use serde_json::json;
 
 use crate::error::AppResult;
+use crate::metrics;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
+        .route("/livez", get(livez))
         .route("/readyz", get(ready))
+        .route("/metrics", get(metrics_endpoint))
 }
 
 /// Liveness probe — always returns 200 if the process is up.
@@ -21,6 +24,13 @@ async fn health() -> impl IntoResponse {
     Json(json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+/// Liveness probe (alias for /health, Kubernetes convention).
+async fn livez() -> impl IntoResponse {
+    Json(json!({
+        "status": "ok",
     }))
 }
 
@@ -34,4 +44,14 @@ async fn ready(State(state): State<AppState>) -> AppResult<impl IntoResponse> {
             "db": "ok",
         })),
     ))
+}
+
+/// Prometheus metrics endpoint.
+async fn metrics_endpoint() -> impl IntoResponse {
+    let body = metrics::encode_metrics();
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; charset=utf-8")],
+        body,
+    )
 }
