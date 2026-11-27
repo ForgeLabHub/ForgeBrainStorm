@@ -5,7 +5,7 @@
 
 <p>
   <a href="docs/index.md"><img alt="docs" src="https://img.shields.io/badge/docs-полная%20документация-blue"></a>
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-1.85%2B-000000?logo=rust">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-1.89%2B-000000?logo=rust">
   <img alt="SvelteKit" src="https://img.shields.io/badge/SvelteKit-5-FF3E00?logo=svelte">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql">
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -56,7 +56,7 @@ leaderboard, XP and game history.
 ## Архитектура / Architecture
 
 ```
-frontend/ (SvelteKit, adapter-node)          rust-server/ (axum + tokio)
+frontend/ (SvelteKit, adapter-node)      crates/server/ (axum + tokio)
 ┌───────────────────────────┐   /api, /ws   ┌──────────────────────────────┐
 │ /                landing   │ ───────────▶ │ routes/   HTTP (auth, rooms, │
 │ /auth/login|register       │              │           ai, leaderboard…)   │
@@ -75,20 +75,19 @@ frontend/ (SvelteKit, adapter-node)          rust-server/ (axum + tokio)
 
 ## Быстрый старт / Quick start
 
-Нужны: Rust 1.85+, Node 20+, PostgreSQL 16+.
+Нужны: Rust 1.89+ (пин — `rust-toolchain.toml`), Node 20+, PostgreSQL 16+.
 
 ```bash
 # 1. База
 createdb brainstorm
 
 # 2. Бэкенд (миграции применяются при старте)
-cd rust-server
 BRAINSTORM_DATABASE_URL=postgres://brainstorm:brainstorm@localhost:5432/brainstorm \
 OPENROUTER_API_KEY=sk-or-... \
-cargo run                      # http://localhost:5000
+cargo run -p brainstorm        # http://localhost:5000
 
 # 3. Фронтенд
-cd ../frontend
+cd frontend
 npm install
 npm run dev                    # http://localhost:5173, /api и /ws проксируются на :5000
 ```
@@ -101,7 +100,7 @@ npm run dev                    # http://localhost:5173, /api и /ws прокси
 ```bash
 curl -s localhost:5000/health                 # {"status":"ok",...}
 (cd frontend && npx svelte-check --tsconfig ./tsconfig.json)
-(cd rust-server && cargo test)
+cargo test --workspace
 python scripts/e2e-modes.py                   # партии по WS: режимы, команды, блиц, тренировка
 ```
 
@@ -111,7 +110,7 @@ python scripts/e2e-modes.py                   # партии по WS: режим
 docker compose -f deploy/docker-compose.prod.yml up -d --build   # Postgres + backend + frontend + Caddy
 ```
 
-Локальный стек с БД и Redis: `cd rust-server && docker compose up`. Переменные
+Локальный стек с БД и Redis: `docker compose up`. Переменные
 и требования — [BUILD.md](BUILD.md), продакшен — [docs/operations/deployment.md](docs/operations/deployment.md).
 
 ## Переменные окружения / Environment
@@ -119,7 +118,7 @@ docker compose -f deploy/docker-compose.prod.yml up -d --build   # Postgres + ba
 | Переменная | Назначение | По умолчанию |
 |---|---|---|
 | `BRAINSTORM_DATABASE_URL` | строка подключения PostgreSQL | `postgres://brainstorm:brainstorm@localhost:5432/brainstorm` |
-| `BRAINSTORM_SECRET_KEY` | подпись сессий, ≥ 32 байт в продакшене | dev-значение из `rust-server/config/default.toml` |
+| `BRAINSTORM_SECRET_KEY` | подпись сессий, ≥ 32 байт в продакшене | dev-значение из `crates/server/config/default.toml` |
 | `BRAINSTORM_LISTEN` | адрес прослушивания | `0.0.0.0:5000` |
 | `BRAINSTORM_CORS_ORIGINS` | JSON-массив разрешённых origin | `["http://localhost:5173"]` |
 | `BRAINSTORM_SESSION_COOKIE_SECURE` | cookie только по HTTPS | `false` |
@@ -127,7 +126,7 @@ docker compose -f deploy/docker-compose.prod.yml up -d --build   # Postgres + ba
 | `OPENAI_API_KEY`, `GIGACHAT_CREDENTIALS` | альтернативные провайдеры | — |
 | `RUST_LOG` | фильтр логов tracing | `brainstorm=info` |
 
-Все значения из `rust-server/config/default.toml` переопределяются префиксом
+Все значения из `crates/server/config/default.toml` переопределяются префиксом
 `BRAINSTORM_`. Секреты в репозиторий не попадают: см. [docs/security/secrets.md](docs/security/secrets.md).
 
 ## API и WebSocket
@@ -182,12 +181,12 @@ python scripts/e2e-modes.py   # живая проверка режимов че�
 
 | Путь | Что это |
 |---|---|
-| `rust-server/` | бэкенд: axum, tokio, sqlx, WebSocket-игровой цикл, ИИ-провайдеры, миграции |
+| `crates/server/` | бэкенд: axum, tokio, sqlx, WebSocket-игровой цикл, ИИ-провайдеры, миграции |
 | `frontend/` | SvelteKit-приложение (Svelte 5 runes, Tailwind) |
 | `deploy/` | production-стек: PostgreSQL + backend + frontend + Caddy |
 | `docs/` | архитектура, API, БД, эксплуатация, безопасность, верификация |
 | `scripts/` | `docs-check`, `ws-check`, `e2e-modes`, вспомогательные скрипты |
-| `rust-server/experimental/` | прототипы из веток `arena/*` (RAG, DDA, Redis pub/sub, альтернативный WS-цикл) — **не в сборке**, см. [README](rust-server/experimental/README.md) |
+| `crates/server/experimental/` | прототипы из веток `arena/*` (RAG, DDA, Redis pub/sub, альтернативный WS-цикл) — **не в сборке**, см. [README](crates/server/experimental/README.md) |
 | `app/`, `templates/`, `static/`, `run.py` | **legacy**: прежний Flask + Socket.IO монолит, продуктом не используется; живёт только ради старого деплоя |
 
 ## Документация

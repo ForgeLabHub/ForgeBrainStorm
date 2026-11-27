@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "xtask"]
+default-members = ["crates/server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# The lockfile's oldest-compatible toolchain, verified with `cargo metadata`:
+# uuid 1.29.3 requires 1.89, which is the highest requirement in the graph.
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/ForgeLabHub/ForgeBrainStorm"
+
+# Dependencies shared by more than one crate live here; members inherit with
+# `axum.workspace = true`. Crates that need a single extra feature re-declare it
+# in their own manifest.
+[workspace.dependencies]
+# Web framework
+axum = { version = "0.7", features = ["ws", "macros"] }
+axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
+tower = { version = "0.4", features = ["timeout", "limit", "filter"] }
+tower-http = { version = "0.5", features = [
+  "cors",
+  "trace",
+  "fs",
+  "catch-panic",
+  "set-header",
+  "request-id",
+  "util",
+] }
+http = "1.1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Database
+sqlx = { version = "0.8", features = [
+  "runtime-tokio-rustls",
+  "postgres",
+  "chrono",
+  "uuid",
+  "migrate",
+  "json",
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+
+# Time / ids / misc
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+bytes = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

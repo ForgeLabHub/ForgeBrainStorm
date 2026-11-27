@@ -1,0 +1,6 @@
+# Aliases keep the CI commands and local runs identical.
+[alias]
+xtask = "run --package xtask --"
+test-all = "test --workspace --all-targets"
+clippy-all = "clippy --workspace --all-targets -- -D warnings"
+build-all = "build --workspace --all-targets"

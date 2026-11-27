@@ -5,8 +5,7 @@
 ## 1. Компиляция Rust backend
 
 ```bash
-cd rust-server
-cargo check
+cargo check --workspace
 ```
 
 **Ожидаемые проблемы** (исправить до мержа):
@@ -48,8 +47,7 @@ npm run check
 ## 5. Docker build
 
 ```bash
-cd rust-server
-docker build -t brainstorm:test .
+docker build -f crates/server/Dockerfile -t brainstorm:test .
 ```
 
 **Размер образа**: Ожидается 50-80 MB (не 15-20 MB, как написано в README — это было оптимистично).
@@ -127,8 +125,8 @@ docker compose exec postgres psql -U brainstorm
 
 ```bash
 # Найти все места, где используется rooms.write() или rooms.read()
-grep -rn "rooms\.write()" rust-server/src/
-grep -rn "rooms\.read()" rust-server/src/
+grep -rn "rooms\.write()" crates/server/src/
+grep -rn "rooms\.read()" crates/server/src/
 
 # Для каждого найденного места проверить, что внутри нет .await
 # Если есть — заменить на tokio::sync::RwLock
@@ -141,7 +139,7 @@ grep -rn "rooms\.read()" rust-server/src/
 Проверить, что broadcast channel создаётся per-room, а не глобально:
 
 ```bash
-grep -n "broadcast::channel" rust-server/src/domain/room.rs
+grep -n "broadcast::channel" crates/server/src/domain/room.rs
 ```
 
 **Ожидаемый результат**: Строка 108 в `Room::new()` — создаётся per-room. ✅
@@ -151,7 +149,7 @@ grep -n "broadcast::channel" rust-server/src/domain/room.rs
 Проверить, что WS handler требует авторизацию:
 
 ```bash
-grep -A5 "route(\"/ws\"" rust-server/src/main.rs
+grep -A5 "route(\"/ws\"" crates/server/src/main.rs
 ```
 
 **Ожидаемый результат**: Должен быть `.layer(axum::middleware::from_fn_with_state(..., ws_auth_middleware))`. ✅ (добавлено)
@@ -161,7 +159,7 @@ grep -A5 "route(\"/ws\"" rust-server/src/main.rs
 Проверить, используются ли compile-time checked queries:
 
 ```bash
-grep -n "sqlx::query!" rust-server/src/**/*.rs
+grep -n "sqlx::query!" crates/server/src/**/*.rs
 ```
 
 **Ожидаемый результат**: Пусто — все queries runtime-checked. Это проблема для production, но приемлемо для первого PR.
@@ -173,7 +171,7 @@ grep -n "sqlx::query!" rust-server/src/**/*.rs
 Проверить параметры хэширования:
 
 ```bash
-grep -n "Argon2::default()" rust-server/src/routes/auth.rs
+grep -n "Argon2::default()" crates/server/src/routes/auth.rs
 ```
 
 **Ожидаемый результат**: Строки 54 и 101. Это дефолтные параметры (m=19456 KB, t=2, p=1), что может быть медленно при высокой нагрузке.

@@ -18,13 +18,13 @@ High-performance rewrite of the BrainStorm quiz platform backend in Rust.
 
 ### Prerequisites
 
-- Rust 1.85+
+- Rust 1.89+ (закреплён в `rust-toolchain.toml`)
 - PostgreSQL 16 (`docker compose up -d postgres`)
 - AI provider key (optional — the game works offline with the built-in question bank)
 
 ### Local Development
 
-1. **Start Postgres and Redis**:
+1. **Start Postgres and Redis** (from the repository root):
    ```bash
    docker compose up -d postgres redis
    ```
@@ -45,9 +45,9 @@ High-performance rewrite of the BrainStorm quiz platform backend in Rust.
    export OPENROUTER_API_KEY="sk-or-..."   # optional: enables AI question generation
    ```
 
-4. **Run the server**:
+4. **Run the server** (from the repository root; the crate lives in a workspace):
    ```bash
-   cargo run
+   cargo run -p brainstorm
    ```
    Server starts at `http://localhost:5000`.
 
@@ -223,16 +223,15 @@ migrations/
 ## Testing
 
 ```bash
-# Unit tests
-cargo test
+# Everything CI runs (fmt --check, clippy -D warnings, tests)
+cargo xtask ci
+
+# Just this crate
+cargo test -p brainstorm
 
 # Integration tests (requires Postgres)
 docker compose up -d postgres
-cargo test --test health -- --ignored
-
-# Lint
-cargo clippy -- -D warnings
-cargo fmt --check
+cargo test -p brainstorm --test health -- --ignored
 ```
 
 ## License

@@ -70,11 +70,11 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 # ── Backend build ─────────────────────────────────────────────
-BIN="$ROOT/rust-server/target/debug/brainstorm"
+BIN="$ROOT/target/debug/brainstorm"
 if [ "$FORCE_BUILD" = 1 ] || [ ! -x "$BIN" ] ||
-	[ -n "$(find "$ROOT/rust-server/src" "$ROOT/rust-server/migrations" -newer "$BIN" -print -quit 2>/dev/null)" ]; then
+	[ -n "$(find "$ROOT/crates/server/src" "$ROOT/crates/server/migrations" -newer "$BIN" -print -quit 2>/dev/null)" ]; then
 	log "building backend"
-	(cd "$ROOT/rust-server" && cargo build --quiet) || {
+	(cd "$ROOT" && cargo build --quiet -p brainstorm) || {
 		log "backend build FAILED"
 		exit 1
 	}

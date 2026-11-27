@@ -24,7 +24,8 @@ services:
 
   backend:
     build:
-      context: ../rust-server
+      context: ../..
+      dockerfile: crates/server/Dockerfile
     restart: unless-stopped
     environment:
       BRAINSTORM_ENV: production

@@ -1,0 +1,59 @@
+[package]
+name = "brainstorm"
+description = "BrainStorm — realtime quiz platform (Rust rewrite)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "brainstorm"
+path = "src/lib.rs"
+
+[dependencies]
+# Shared with the rest of the workspace (see the root Cargo.toml).
+axum.workspace = true
+axum-extra.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+http.workspace = true
+tokio.workspace = true
+futures.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+bytes.workspace = true
+
+# Server-only dependencies.
+dotenvy = "0.15"
+prometheus = { version = "0.13", features = ["process"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+argon2 = "0.5"
+password-hash = "0.5"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+validator = { version = "0.18", features = ["derive"] }
+hmac = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+dashmap = "6"
+base64 = "0.22"
+parking_lot = "0.12"
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tower = { workspace = true, features = ["util"] }
+insta = { version = "1", features = ["json"] }
+
+[features]
+# Rate limiting is implemented but not wired: behind Caddy `ConnectInfo` is the
+# proxy address, so keying by it would throttle every player together. Enable
+# once the limiter keys on X-Forwarded-For; see src/middleware/rate_limit.rs.
+rate-limit = []

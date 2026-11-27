@@ -52,7 +52,7 @@ done < <(grep -rnoE '\[[^]]*\]\([^)]+\)' --include='*.md' \
 printf '\nОтладочные артефакты\n'
 stray="$(find . -type f \( -name '*.bak*' -o -name '*.fixbak' -o -name '*.orig' \) \
   -not -path './.git/*' -not -path './node_modules/*' -not -path '*/node_modules/*' \
-  -not -path './rust-server/target/*' -not -path './.venv/*' | head -5)"
+  -not -path './target/*' -not -path './.venv/*' | head -5)"
 [ -z "$stray" ] && ok "временных копий в репозитории нет" || { bad "в репозитории лежат копии: $stray"; }
 
 printf '\n'
