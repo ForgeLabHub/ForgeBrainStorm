@@ -29,17 +29,23 @@ pub enum GameMode {
     Team,
     /// Practice: no lives, no persistence, nothing on the leaderboard.
     Sandbox,
+    /// Cooperative: players work together, shared score, no elimination.
+    Coop,
+    /// Svoyaigra (Jeopardy-style): players choose questions with point values.
+    Svoyaigra,
 }
 
 impl GameMode {
     /// Modes offered by the UI, in display order.
-    pub const ALL: [GameMode; 6] = [
+    pub const ALL: [GameMode; 8] = [
         GameMode::Classic,
         GameMode::FreeForAll,
         GameMode::Lives,
         GameMode::Blitz,
         GameMode::Team,
         GameMode::Sandbox,
+        GameMode::Coop,
+        GameMode::Svoyaigra,
     ];
 
     /// Parse a mode sent by a client. Aliases keep old links and API clients
@@ -52,6 +58,8 @@ impl GameMode {
             "blitz" => Some(GameMode::Blitz),
             "team" | "teams" => Some(GameMode::Team),
             "sandbox" | "practice" => Some(GameMode::Sandbox),
+            "coop" | "cooperative" => Some(GameMode::Coop),
+            "svoyaigra" | "jeopardy" => Some(GameMode::Svoyaigra),
             _ => None,
         }
     }
@@ -64,6 +72,8 @@ impl GameMode {
             GameMode::Blitz => "blitz",
             GameMode::Team => "team",
             GameMode::Sandbox => "sandbox",
+            GameMode::Coop => "coop",
+            GameMode::Svoyaigra => "svoyaigra",
         }
     }
 
@@ -76,6 +86,8 @@ impl GameMode {
             GameMode::Blitz => "Блиц",
             GameMode::Team => "Команды",
             GameMode::Sandbox => "Тренировка",
+            GameMode::Coop => "Кооператив",
+            GameMode::Svoyaigra => "Своя Игра",
         }
     }
 
@@ -88,6 +100,8 @@ impl GameMode {
             GameMode::Blitz => "10 секунд на вопрос, серия умножает очки",
             GameMode::Team => "Две команды, счёт общий",
             GameMode::Sandbox => "Без рейтинга и жизней — просто поиграть",
+            GameMode::Coop => "Работайте вместе ради общей цели",
+            GameMode::Svoyaigra => "Выбирай категорию и ставку очков",
         }
     }
 
@@ -103,24 +117,26 @@ impl GameMode {
     pub fn timer_override(self) -> Option<u64> {
         match self {
             GameMode::Blitz => Some(10),
+            GameMode::Svoyaigra => Some(15),
             _ => None,
         }
     }
 
     pub fn is_team(self) -> bool {
-        self == GameMode::Team
+        matches!(self, GameMode::Team | GameMode::Coop)
     }
 
     /// Whether the finished game belongs in the leaderboard and history.
     pub fn persists(self) -> bool {
-        self != GameMode::Sandbox
+        !matches!(self, GameMode::Sandbox)
     }
 
     /// Flat points a correct answer is worth before speed/streak adjustments.
     pub fn base_points(self) -> i64 {
         match self {
             GameMode::Blitz => 60,
-            GameMode::Sandbox => 50,
+            GameMode::Sandbox | GameMode::Coop => 50,
+            GameMode::Svoyaigra => 100,
             _ => 100,
         }
     }
@@ -143,6 +159,17 @@ impl GameMode {
                 let multiplier = (1.0 + 0.25 * f64::from(streak.saturating_sub(1))).min(2.0);
                 (f64::from(self.base_points() as i32) * multiplier).round() as i64
             }
+            // Cooperative: bonus for consecutive correct answers, shared pool.
+            GameMode::Coop => {
+                let bonus = 1.0 + 0.1 * f64::from(streak.saturating_sub(1));
+                (f64::from(self.base_points() as i32) * bonus).round() as i64
+            }
+            // Svoyaigra: base points, but players choose their stake.
+            // Speed bonus applies: faster = more points.
+            GameMode::Svoyaigra => {
+                let raw = 60.0 + 40.0 * speed;
+                ((raw / 10.0).round() * 10.0) as i64
+            }
             _ => self.base_points(),
         }
     }
@@ -164,7 +191,8 @@ mod tests {
         assert_eq!(GameMode::parse("survival"), Some(GameMode::Lives));
         assert_eq!(GameMode::parse("teams"), Some(GameMode::Team));
         assert_eq!(GameMode::parse("practice"), Some(GameMode::Sandbox));
-        assert_eq!(GameMode::parse("coop"), None);
+        assert_eq!(GameMode::parse("cooperative"), Some(GameMode::Coop));
+        assert_eq!(GameMode::parse("jeopardy"), Some(GameMode::Svoyaigra));
     }
 
     #[test]
@@ -191,6 +219,21 @@ mod tests {
             assert_eq!(mode.points(1.0, 1), 100);
             assert_eq!(mode.points(0.0, 7), 100);
         }
+    }
+
+    #[test]
+    fn coop_rewards_streak() {
+        assert_eq!(GameMode::Coop.points(1.0, 1), 50);
+        assert_eq!(GameMode::Coop.points(1.0, 5), 70);
+        assert_eq!(GameMode::Coop.points(0.5, 3), 60);
+    }
+
+    #[test]
+    fn svoyaigra_rewards_speed() {
+        let instant = GameMode::Svoyaigra.points(1.0, 1);
+        let buzzer = GameMode::Svoyaigra.points(0.0, 1);
+        assert_eq!(instant, 100);
+        assert_eq!(buzzer, 60);
     }
 
     #[test]
