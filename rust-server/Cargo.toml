@@ -6,6 +6,14 @@ rust-version = "1.85"
 description = "BrainStorm — realtime quiz platform (Rust rewrite)"
 license = "MIT"
 
+[lib]
+name = "brainstorm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "brainstorm-server"
+path = "src/main.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["ws", "macros"] }
@@ -14,6 +22,9 @@ axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
 tower = { version = "0.4", features = ["timeout", "limit", "filter"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "fs", "catch-panic", "set-header", "request-id", "util"] }
 http = "1.1"
+
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

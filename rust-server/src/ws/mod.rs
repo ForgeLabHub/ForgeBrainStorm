@@ -796,6 +796,17 @@ fn players_event(room: &Room) -> String {
 fn question_event(room: &Room) -> Option<String> {
     let question = room.questions.get(room.current_q)?;
     let time_limit = room.settings.timer_secs;
+    
+    // Calculate remaining time based on server-side deadline (anti-cheat).
+    let time_remaining = room.deadline.map(|deadline| {
+        let now = std::time::Instant::now();
+        if deadline > now {
+            deadline.duration_since(now).as_secs()
+        } else {
+            0
+        }
+    }).unwrap_or(time_limit);
+    
     Some(
         json!({
             "type": "question_emitted",
@@ -804,8 +815,10 @@ fn question_event(room: &Room) -> Option<String> {
                     "question": question["question"],
                     "options": question["options"],
                     "time_limit": time_limit,
+                    "time_remaining": time_remaining,
                 },
                 "time_limit": time_limit,
+                "time_remaining": time_remaining,
                 "index": room.current_q,
                 "total": room.questions.len(),
                 "source": room.question_source,
