@@ -203,6 +203,7 @@ impl AiRouter {
         let cache_key = format!(
             "q:{}:{}:{}:{}",
             request.topic, request.difficulty, request.count, request.num_options
+        );
 
         self.generate_questions_with_provider(request, None).await
     }
