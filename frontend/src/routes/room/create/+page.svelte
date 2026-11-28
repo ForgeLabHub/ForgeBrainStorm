@@ -11,6 +11,8 @@
 	let questionCount = $state(10);
 	let numOptions = $state(4);
 	let timerSeconds = $state(30);
+	let aiProvider = $state('');
+	let aiProviders = $state<string[]>([]);
 	let timerLocked = $derived(['blitz', 'svoyaigra', 'sudden', 'marathon'].includes(mode));
 	let countLocked = $derived(mode === 'marathon');
 	let creating = $state(false);
@@ -26,6 +28,16 @@
 		numOptions = saved.options;
 		timerSeconds = saved.timer;
 
+		void api
+			.aiProviders()
+			.then((response) => {
+				aiProviders = response.providers ?? [];
+				// A single option means there is nothing to choose.
+				if (aiProviders.length === 1) aiProvider = aiProviders[0];
+			})
+			.catch(() => {
+				aiProviders = [];
+			});
 		const timer = setTimeout(() => (visible = true), 100);
 		return () => clearTimeout(timer);
 	});
@@ -46,7 +58,8 @@
 				difficulty,
 				question_count: questionCount,
 				num_options: numOptions,
-				timer_seconds: timerSeconds
+				timer_seconds: timerSeconds,
+				...(aiProvider ? { ai_provider: aiProvider } : {})
 			});
 			if (response.ok && response.room) {
 				goto(`/room/${response.room.code}`);
@@ -281,6 +294,28 @@
 					</label>
 				</div>
 			</div>
+				<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-sm sm:p-5">
+					<div class="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent"></div>
+					<div class="relative z-10">
+						<label class="block">
+							<span class="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">ИИ-провайдер</span>
+							<select
+								bind:value={aiProvider}
+								class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-base font-semibold text-white focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+							>
+								<option value="">Автоматически</option>
+								{#each aiProviders as provider}
+									<option value={provider}>{provider}</option>
+								{/each}
+							</select>
+							<span class="mt-1 block text-xs text-slate-500">
+								{aiProviders.length === 0
+									? 'Ключи не настроены — вопросы возьмутся из офлайн-банка'
+									: 'Автоматически = первый доступный, с фолбэком'}
+							</span>
+						</label>
+					</div>
+				</div>
 		</div>
 
 		<!-- Error -->

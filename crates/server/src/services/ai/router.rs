@@ -194,6 +194,62 @@ impl AiRouter {
         None
     }
 
+    /// Generate questions through the provider the host asked for, then fall
+    /// back to the automatic chain if it is unknown, dead or failing.
+    pub async fn generate_questions_with_provider(
+        &self,
+        request: &GenerationRequest,
+        provider_name: Option<&str>,
+    ) -> Result<GenerationResponse, AiError> {
+        if let Some(name) = provider_name {
+            let chosen = self
+                .providers
+                .iter()
+                .position(|provider| provider.name() == name);
+            match chosen {
+                Some(idx) => {
+                    let usable = self
+                        .circuits
+                        .read()
+                        .map(|circuits| {
+                            circuits
+                                .get(idx)
+                                .map(|circuit| circuit.is_available())
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false);
+                    if usable {
+                        match self.providers[idx].generate_questions(request).await {
+                            Ok(mut response) => {
+                                response.provider_used = self.providers[idx].name().to_string();
+                                if let Ok(mut circuits) = self.circuits.write() {
+                                    if let Some(circuit) = circuits.get_mut(idx) {
+                                        circuit.record_success();
+                                    }
+                                }
+                                info!(provider = name, "Used the provider the host picked");
+                                return Ok(response);
+                            }
+                            Err(error) => warn!(
+                                provider = name,
+                                error = %error,
+                                "Picked provider failed, falling back to the automatic chain"
+                            ),
+                        }
+                    } else {
+                        warn!(
+                            provider = name,
+                            "Picked provider is not available, falling back"
+                        );
+                    }
+                }
+                None => warn!(provider = name, "Picked provider is unknown, falling back"),
+            }
+        }
+
+        self.generate_questions(request).await
+    }
+
     /// Generate questions with automatic fallback.
     pub async fn generate_questions(
         &self,

@@ -23,6 +23,13 @@ All notable changes to BrainStorm are documented here. The format is based on
   review contract (one topic per PR, tests, changelog, docs).
 
 ### Added
+- Proposal system for the lobby: players propose a settings change (topic, mode,
+  difficulty, question count, options, timer, AI provider), vote on it and the host
+  accepts it. Values are validated before a proposal is listed, and an accepted
+  proposal is broadcast to everyone as `proposal_accepted`.
+- The room host picks the AI provider when creating a room (`ai_provider`), and
+  `GET /api/ai/providers` lists the providers that are configured and healthy. If the
+  chosen one fails, generation falls back to the automatic chain.
 - Four more cheater powers: `leech` (25 points from every opponent), `blind`
   (victim cannot answer for 10 seconds — the server refuses `submit_answer`),
   `swap` (trade scores with the leader) and `hint` (two wrong options hidden for

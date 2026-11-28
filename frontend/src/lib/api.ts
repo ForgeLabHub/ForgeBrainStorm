@@ -156,6 +156,9 @@ body: JSON.stringify(input),
 
 getRoom: (code: string) => request<RoomResponse>(`/api/rooms/${code}`),
 
+// AI providers the host can pick for a room (only configured, live ones)
+aiProviders: () => request<{ ok: boolean; providers: string[] }>('/api/ai/providers'),
+
 // Profile
 recentGames: (limit = 5) => request<RecentGamesResponse>(`/api/profile/games?limit=${limit}`),
 

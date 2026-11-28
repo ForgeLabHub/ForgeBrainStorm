@@ -86,6 +86,25 @@
 	let modeTitle = $state('');
 	let persisted = $state(true);
 
+	type Proposal = {
+		id: string;
+		proposer_sid: string;
+		proposer_name: string;
+		proposal_type: string;
+		value: string;
+		description: string;
+		vote_count: number;
+		voted_by: string[];
+		active: boolean;
+		created_at_secs: number;
+	};
+	let proposals = $state<Proposal[]>([]);
+	let proposalKind = $state('topic');
+	let proposalValue = $state('');
+	let proposalError = $state('');
+	let providerOptions = $state<string[]>([]);
+	let proposalNotice = $state('');
+
 	// Sorting `players` in place inside markup mutates state during render;
 	// every view reads this derived copy instead.
 	let ranked = $derived([...players].sort((a, b) => b.score - a.score));
@@ -110,6 +129,36 @@
 						{ team: 1, name: 'Красные', score: players.filter((p) => p.team === 1).reduce((sum, p) => sum + p.score, 0) }
 					].sort((a, b) => b.score - a.score)
 				: []
+	);
+
+	const PROPOSAL_KINDS = [
+		{ value: 'topic', label: 'Тема' },
+		{ value: 'mode', label: 'Режим' },
+		{ value: 'difficulty', label: 'Сложность' },
+		{ value: 'question_count', label: 'Вопросов' },
+		{ value: 'num_options', label: 'Вариантов' },
+		{ value: 'timer_secs', label: 'Секунд на вопрос' },
+		{ value: 'ai_provider', label: 'ИИ-провайдер' }
+	];
+	const PROPOSAL_MODES = [
+		{ value: 'classic', label: 'Классика' },
+		{ value: 'ffa', label: 'Каждый за себя' },
+		{ value: 'lives', label: 'На выживание' },
+		{ value: 'blitz', label: 'Блиц' },
+		{ value: 'team', label: 'Команды' },
+		{ value: 'sandbox', label: 'Тренировка' },
+		{ value: 'coop', label: 'Кооператив' },
+		{ value: 'svoyaigra', label: 'Своя Игра' },
+		{ value: 'sudden', label: 'Внезапная смерть' },
+		{ value: 'marathon', label: 'Марафон' }
+	];
+	const PROPOSAL_RANGES: Record<string, [number, number]> = {
+		question_count: [5, 30],
+		num_options: [2, 6],
+		timer_secs: [10, 120]
+	};
+	const SETTING_LABELS: Record<string, string> = Object.fromEntries(
+		PROPOSAL_KINDS.map((kind) => [kind.value, kind.label])
 	);
 
 	onMount(() => {
@@ -180,6 +229,14 @@
 		ws.on('player_left', (data: any) => {
 			players = players.filter(p => p.name !== (data?.name ?? data?.username));
 		});
+		void api
+			.aiProviders()
+			.then((response) => {
+				providerOptions = response.providers ?? [];
+			})
+			.catch(() => {
+				providerOptions = [];
+			});
 		ws.on('power_ups', (data: any) => {
 			powerUps = Array.isArray(data?.items) ? data.items : [];
 		});
@@ -363,6 +420,19 @@
 			gamePhase = 'playing';
 			serverTeams = [];
 		});
+		ws.on('proposals_list', (data: any) => {
+			proposals = Array.isArray(data?.proposals) ? data.proposals : [];
+		});
+		ws.on('proposal_accepted', (data: any) => {
+			const change = data?.change;
+			if (!change?.setting) return;
+			if (change.setting === 'topic') topic = change.value;
+			if (change.setting === 'mode') {
+				mode = change.value;
+				modeTitle = PROPOSAL_MODES.find((option) => option.value === change.value)?.label ?? modeTitle;
+			}
+			proposalNotice = `Настройки обновлены: ${SETTING_LABELS[change.setting] ?? change.setting} → ${change.value}`;
+		});
 		ws.on('error', (data: any) => {
 			if (data?.code === 'room_not_found') {
 				roomMissing = true;
@@ -429,6 +499,51 @@
 
 	function startGame() {
 		ws.send('start_game', {});
+	}
+
+	function proposalLabel(proposal: Proposal): string {
+		const setting = SETTING_LABELS[proposal.proposal_type] ?? proposal.proposal_type;
+		const value =
+			proposal.proposal_type === 'mode'
+				? (PROPOSAL_MODES.find((option) => option.value === proposal.value)?.label ?? proposal.value)
+				: proposal.value;
+		return `${setting}: ${value}`;
+	}
+
+	function votedByMe(proposal: Proposal): boolean {
+		return proposal.voted_by.includes(myId);
+	}
+
+	function propose(event: Event) {
+		event.preventDefault();
+		const value = proposalValue.trim();
+		const range = PROPOSAL_RANGES[proposalKind];
+		if (!value) {
+			proposalError = 'Укажите значение';
+			return;
+		}
+		if (range) {
+			const number = Number(value);
+			if (!Number.isInteger(number) || number < range[0] || number > range[1]) {
+				proposalError = `Нужно число от ${range[0]} до ${range[1]}`;
+				return;
+			}
+		}
+		proposalError = '';
+		ws.send('propose', {
+			proposal_type: proposalKind,
+			value,
+			description: `${SETTING_LABELS[proposalKind] ?? proposalKind} → ${value}`
+		});
+		proposalValue = '';
+	}
+
+	function toggleVote(proposal: Proposal) {
+		ws.send(votedByMe(proposal) ? 'unvote_proposal' : 'vote_proposal', { proposal_id: proposal.id });
+	}
+
+	function acceptProposal(id: string) {
+		ws.send('accept_proposal', { proposal_id: id });
 	}
 
 	function getTimerColor(): string {
@@ -528,7 +643,133 @@
 					</div>
 				</div>
 
-			{:else if gamePhase === 'preparing'}
+					<div class="mt-6 rounded-2xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-sm sm:p-5">
+					<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+						<h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Предложения</h3>
+						<span class="text-xs text-slate-500">
+							{isHost ? 'Принимайте — настройки применятся сразу' : 'Предложите изменение, остальные голосуют'}
+						</span>
+					</div>
+
+					<form class="mb-4 flex flex-wrap items-end gap-3" onsubmit={propose}>
+						<label class="min-w-40 flex-1 text-xs text-slate-400">
+							<span class="mb-1 block">Что меняем</span>
+							<select
+								bind:value={proposalKind}
+								class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none"
+							>
+								{#each PROPOSAL_KINDS as kind}
+									{#if kind.value !== 'ai_provider' || providerOptions.length > 0}
+										<option value={kind.value}>{kind.label}</option>
+									{/if}
+								{/each}
+							</select>
+						</label>
+						<label class="min-w-40 flex-1 text-xs text-slate-400">
+							<span class="mb-1 block">Значение</span>
+							{#if proposalKind === 'mode'}
+								<select bind:value={proposalValue} class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none">
+									<option value="">— выберите —</option>
+									{#each PROPOSAL_MODES as option}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							{:else if proposalKind === 'difficulty'}
+								<select bind:value={proposalValue} class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none">
+									<option value="">— выберите —</option>
+									<option value="easy">Лёгкая</option>
+									<option value="medium">Средняя</option>
+									<option value="hard">Сложная</option>
+								</select>
+							{:else if proposalKind === 'ai_provider'}
+								<select bind:value={proposalValue} class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none">
+									<option value="">— выберите —</option>
+									{#each providerOptions as provider}
+										<option value={provider}>{provider}</option>
+									{/each}
+								</select>
+							{:else if PROPOSAL_RANGES[proposalKind]}
+								<input
+									type="number"
+									bind:value={proposalValue}
+									min={PROPOSAL_RANGES[proposalKind][0]}
+									max={PROPOSAL_RANGES[proposalKind][1]}
+									class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none"
+								/>
+							{:else}
+								<input
+									type="text"
+									bind:value={proposalValue}
+									maxlength="60"
+									placeholder="Например: Космос"
+									class="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none"
+								/>
+							{/if}
+						</label>
+						<button
+							type="submit"
+							class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
+						>
+							Предложить
+						</button>
+					</form>
+
+					{#if proposalError}
+						<p class="mb-3 text-xs text-red-400">{proposalError}</p>
+					{/if}
+					{#if proposalNotice}
+						<p class="mb-3 text-xs text-emerald-400">{proposalNotice}</p>
+					{/if}
+
+					{#if proposals.length === 0}
+						<p class="text-sm text-slate-500">Пока нет предложений — станьте первым.</p>
+					{:else}
+						<ul class="space-y-2">
+							{#each proposals as proposal (proposal.id)}
+								<li
+									class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 {proposal.active
+										? ''
+										: 'opacity-60'}"
+								>
+									<div>
+										<p class="text-sm font-medium text-white">{proposalLabel(proposal)}</p>
+										<p class="text-xs text-slate-500">
+											{proposal.proposer_name} · голосов: {proposal.vote_count}{proposal.active ? '' : ' · принято'}
+										</p>
+									</div>
+									{#if proposal.active}
+										<div class="flex items-center gap-2">
+											{#if proposal.proposer_sid !== myId}
+												<button
+													type="button"
+													onclick={() => toggleVote(proposal)}
+													class="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold {votedByMe(
+														proposal
+													)
+														? 'bg-blue-600/20 text-blue-300'
+														: 'text-slate-300 hover:bg-white/5'}"
+												>
+													{votedByMe(proposal) ? 'Убрать голос' : 'За'}
+												</button>
+											{/if}
+											{#if isHost}
+												<button
+													type="button"
+													onclick={() => acceptProposal(proposal.id)}
+													class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-500"
+												>
+													Принять
+												</button>
+											{/if}
+										</div>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+
+		{:else if gamePhase === 'preparing'}
 			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-12 text-center backdrop-blur-sm">
 				<div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5"></div>
 				<div class="relative z-10">

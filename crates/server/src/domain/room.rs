@@ -13,6 +13,7 @@ use crate::domain::chat::ChatLog;
 use crate::domain::cheat::{BLIND_SECS, LEECH_POINTS};
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
+use crate::domain::proposal::{Proposal, ProposalType};
 use crate::error::{AppError, AppResult};
 
 /// Room lifecycle states. Transitions are CAS-protected.
@@ -40,6 +41,10 @@ pub struct RoomSettings {
     pub timer_secs: u64,
     #[serde(default)]
     pub difficulty: String,
+    /// Provider the host picked for question generation; `None` means the
+    /// router's own chain decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_provider: Option<String>,
 }
 
 fn default_question_count() -> usize {
@@ -62,6 +67,7 @@ impl Default for RoomSettings {
             num_options: default_num_options(),
             timer_secs: default_timer(),
             difficulty: "medium".into(),
+            ai_provider: None,
         }
     }
 }
@@ -118,6 +124,9 @@ pub struct Room {
     /// further message is refused, so a closed room cannot keep playing on a
     /// stale `Arc`.
     pub closed: bool,
+    /// Settings changes proposed by players while the room is in the lobby.
+    pub proposals: Vec<Proposal>,
+    proposal_counter: u64,
 }
 
 impl Room {
@@ -142,6 +151,8 @@ impl Room {
             chat: ChatLog::new(),
             chat_locked: false,
             closed: false,
+            proposals: Vec::new(),
+            proposal_counter: 0,
         }
     }
 
@@ -176,6 +187,41 @@ impl Room {
     /// one is wiped first, so the host can run another round without the players
     /// rejoining. Anything in between is refused — a mid-game call would let the
     /// host erase the scores being played for.
+    /// Record a player's proposal and return its id. The proposer starts as
+    /// the only voter, which is what the UI shows as vote count 1.
+    pub fn create_proposal(
+        &mut self,
+        proposer_sid: String,
+        proposer_name: String,
+        proposal_type: ProposalType,
+        value: String,
+        description: String,
+    ) -> String {
+        self.proposal_counter += 1;
+        let id = format!("prop_{}_{}", self.code, self.proposal_counter);
+        self.proposals.push(Proposal::new(
+            id.clone(),
+            proposer_sid,
+            proposer_name,
+            proposal_type,
+            value,
+            description,
+        ));
+        // A lobby can run for hours; only the recent proposals stay usable.
+        if self.proposals.len() > 50 {
+            self.proposals.drain(0..self.proposals.len() - 50);
+        }
+        id
+    }
+
+    pub fn get_proposal(&self, id: &str) -> Option<&Proposal> {
+        self.proposals.iter().find(|proposal| proposal.id == id)
+    }
+
+    pub fn get_proposal_mut(&mut self, id: &str) -> Option<&mut Proposal> {
+        self.proposals.iter_mut().find(|proposal| proposal.id == id)
+    }
+
     pub fn begin(&mut self) -> bool {
         match self.state {
             RoomState::Waiting => {}

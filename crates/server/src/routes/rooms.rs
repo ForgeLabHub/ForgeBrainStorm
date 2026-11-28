@@ -41,6 +41,8 @@ struct CreateRoomInput {
     num_options: Option<usize>,
     #[serde(alias = "timer_seconds")]
     timer_secs: Option<u64>,
+    /// Provider the host wants for this room; must be one the router offers.
+    ai_provider: Option<String>,
 }
 
 async fn create_room(
@@ -86,6 +88,24 @@ async fn create_room(
     }
     if let Some(secs) = input.timer_secs {
         settings.timer_secs = secs;
+    }
+    if let Some(provider) = input.ai_provider.filter(|name| !name.trim().is_empty()) {
+        let provider = provider.trim().to_string();
+        let available = state.ai_router.available_providers();
+        if !available.contains(&provider) {
+            return Err(AppError::Validation(ValidationError::new(
+                "ai_provider",
+                format!(
+                    "Провайдер «{provider}» недоступен. Доступны: {}",
+                    if available.is_empty() {
+                        "нет (ключи не настроены)".to_string()
+                    } else {
+                        available.join(", ")
+                    }
+                ),
+            )));
+        }
+        settings.ai_provider = Some(provider);
     }
 
     let room = state.rooms.create(auth.user_id, &auth.username, settings)?;
