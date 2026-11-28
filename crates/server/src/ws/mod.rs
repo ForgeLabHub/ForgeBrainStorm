@@ -181,6 +181,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         "type": "room_joined",
                         "data": {
                             "code": code,
+                            // The client needs its own sid: cheater targets and
+                            // proposal ownership are both keyed by it.
+                            "sid": sid.as_str(),
                             "is_host": is_host,
                             "topic": topic,
                             "mode": mode,

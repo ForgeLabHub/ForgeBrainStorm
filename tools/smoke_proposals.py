@@ -126,7 +126,8 @@ async def main():
     await host.send("join_room", {"code": code})
     assert (await host.wait_for("room_joined"))["is_host"] is True
     await player.send("join_room", {"code": code})
-    await player.wait_for("room_joined")
+    joined = await player.wait_for("room_joined")
+    assert joined["sid"], joined  # the client keys its own proposals on it
     print("both joined; lobby proposals panel is live")
 
     # --- propose ----------------------------------------------------------
@@ -139,6 +140,7 @@ async def main():
     )
     proposal = [item for item in proposals if item["value"] == "История"][-1]
     assert proposal["vote_count"] == 1, proposal  # the proposer starts with a vote
+    assert proposal["proposer_sid"] == joined["sid"], (proposal, joined)
     print(f"proposal {proposal['id']}: {proposal['value']} (1 vote)")
 
     # --- invalid values never reach the list ------------------------------
