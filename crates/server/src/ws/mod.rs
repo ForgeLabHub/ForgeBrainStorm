@@ -7,6 +7,13 @@
 //!   * `use_power_up`  `{ power_up }`       (one of `double_points`,
 //!     `freeze_time`, `remove_two_options`)
 //!   * `play_again`    `{}`                 (host only)
+
+
+//!   * `propose`       `{ proposal_type, value, description }` (create proposal)
+//!   * `vote_proposal` `{ proposal_id }`    (vote for a proposal)
+//!   * `unvote_proposal` `{ proposal_id }`  (remove vote)
+//!   * `accept_proposal` `{ proposal_id }`  (host only - apply proposal)
+
 //!
 //! Server → client uses the same envelope. Per-socket writer and per-room
 //! broadcast forwarder run as separate tasks so the read loop never blocks on
@@ -170,6 +177,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                             "mode_title": GameMode::parse(&mode)
                                 .map(|parsed| parsed.title())
                                 .unwrap_or("Классика"),
+
+
+                            "my_sid": sid,
+
                         }
                     }),
                 );
@@ -218,7 +229,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     continue;
                 };
 
+
                 let (is_host, topic, count, difficulty, num_options) = {
+
+                let (is_host, topic, count, difficulty, num_options, ai_provider) = {
+
                     let room = room.read();
                     (
                         room.host_user_id == auth.user_id,
@@ -226,6 +241,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                         room.settings.question_count,
                         room.settings.difficulty.clone(),
                         room.settings.num_options,
+
+
+                        room.settings.ai_provider.clone(),
+
                     )
                 };
 
@@ -265,7 +284,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                 );
 
                 let generation_started = Instant::now();
+
                 let (questions, source) = match state.ai_router.generate_questions(&request).await {
+
+                let (questions, source) = match state
+                    .ai_router
+                    .generate_questions_with_provider(&request, ai_provider.as_deref())
+                    .await
+                {
+
                     Ok(response) => {
                         let provider = response.provider_used.clone();
                         (
@@ -676,6 +703,344 @@ async fn handle_socket(socket: WebSocket, state: AppState, auth: AuthContext) {
                     let _ = room.read().tx.send(event);
                 }
             }
+
+
+
+            "propose" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+
+                let proposal_type = match message["data"]["proposal_type"].as_str() {
+                    Some("topic") => crate::domain::proposal::ProposalType::Topic,
+                    Some("mode") => crate::domain::proposal::ProposalType::Mode,
+                    Some("difficulty") => crate::domain::proposal::ProposalType::Difficulty,
+                    Some("question_count") => crate::domain::proposal::ProposalType::QuestionCount,
+                    Some("num_options") => crate::domain::proposal::ProposalType::NumOptions,
+                    Some("timer_secs") => crate::domain::proposal::ProposalType::TimerSecs,
+                    Some("ai_provider") => crate::domain::proposal::ProposalType::AiProvider,
+                    _ => {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Неизвестный тип предложения"}}),
+                        );
+                        continue;
+                    }
+                };
+
+                let value = match message["data"]["value"].as_str() {
+                    Some(v) => v.to_string(),
+                    None => {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Укажите значение"}}),
+                        );
+                        continue;
+                    }
+                };
+
+                let description = message["data"]["description"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+
+                let (proposal_id, proposer_name) = {
+                    let mut room = room.write();
+                    if room.state != RoomState::Waiting {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Предложения можно делать только в лобби"}}),
+                        );
+                        continue;
+                    }
+
+                    let proposer_name = room
+                        .players
+                        .get(&sid)
+                        .map(|p| p.display_name.clone())
+                        .unwrap_or_else(|| "Неизвестный".to_string());
+
+                    let id = room.create_proposal(
+                        sid.clone(),
+                        proposer_name.clone(),
+                        proposal_type,
+                        value,
+                        description,
+                    );
+                    (id, proposer_name)
+                };
+
+                let _ = room.read().tx.send(
+                    json!({
+                        "type": "proposal_created",
+                        "data": {
+                            "proposal_id": proposal_id,
+                            "proposer_sid": sid,
+                            "proposer_name": proposer_name,
+                        }
+                    })
+                    .to_string(),
+                );
+            }
+
+            "vote_proposal" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+
+                let proposal_id = match message["data"]["proposal_id"].as_str() {
+                    Some(id) => id.to_string(),
+                    None => {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Укажите ID предложения"}}),
+                        );
+                        continue;
+                    }
+                };
+
+                let voted = {
+                    let mut room = room.write();
+                    if room.state != RoomState::Waiting {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Голосовать можно только в лобби"}}),
+                        );
+                        continue;
+                    }
+
+                    if let Some(proposal) = room.get_proposal_mut(&proposal_id) {
+                        proposal.vote(&sid)
+                    } else {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Предложение не найдено"}}),
+                        );
+                        continue;
+                    }
+                };
+
+                if voted {
+                    let _ = room.read().tx.send(
+                        json!({
+                            "type": "proposal_voted",
+                            "data": {
+                                "proposal_id": proposal_id,
+                                "voter_sid": sid,
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
+            }
+
+            "unvote_proposal" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+
+                let proposal_id = match message["data"]["proposal_id"].as_str() {
+                    Some(id) => id.to_string(),
+                    None => {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Укажите ID предложения"}}),
+                        );
+                        continue;
+                    }
+                };
+
+                let unvoted = {
+                    let mut room = room.write();
+                    if let Some(proposal) = room.get_proposal_mut(&proposal_id) {
+                        proposal.unvote(&sid)
+                    } else {
+                        false
+                    }
+                };
+
+                if unvoted {
+                    let _ = room.read().tx.send(
+                        json!({
+                            "type": "proposal_unvoted",
+                            "data": {
+                                "proposal_id": proposal_id,
+                                "voter_sid": sid,
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
+            }
+
+            "accept_proposal" => {
+                let Some(room) = room_arc.clone() else {
+                    send_json(
+                        &out_tx,
+                        json!({"type": "error", "data": {"message": "Сначала войдите в комнату"}}),
+                    );
+                    continue;
+                };
+
+                let proposal_id = match message["data"]["proposal_id"].as_str() {
+                    Some(id) => id.to_string(),
+                    None => {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Укажите ID предложения"}}),
+                        );
+                        continue;
+                    }
+                };
+
+                let (accepted, settings_changed) = {
+                    let mut room = room.write();
+                    if room.host_user_id != auth.user_id {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Только хост может принимать предложения"}}),
+                        );
+                        continue;
+                    }
+
+                    if room.state != RoomState::Waiting {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Принимать предложения можно только в лобби"}}),
+                        );
+                        continue;
+                    }
+
+                    let proposal = room.get_proposal(&proposal_id).cloned();
+                    let Some(proposal) = proposal else {
+                        send_json(
+                            &out_tx,
+                            json!({"type": "error", "data": {"message": "Предложение не найдено"}}),
+                        );
+                        continue;
+                    };
+
+                    // Apply the proposal to room settings
+                    let mut changed = false;
+                    match proposal.proposal_type {
+                        crate::domain::proposal::ProposalType::Topic => {
+                            room.settings.topic = proposal.value.clone();
+                            changed = true;
+                        }
+                        crate::domain::proposal::ProposalType::Mode => {
+                            if let Some(mode) = GameMode::parse(&proposal.value) {
+                                room.settings.mode = mode;
+                                changed = true;
+                            }
+                        }
+                        crate::domain::proposal::ProposalType::Difficulty => {
+                            if ["easy", "medium", "hard"].contains(&proposal.value.as_str()) {
+                                room.settings.difficulty = proposal.value.clone();
+                                changed = true;
+                            }
+                        }
+                        crate::domain::proposal::ProposalType::QuestionCount => {
+                            if let Ok(count) = proposal.value.parse::<usize>() {
+                                room.settings.question_count = count.clamp(5, 30);
+                                changed = true;
+                            }
+                        }
+                        crate::domain::proposal::ProposalType::NumOptions => {
+                            if let Ok(opts) = proposal.value.parse::<usize>() {
+                                room.settings.num_options = opts.clamp(2, 6);
+                                changed = true;
+                            }
+                        }
+                        crate::domain::proposal::ProposalType::TimerSecs => {
+                            if let Ok(secs) = proposal.value.parse::<u64>() {
+                                room.settings.timer_secs = secs.clamp(10, 120);
+                                changed = true;
+                            }
+                        }
+                        crate::domain::proposal::ProposalType::AiProvider => {
+                            if proposal.value.is_empty() {
+                                room.settings.ai_provider = None;
+                                changed = true;
+                            } else {
+                                // Validate provider exists
+                                let available = state.ai_router.available_providers();
+                                if available.contains(&proposal.value) {
+                                    room.settings.ai_provider = Some(proposal.value.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+
+                    // Mark proposal as inactive
+                    if let Some(p) = room.get_proposal_mut(&proposal_id) {
+                        p.active = false;
+                    }
+
+                    (true, changed)
+                };
+
+                if accepted {
+                    let _ = room.read().tx.send(
+                        json!({
+                            "type": "proposal_accepted",
+                            "data": {
+                                "proposal_id": proposal_id,
+                                "settings_changed": settings_changed,
+                            }
+                        })
+                        .to_string(),
+                    );
+                }
+            }
+
+            "get_proposals" => {
+                let Some(room) = room_arc.clone() else {
+                    continue;
+                };
+
+                let room_guard = room.read();
+                let proposals_info: Vec<serde_json::Value> = room_guard
+                    .proposals
+                    .iter()
+                    .map(|p| {
+                        json!({
+                            "id": p.id,
+                            "proposer_sid": p.proposer_sid,
+                            "proposer_name": p.proposer_name,
+                            "proposal_type": p.proposal_type,
+                            "value": p.value,
+                            "description": p.description,
+                            "vote_count": p.vote_count(),
+                            "voted_by": p.votes.keys().collect::<Vec<_>>(),
+                            "active": p.active,
+                        })
+                    })
+                    .collect();
+
+                send_json(
+                    &out_tx,
+                    json!({
+                        "type": "proposals_list",
+                        "data": {
+                            "proposals": proposals_info,
+                        }
+                    }),
+                );
+            }
+
 
             other => debug!(
                 user_id = auth.user_id,
