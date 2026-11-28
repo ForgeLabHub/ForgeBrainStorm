@@ -11,9 +11,7 @@ use tokio::sync::broadcast;
 
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
-
 use crate::domain::proposal::Proposal;
-
 use crate::error::{AppError, AppResult};
 
 /// Room lifecycle states. Transitions are CAS-protected.

@@ -7,13 +7,10 @@
 //!   * `use_power_up`  `{ power_up }`       (one of `double_points`,
 //!     `freeze_time`, `remove_two_options`)
 //!   * `play_again`    `{}`                 (host only)
-
-
 //!   * `propose`       `{ proposal_type, value, description }` (create proposal)
 //!   * `vote_proposal` `{ proposal_id }`    (vote for a proposal)
 //!   * `unvote_proposal` `{ proposal_id }`  (remove vote)
 //!   * `accept_proposal` `{ proposal_id }`  (host only - apply proposal)
-
 //!
 //! Server → client uses the same envelope. Per-socket writer and per-room
 //! broadcast forwarder run as separate tasks so the read loop never blocks on
@@ -42,10 +39,9 @@ use crate::metrics::Metrics;
 use crate::middleware::auth::AuthContext;
 use crate::services::ai::{AiCapability, GenerationRequest};
 use crate::services::questions::fallback_questions;
-use sqlx::PgPool;
-
 use crate::services::{accounts, history, leaderboard};
 use crate::AppState;
+use sqlx::PgPool;
 
 /// How long the answer is shown before the next question appears.
 const RESULT_PAUSE: Duration = Duration::from_secs(5);
