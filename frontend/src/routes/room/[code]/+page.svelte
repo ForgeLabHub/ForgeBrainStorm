@@ -59,6 +59,7 @@
 	let topic = $state('');
 	let mode = $state('');
 	let error = $state('');
+	let roomMissing = $state(false);
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 	type ResultKind = 'correct' | 'wrong' | 'timeout';
 	let lastResult: { kind: ResultKind; correctIndex: number; explanation: string; player_answers?: any[] } | null = $state(null);
@@ -71,6 +72,22 @@
 	let eliminated = $state(false);
 	let modeTitle = $state('');
 	let persisted = $state(true);
+	let mySid = $state('');
+
+	// Proposals state
+	interface Proposal {
+		id: string;
+		proposer_sid: string;
+		proposer_name: string;
+		proposal_type: string;
+		value: string;
+		description: string;
+		vote_count: number;
+		voted_by: string[];
+		active: boolean;
+	}
+	let proposals: Proposal[] = $state([]);
+	let showProposalForm = $state(false);
 
 	// Sorting `players` in place inside markup mutates state during render;
 	// every view reads this derived copy instead.
@@ -102,6 +119,7 @@
 			topic = data.topic || '';
 			mode = data.mode || 'classic';
 			modeTitle = data.mode_title || '';
+			mySid = data.my_sid || '';
 			if (data.players) {
 				players = data.players.map((p: any) => ({
 					name: p.name ?? p.display_name ?? p.username,
@@ -116,6 +134,8 @@
 					username: p.name ?? p.username,
 				}));
 			}
+			// Request proposals list when joining room
+			ws.send('get_proposals', {});
 		});
 		ws.on('players_updated', (data: any) => {
 			if (data?.players) {
@@ -257,7 +277,44 @@
 			gamePhase = 'playing';
 			serverTeams = [];
 		});
+
+		// Proposals handling
+		ws.on('proposal_created', (data: any) => {
+			// Refresh proposals list - server will send full list
+			ws.send('get_proposals', {});
+		});
+		ws.on('proposal_voted', (data: any) => {
+			const proposal = proposals.find(p => p.id === data.proposal_id);
+			if (proposal) {
+				proposal.vote_count++;
+				if (!proposal.voted_by.includes(data.voter_sid)) {
+					proposal.voted_by.push(data.voter_sid);
+				}
+			}
+		});
+		ws.on('proposal_unvoted', (data: any) => {
+			const proposal = proposals.find(p => p.id === data.proposal_id);
+			if (proposal) {
+				proposal.vote_count = Math.max(0, proposal.vote_count - 1);
+				proposal.voted_by = proposal.voted_by.filter(sid => sid !== data.voter_sid);
+			}
+		});
+		ws.on('proposal_accepted', (data: any) => {
+			const proposal = proposals.find(p => p.id === data.proposal_id);
+			if (proposal) {
+				proposal.active = false;
+			}
+			// Settings will be updated via room_joined event
+		});
+		ws.on('proposals_list', (data: any) => {
+			proposals = data.proposals || [];
+		});
+
 		ws.on('error', (data: any) => {
+			if (data?.code === 'room_not_found') {
+				roomMissing = true;
+				return;
+			}
 			error = data.message || 'Ошибка';
 		});
 	});
@@ -330,16 +387,37 @@
 					<span class="text-sm text-slate-400">{modeTitle || modeLabel(mode)}</span>
 				{/if}
 			</div>
-			<h1 class="mt-2 text-2xl font-bold text-white">{topic || 'Без темы'}</h1>
+			{#if !roomMissing}
+				<h1 class="mt-2 text-2xl font-bold text-white">{topic || 'Без темы'}</h1>
+			{/if}
 		</div>
-		<div class="flex items-center gap-4">
-			<div class="text-right">
-				<div class="text-xs text-slate-500">Игроков</div>
-				<div class="text-2xl font-bold text-white">{players.length}</div>
+		{#if !roomMissing}
+			<div class="flex items-center gap-4">
+				<div class="text-right">
+					<div class="text-xs text-slate-500">Игроков</div>
+					<div class="text-2xl font-bold text-white">{players.length}</div>
+				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
 
+	{#if roomMissing}
+		<div class="rounded-2xl border border-white/5 bg-white/[0.02] p-10 text-center">
+			<div class="mb-4 flex justify-center text-slate-500"><Icon name="cross" class="h-12 w-12" /></div>
+			<h2 class="mb-2 text-xl font-bold text-white">Комнаты {roomCode} нет</h2>
+			<p class="mb-6 text-slate-400">
+				Код мог устареть, а комнату — закрыть хост. Проверьте код или создайте свою.
+			</p>
+			<div class="flex flex-wrap justify-center gap-3">
+				<a href="/lobby" class="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-2.5 font-semibold text-white shadow-lg transition hover:shadow-blue-500/20">
+					К комнатам
+				</a>
+				<a href="/room/create" class="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 font-semibold text-slate-200 transition hover:bg-white/10">
+					Создать комнату
+				</a>
+			</div>
+		</div>
+	{:else}
 	{#if error}
 		<div class="mb-4 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-400">
 			<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -374,6 +452,128 @@
 						{:else}
 							<p class="text-sm text-slate-500">Нужен хотя бы 1 игрок для старта</p>
 						{/if}
+					</div>
+				</div>
+
+				<!-- Proposals section -->
+				<div class="mt-6 space-y-4">
+					<div class="flex items-center justify-between">
+						<h3 class="text-lg font-semibold text-white">Предложения</h3>
+						<button
+							onclick={() => showProposalForm = !showProposalForm}
+							class="rounded-lg bg-blue-500/20 px-3 py-1.5 text-sm text-blue-300 hover:bg-blue-500/30 transition-colors"
+						>
+							{showProposalForm ? 'Скрыть' : '+ Создать'}
+						</button>
+					</div>
+
+					<!-- Proposal form -->
+					{#if showProposalForm}
+						<form
+							class="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3"
+							onsubmit={(e) => {
+								e.preventDefault();
+								const form = e.target as HTMLFormElement;
+								const formData = new FormData(form);
+								ws.send('propose', {
+									proposal_type: formData.get('proposal_type'),
+									value: formData.get('value'),
+									description: formData.get('description')
+								});
+								showProposalForm = false;
+							}}
+						>
+							<div>
+								<label class="block text-sm text-slate-300 mb-1">Тип предложения</label>
+								<select name="proposal_type" class="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white">
+									<option value="topic">Тема</option>
+									<option value="mode">Режим</option>
+									<option value="difficulty">Сложность</option>
+									<option value="question_count">Количество вопросов</option>
+									<option value="num_options">Количество вариантов</option>
+									<option value="timer_secs">Время на ответ</option>
+									<option value="ai_provider">ИИ провайдер</option>
+								</select>
+							</div>
+							<div>
+								<label class="block text-sm text-slate-300 mb-1">Значение</label>
+								<input
+									type="text"
+									name="value"
+									required
+									class="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white"
+									placeholder="Например: История, classic, medium, 15, 4, 30"
+								/>
+							</div>
+							<div>
+								<label class="block text-sm text-slate-300 mb-1">Описание (необязательно)</label>
+								<input
+									type="text"
+									name="description"
+									class="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white"
+									placeholder="Почему это будет интересно?"
+								/>
+							</div>
+							<button
+								type="submit"
+								class="w-full rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 transition-colors"
+							>
+								Создать предложение
+							</button>
+						</form>
+					{/if}
+
+					<!-- Proposals list -->
+					<div class="space-y-2">
+						{#each proposals.filter(p => p.active) as proposal (proposal.id)}
+							<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+								<div class="flex items-start justify-between gap-3">
+									<div class="flex-1">
+										<div class="flex items-center gap-2 mb-1">
+											<span class="text-sm font-medium text-blue-300">{proposal.proposer_name}</span>
+											<span class="text-xs text-slate-500">предложил(а)</span>
+											<span class="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">{proposal.proposal_type}</span>
+										</div>
+										<p class="text-white font-medium">{proposal.value}</p>
+										{#if proposal.description}
+											<p class="text-sm text-slate-400 mt-1">{proposal.description}</p>
+										{/if}
+									</div>
+									<div class="flex flex-col items-end gap-2">
+										<div class="text-sm text-slate-300">
+											<span class="font-bold text-green-400">{proposal.vote_count}</span> голосов
+										</div>
+										<div class="flex gap-1">
+											{#if !proposal.voted_by.includes(mySid)}
+												<button
+													onclick={() => ws.send('vote_proposal', { proposal_id: proposal.id })}
+													class="rounded-lg bg-green-500/20 px-3 py-1 text-xs text-green-300 hover:bg-green-500/30 transition-colors"
+												>
+													+ За
+												</button>
+											{:else if proposal.voted_by.includes(mySid)}
+												<button
+													onclick={() => ws.send('unvote_proposal', { proposal_id: proposal.id })}
+													class="rounded-lg bg-red-500/20 px-3 py-1 text-xs text-red-300 hover:bg-red-500/30 transition-colors"
+												>
+													- Убрать голос
+												</button>
+											{/if}
+											{#if isHost}
+												<button
+													onclick={() => ws.send('accept_proposal', { proposal_id: proposal.id })}
+													class="rounded-lg bg-blue-500/20 px-3 py-1 text-xs text-blue-300 hover:bg-blue-500/30 transition-colors"
+												>
+													✓ Принять
+												</button>
+											{/if}
+										</div>
+									</div>
+								</div>
+							</div>
+						{:else}
+							<p class="text-center text-slate-500 py-4">Пока нет предложений</p>
+						{/each}
 					</div>
 				</div>
 
@@ -420,11 +620,11 @@
 						</div>
 					{/if}
 
-					<!-- Cheater powers: the server hands the budget, the UI only shows it -->
+					<!-- Special powers: the server hands the budget, the UI only shows it -->
 					{#if cheatBudget}
 						<div class="rounded-2xl border border-red-500/25 bg-red-500/[0.06] p-4">
 							<div class="flex items-center justify-between gap-2">
-								<p class="text-xs font-semibold uppercase tracking-widest text-red-300">Читерский набор</p>
+								<p class="text-xs font-semibold uppercase tracking-widest text-red-300">Особые способности</p>
 								{#if cheatNotice}
 									<p class="truncate text-xs text-red-200">{cheatNotice}</p>
 								{/if}
@@ -690,4 +890,5 @@
 			</div>
 		</div>
 	</div>
+{/if}
 </div>
