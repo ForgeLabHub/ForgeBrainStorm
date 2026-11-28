@@ -164,6 +164,9 @@ topPlayers: (limit = 50) => request<LeaderboardResponse>(`/api/leaderboard/top?l
 
 playerRank: (username: string) => request<PlayerRankResponse>(`/api/leaderboard/rank/${username}`),
 
+// AI Providers
+aiProviders: () => request<{ ok: boolean; providers: string[] }>('/api/ai/providers'),
+
 // Admin panel
 adminStats: () => request<AdminStats>('/api/admin/stats'),
 

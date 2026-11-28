@@ -3,7 +3,7 @@
 use axum::extract::State;
 use axum::middleware;
 use axum::response::IntoResponse;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use validator::Validate;
@@ -15,9 +15,22 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/providers", get(list_providers))
         .route("/generate", post(generate_questions))
         .route_layer(middleware::from_fn(auth_middleware))
 }
+
+
+
+/// GET /api/ai/providers — list available AI providers (public endpoint).
+async fn list_providers(State(state): State<AppState>) -> impl IntoResponse {
+    let providers = state.ai_router.available_providers();
+    Json(serde_json::json!({
+        "ok": true,
+        "providers": providers,
+    }))
+}
+
 
 #[derive(Debug, Deserialize, Validate)]
 struct GenerateInput {

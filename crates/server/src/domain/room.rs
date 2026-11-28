@@ -11,6 +11,7 @@ use tokio::sync::broadcast;
 
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
+use crate::domain::proposal::Proposal;
 use crate::error::{AppError, AppResult};
 
 /// Room lifecycle states. Transitions are CAS-protected.
@@ -38,6 +39,11 @@ pub struct RoomSettings {
     pub timer_secs: u64,
     #[serde(default)]
     pub difficulty: String,
+
+    /// AI provider selection (None = automatic selection)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_provider: Option<String>,
+
 }
 
 fn default_question_count() -> usize {
@@ -60,6 +66,9 @@ impl Default for RoomSettings {
             num_options: default_num_options(),
             timer_secs: default_timer(),
             difficulty: "medium".into(),
+
+            ai_provider: None,
+
         }
     }
 }
@@ -107,6 +116,12 @@ pub struct Room {
     pub question_token: u64,
     /// Where the current question set came from: `ai:<provider>` or `fallback`.
     pub question_source: String,
+
+    /// Active proposals from players to change room settings.
+    pub proposals: Vec<Proposal>,
+    /// Counter for generating unique proposal IDs.
+    proposal_counter: u64,
+
 }
 
 impl Room {
@@ -128,6 +143,10 @@ impl Room {
             tx,
             question_token: 0,
             question_source: String::new(),
+
+            proposals: Vec::new(),
+            proposal_counter: 0,
+
         }
     }
 
@@ -249,6 +268,56 @@ impl Room {
         self.reset_answers();
         self.touch();
     }
+
+    /// Create a new proposal and return its ID.
+    pub fn create_proposal(
+        &mut self,
+        proposer_sid: String,
+        proposer_name: String,
+        proposal_type: crate::domain::proposal::ProposalType,
+        value: String,
+        description: String,
+    ) -> String {
+        self.proposal_counter += 1;
+        let id = format!("prop_{}_{}", self.code, self.proposal_counter);
+        let proposal = Proposal::new(
+            id.clone(),
+            proposer_sid,
+            proposer_name,
+            proposal_type,
+            value,
+            description,
+        );
+        self.proposals.push(proposal);
+        // Keep only the last 50 proposals to prevent memory leaks.
+        if self.proposals.len() > 50 {
+            self.proposals.drain(0..self.proposals.len() - 50);
+        }
+        id
+    }
+
+    /// Get a proposal by ID.
+    pub fn get_proposal(&self, id: &str) -> Option<&Proposal> {
+        self.proposals.iter().find(|p| p.id == id)
+    }
+
+    /// Get a mutable proposal by ID.
+    pub fn get_proposal_mut(&mut self, id: &str) -> Option<&mut Proposal> {
+        self.proposals.iter_mut().find(|p| p.id == id)
+    }
+
+    /// Remove a proposal by ID.
+    pub fn remove_proposal(&mut self, id: &str) -> bool {
+        let len_before = self.proposals.len();
+        self.proposals.retain(|p| p.id != id);
+        self.proposals.len() < len_before
+    }
+
+    /// Get all active proposals.
+    pub fn get_active_proposals(&self) -> Vec<&Proposal> {
+        self.proposals.iter().filter(|p| p.active).collect()
+    }
+
 }
 
 /// In-memory room registry.

@@ -199,9 +199,29 @@ impl AiRouter {
         &self,
         request: &GenerationRequest,
     ) -> Result<GenerationResponse, AiError> {
+
         let cache_key = format!(
             "q:{}:{}:{}:{}",
             request.topic, request.difficulty, request.count, request.num_options
+        );
+
+        self.generate_questions_with_provider(request, None).await
+    }
+
+    /// Generate questions with optional specific provider selection.
+    ///
+    /// If `provider_name` is `Some`, attempts to use that specific provider.
+    /// Falls back to automatic selection if the specified provider is unavailable.
+    pub async fn generate_questions_with_provider(
+        &self,
+        request: &GenerationRequest,
+        provider_name: Option<&str>,
+    ) -> Result<GenerationResponse, AiError> {
+        let cache_key = format!(
+            "q:{}:{}:{}:{}:{}",
+            request.topic, request.difficulty, request.count, request.num_options,
+            provider_name.unwrap_or("auto")
+
         );
 
         if !request.bypass_cache {
@@ -210,6 +230,41 @@ impl AiRouter {
                 return Ok(cached);
             }
         }
+
+
+
+        // If specific provider requested, try it first
+        if let Some(name) = provider_name {
+            if let Some(provider_idx) = self.providers.iter().position(|p| p.name() == name) {
+                let circuits_available = self.circuits.read().map(|circuits| {
+                    circuits
+                        .get(provider_idx)
+                        .map(|c| c.is_available())
+                        .unwrap_or(false)
+                }).unwrap_or(false);
+
+                if circuits_available {
+                    let provider = &self.providers[provider_idx];
+                    info!(provider = name, "Using requested provider");
+                    match provider.generate_questions(request).await {
+                        Ok(mut response) => {
+                            response.provider_used = name.to_string();
+                            if !request.bypass_cache {
+                                self.cache.set(cache_key, response.clone());
+                            }
+                            return Ok(response);
+                        }
+                        Err(e) => {
+                            warn!(provider = name, error = %e, "Requested provider failed, falling back");
+                            // Fall through to automatic selection
+                        }
+                    }
+                }
+            } else {
+                warn!(provider = name, "Requested provider not found, falling back");
+            }
+        }
+
 
         // Try providers with fallback
         let mut attempts = 0;

@@ -72,6 +72,22 @@
 	let eliminated = $state(false);
 	let modeTitle = $state('');
 	let persisted = $state(true);
+	let mySid = $state('');
+
+	// Proposals state
+	interface Proposal {
+		id: string;
+		proposer_sid: string;
+		proposer_name: string;
+		proposal_type: string;
+		value: string;
+		description: string;
+		vote_count: number;
+		voted_by: string[];
+		active: boolean;
+	}
+	let proposals: Proposal[] = $state([]);
+	let showProposalForm = $state(false);
 
 	// Sorting `players` in place inside markup mutates state during render;
 	// every view reads this derived copy instead.
@@ -103,6 +119,7 @@
 			topic = data.topic || '';
 			mode = data.mode || 'classic';
 			modeTitle = data.mode_title || '';
+			mySid = data.my_sid || '';
 			if (data.players) {
 				players = data.players.map((p: any) => ({
 					name: p.name ?? p.display_name ?? p.username,
@@ -117,6 +134,8 @@
 					username: p.name ?? p.username,
 				}));
 			}
+			// Request proposals list when joining room
+			ws.send('get_proposals', {});
 		});
 		ws.on('players_updated', (data: any) => {
 			if (data?.players) {
@@ -258,6 +277,39 @@
 			gamePhase = 'playing';
 			serverTeams = [];
 		});
+
+		// Proposals handling
+		ws.on('proposal_created', (data: any) => {
+			// Refresh proposals list - server will send full list
+			ws.send('get_proposals', {});
+		});
+		ws.on('proposal_voted', (data: any) => {
+			const proposal = proposals.find(p => p.id === data.proposal_id);
+			if (proposal) {
+				proposal.vote_count++;
+				if (!proposal.voted_by.includes(data.voter_sid)) {
+					proposal.voted_by.push(data.voter_sid);
+				}
+			}
+		});
+		ws.on('proposal_unvoted', (data: any) => {
+			const proposal = proposals.find(p => p.id === data.proposal_id);
+			if (proposal) {
+				proposal.vote_count = Math.max(0, proposal.vote_count - 1);
+				proposal.voted_by = proposal.voted_by.filter(sid => sid !== data.voter_sid);
+			}
+		});
+		ws.on('proposal_accepted', (data: any) => {
+			const proposal = proposals.find(p => p.id === data.proposal_id);
+			if (proposal) {
+				proposal.active = false;
+			}
+			// Settings will be updated via room_joined event
+		});
+		ws.on('proposals_list', (data: any) => {
+			proposals = data.proposals || [];
+		});
+
 		ws.on('error', (data: any) => {
 			if (data?.code === 'room_not_found') {
 				roomMissing = true;
@@ -403,6 +455,128 @@
 					</div>
 				</div>
 
+				<!-- Proposals section -->
+				<div class="mt-6 space-y-4">
+					<div class="flex items-center justify-between">
+						<h3 class="text-lg font-semibold text-white">Предложения</h3>
+						<button
+							onclick={() => showProposalForm = !showProposalForm}
+							class="rounded-lg bg-blue-500/20 px-3 py-1.5 text-sm text-blue-300 hover:bg-blue-500/30 transition-colors"
+						>
+							{showProposalForm ? 'Скрыть' : '+ Создать'}
+						</button>
+					</div>
+
+					<!-- Proposal form -->
+					{#if showProposalForm}
+						<form
+							class="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3"
+							onsubmit={(e) => {
+								e.preventDefault();
+								const form = e.target as HTMLFormElement;
+								const formData = new FormData(form);
+								ws.send('propose', {
+									proposal_type: formData.get('proposal_type'),
+									value: formData.get('value'),
+									description: formData.get('description')
+								});
+								showProposalForm = false;
+							}}
+						>
+							<div>
+								<label class="block text-sm text-slate-300 mb-1">Тип предложения</label>
+								<select name="proposal_type" class="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white">
+									<option value="topic">Тема</option>
+									<option value="mode">Режим</option>
+									<option value="difficulty">Сложность</option>
+									<option value="question_count">Количество вопросов</option>
+									<option value="num_options">Количество вариантов</option>
+									<option value="timer_secs">Время на ответ</option>
+									<option value="ai_provider">ИИ провайдер</option>
+								</select>
+							</div>
+							<div>
+								<label class="block text-sm text-slate-300 mb-1">Значение</label>
+								<input
+									type="text"
+									name="value"
+									required
+									class="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white"
+									placeholder="Например: История, classic, medium, 15, 4, 30"
+								/>
+							</div>
+							<div>
+								<label class="block text-sm text-slate-300 mb-1">Описание (необязательно)</label>
+								<input
+									type="text"
+									name="description"
+									class="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white"
+									placeholder="Почему это будет интересно?"
+								/>
+							</div>
+							<button
+								type="submit"
+								class="w-full rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 transition-colors"
+							>
+								Создать предложение
+							</button>
+						</form>
+					{/if}
+
+					<!-- Proposals list -->
+					<div class="space-y-2">
+						{#each proposals.filter(p => p.active) as proposal (proposal.id)}
+							<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+								<div class="flex items-start justify-between gap-3">
+									<div class="flex-1">
+										<div class="flex items-center gap-2 mb-1">
+											<span class="text-sm font-medium text-blue-300">{proposal.proposer_name}</span>
+											<span class="text-xs text-slate-500">предложил(а)</span>
+											<span class="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">{proposal.proposal_type}</span>
+										</div>
+										<p class="text-white font-medium">{proposal.value}</p>
+										{#if proposal.description}
+											<p class="text-sm text-slate-400 mt-1">{proposal.description}</p>
+										{/if}
+									</div>
+									<div class="flex flex-col items-end gap-2">
+										<div class="text-sm text-slate-300">
+											<span class="font-bold text-green-400">{proposal.vote_count}</span> голосов
+										</div>
+										<div class="flex gap-1">
+											{#if !proposal.voted_by.includes(mySid)}
+												<button
+													onclick={() => ws.send('vote_proposal', { proposal_id: proposal.id })}
+													class="rounded-lg bg-green-500/20 px-3 py-1 text-xs text-green-300 hover:bg-green-500/30 transition-colors"
+												>
+													+ За
+												</button>
+											{:else if proposal.voted_by.includes(mySid)}
+												<button
+													onclick={() => ws.send('unvote_proposal', { proposal_id: proposal.id })}
+													class="rounded-lg bg-red-500/20 px-3 py-1 text-xs text-red-300 hover:bg-red-500/30 transition-colors"
+												>
+													- Убрать голос
+												</button>
+											{/if}
+											{#if isHost}
+												<button
+													onclick={() => ws.send('accept_proposal', { proposal_id: proposal.id })}
+													class="rounded-lg bg-blue-500/20 px-3 py-1 text-xs text-blue-300 hover:bg-blue-500/30 transition-colors"
+												>
+													✓ Принять
+												</button>
+											{/if}
+										</div>
+									</div>
+								</div>
+							</div>
+						{:else}
+							<p class="text-center text-slate-500 py-4">Пока нет предложений</p>
+						{/each}
+					</div>
+				</div>
+
 			{:else if gamePhase === 'preparing'}
 			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-12 text-center backdrop-blur-sm">
 				<div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5"></div>
@@ -446,11 +620,11 @@
 						</div>
 					{/if}
 
-					<!-- Cheater powers: the server hands the budget, the UI only shows it -->
+					<!-- Special powers: the server hands the budget, the UI only shows it -->
 					{#if cheatBudget}
 						<div class="rounded-2xl border border-red-500/25 bg-red-500/[0.06] p-4">
 							<div class="flex items-center justify-between gap-2">
-								<p class="text-xs font-semibold uppercase tracking-widest text-red-300">Читерский набор</p>
+								<p class="text-xs font-semibold uppercase tracking-widest text-red-300">Особые способности</p>
 								{#if cheatNotice}
 									<p class="truncate text-xs text-red-200">{cheatNotice}</p>
 								{/if}
