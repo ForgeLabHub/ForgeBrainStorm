@@ -12,7 +12,6 @@ use tokio::sync::broadcast;
 use crate::domain::mode::{GameMode, TEAM_NAMES};
 use crate::domain::player::Player;
 
-
 use crate::domain::proposal::Proposal;
 
 use crate::error::{AppError, AppResult};
@@ -43,7 +42,6 @@ pub struct RoomSettings {
     #[serde(default)]
     pub difficulty: String,
 
-
     /// AI provider selection (None = automatic selection)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_provider: Option<String>,
@@ -70,7 +68,6 @@ impl Default for RoomSettings {
             num_options: default_num_options(),
             timer_secs: default_timer(),
             difficulty: "medium".into(),
-
 
             ai_provider: None,
 
@@ -122,7 +119,6 @@ pub struct Room {
     /// Where the current question set came from: `ai:<provider>` or `fallback`.
     pub question_source: String,
 
-
     /// Active proposals from players to change room settings.
     pub proposals: Vec<Proposal>,
     /// Counter for generating unique proposal IDs.
@@ -149,7 +145,6 @@ impl Room {
             tx,
             question_token: 0,
             question_source: String::new(),
-
 
             proposals: Vec::new(),
             proposal_counter: 0,
@@ -275,8 +270,6 @@ impl Room {
         self.reset_answers();
         self.touch();
     }
-
-
 
     /// Create a new proposal and return its ID.
     pub fn create_proposal(
