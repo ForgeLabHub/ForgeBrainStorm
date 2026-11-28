@@ -11,7 +11,6 @@
   let userLevel = $state(1);
   let userXp = $state(0);
   let userCoins = $state(0);
-  let role = $state<'player' | 'cheater' | 'admin'>('player');
   let mobileMenuOpen = $state(false);
 
   async function loadUser() {
@@ -23,14 +22,12 @@
         userLevel = response.user.level || 1;
         userXp = response.user.xp || 0;
         userCoins = response.user.coins || 0;
-        role = response.user.role ?? 'player';
         return;
       }
     } catch {
       // Anonymous visitors are expected here; nothing to report.
     }
     isLoggedIn = false;
-    role = 'player';
   }
 
   async function logout() {
@@ -40,7 +37,6 @@
     } finally {
       isLoggedIn = false;
       username = '';
-      role = 'player';
       window.location.href = '/';
     }
   }
@@ -103,14 +99,6 @@
         >
           Создать
         </a>
-        {#if role === 'admin'}
-          <a
-            href="/admin"
-            class="rounded-xl px-4 py-2 text-sm font-medium text-amber-300 transition-all hover:bg-amber-500/10 hover:text-amber-200"
-          >
-            Админка
-          </a>
-        {/if}
 
         {#if isLoggedIn}
           <a
@@ -125,12 +113,7 @@
             <div class="flex flex-col">
               <span class="text-sm font-medium leading-tight text-white">
                 {username}
-                {#if role === 'admin'}
-                  <span
-                    class="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-300"
-                    >админ</span
-                  >
-                {:else if role === 'cheater'}
+              </span>
                   <span
                     class="ml-1 rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-rose-300"
                     >читер</span
@@ -214,15 +197,6 @@
           >
             Создать комнату
           </a>
-          {#if role === 'admin'}
-            <a
-              href="/admin"
-              onclick={closeMobileMenu}
-              class="block rounded-xl px-4 py-3 text-amber-300 transition-all hover:bg-amber-500/10"
-            >
-              Админка
-            </a>
-          {/if}
 
           {#if isLoggedIn}
             <div class="mt-2 border-t border-white/5 pt-3">
