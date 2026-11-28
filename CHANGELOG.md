@@ -23,6 +23,44 @@ All notable changes to BrainStorm are documented here. The format is based on
   review contract (one topic per PR, tests, changelog, docs).
 
 ### Added
+- Four more cheater powers: `leech` (25 points from every opponent), `blind`
+  (victim cannot answer for 10 seconds — the server refuses `submit_answer`),
+  `swap` (trade scores with the leader) and `hint` (two wrong options hidden for
+  the cheater only). The panel shows all twelve powers with their remaining uses.
+- Admin panel: room detail with live players, scores and active effects, kicking a
+  player out of a room, per-room announcements, chat freeze and chat clear, a
+  sessions tab with per-account session revocation, user search by role with
+  pagination, and audit-log paging/filtering.
+- `Player::status` on join: a reload no longer launders a mute, a curse or a blind.
+
+### Fixed
+- Bans did not touch an already-issued session: `auth_middleware` now rejects a
+  session whose account has an active ban, and `POST /api/admin/ban` revokes the
+  target's sessions and removes them from live rooms.
+- Ban/unban keyed by username never matched, because `bans.identifier` stores the
+  user id — both endpoints now resolve a nickname to an id first.
+- Role changes kept the old role in the session cache until it expired; the cache
+  entry is dropped on role change and on account deletion.
+- A cheater power that had no effect still burned a use; the budget is refunded and
+  the client is told why via `cheat_no_effect`.
+- `POST /api/admin/rooms/close` left attached sockets working; the room is now
+  marked closed and every further message is refused.
+
+### Changed
+- The Rust backend is a Cargo workspace: `rust-server/` moved to `crates/server/`
+  (same crate name, `brainstorm`), shared dependencies live in the root
+  `[workspace.dependencies]`, and `xtask/` adds `cargo xtask ci` — the exact
+  `fmt --check` + `clippy -D warnings` + `test` gate CI runs. Build artifacts move to
+  the repository-root `target/`; scripts, Makefile, Docker and compose files follow.
+- The toolchain is pinned in `rust-toolchain.toml` (1.89.0) and CI verifies the pin
+  instead of floating on `stable`. The previously declared `rust-version = "1.85"` was
+  wrong — `Cargo.lock` already required 1.89 (`uuid 1.29.3`), so the crate could not be
+  built on its stated MSRV. See `docs/adr/0001-cargo-workspace.md`.
+- `docs/ARCHITECTURE.md` maps every current module to its target crate and states the
+  layer rules; `.github/PULL_REQUEST_TEMPLATE.md` and issue templates encode the
+  review contract (one topic per PR, tests, changelog, docs).
+
+### Added
 - Six game modes, driven by `domain::mode::GameMode` instead of string comparisons:
   `classic` (flat 100), `ffa` (speed-scaled 40…100), `lives` (three lives, last player
   standing ends the round), `blitz` (forced 10-second clock, streak multiplier up to ×2),
@@ -45,6 +83,23 @@ All notable changes to BrainStorm are documented here. The format is based on
 - Cheater powers over the existing WebSocket protocol: reveal the correct answer (3),
   freeze the clock for ten seconds (2), steal points from the leader (1), double your
   own score for the round (2). Every power is private to the cheater who spent it.
+- Four more cheater powers, all addressed by player name and all private to the
+  cheater: `mute` silences a player in chat, `jinx` zeroes their next correct answer,
+  `hijack` eliminates them and moves their points to the cheater, and `rewrite`
+  replaces the current question. A rejected attempt (unknown victim, wrong phase) costs
+  nothing. The victim's client learns what happened, nobody learns who did it.
+- In-game chat (`chat_send` → `chat_message`) with a 50-message log, trimmed text, a
+  400 ms per-player throttle and `chat_empty` / `chat_too_fast` / `chat_muted` errors.
+  Mute is enforced on the server, so it also applies to emoji throws.
+- Emoji storms: a fixed server-side palette, `emoji` events broadcast to the room and
+  optional targeting, so a client cannot inject arbitrary content.
+- `tools/smoke_chat_cheat.py`: drives the real HTTP + WebSocket API with two accounts
+  and asserts chat, flood control, the emoji palette, mute, jinx, rewrite and hijack
+  (including that a failed attempt does not spend budget).
+- Supabase works as a drop-in database: `db.rs` adds `sslmode=require` for hosted hosts
+  and disables the prepared-statement cache when the URL points at the transaction
+  pooler (`:6543`), which otherwise fails at the first query. `.mcp.json` wires the
+  read-only Supabase MCP server; `docs/database/supabase.md` explains the rest.
 - «Внезапная смерть» (`sudden`) and «Марафон» (`marathon`) are selectable in the room
   picker, so the UI finally offers all ten modes the backend knows about; the marathon
   round is locked to 30 questions of 20 seconds each.
@@ -59,6 +114,9 @@ All notable changes to BrainStorm are documented here. The format is based on
   power-up cards each player is dealt, and the cheater budget — generated from the
   same numbers as `docs/game-modes.md`.
 - `+error.svelte`: a styled 404/500 screen with a way back to the lobby.
+- The room page no longer receives `is_cheat` in `players_updated`: the flag is private
+  and leaked the cheater's identity. `cheat_state` is the only signal, and it is only
+  sent to the cheater.
 - The room page tells a missing code apart from a game error: the server now tags the
   WebSocket reply with `code: "room_not_found"`, and the page replaces the waiting
   screen with «Комнаты XXXX нет» instead of showing a share code for a room that never

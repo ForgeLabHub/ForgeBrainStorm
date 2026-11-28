@@ -5,10 +5,23 @@
 	import { api } from '$lib/api';
         import { ws } from '$lib/ws';
 	import { onMount, onDestroy } from 'svelte';
+	import ChatPanel from '$lib/components/ChatPanel.svelte';
+	import CheatPanel from '$lib/components/CheatPanel.svelte';
+	import EmojiStorm from '$lib/components/EmojiStorm.svelte';
+	import {
+		EMOJI_PALETTE,
+		TARGET_POWERS,
+		type ChatMessage,
+		type CheatBudget,
+		type CheatPowerKind,
+		type CheatTarget,
+		type EmojiThrow
+	} from '$lib/chat';
 
 	const roomCode = ($page.params.code ?? '').toUpperCase();
 
 	type Player = {
+		id?: string;
 		name: string;
 		score: number;
 		lives?: number;
@@ -19,6 +32,8 @@
 		disconnected?: boolean;
 		is_host: boolean;
 		is_ready: boolean;
+		muted?: boolean;
+		hijacked?: boolean;
 		username?: string;
 	};
 
@@ -30,16 +45,6 @@
 		double_points: { icon: 'bolt', label: '×2 очки' },
 		freeze_time: { icon: 'hourglass', label: '+10 сек' },
 		remove_two_options: { icon: 'scissors', label: '−2 варианта' },
-	};
-
-	type CheatPowerKind = 'peek' | 'freeze' | 'steal' | 'double';
-	type CheatBudget = Record<CheatPowerKind, number>;
-
-	const CHEAT_META: Record<CheatPowerKind, { icon: IconName; label: string; hint: string }> = {
-		peek: { icon: 'eye', label: 'Подсмотреть', hint: 'Показать верный ответ' },
-		freeze: { icon: 'hourglass', label: 'Заморозка', hint: '+10 секунд всем' },
-		steal: { icon: 'bolt', label: 'Кража', hint: '50 очков у лидера' },
-		double: { icon: 'spark', label: '×2', hint: 'Двойные очки за ответ' }
 	};
 
 	type Question = {
@@ -66,6 +71,14 @@
 	let finalLeaderboard: any[] | null = $state(null);
 	let powerUps: PowerUpKind[] = $state([]);
 	let cheatBudget: CheatBudget | null = $state(null);
+	let myId = $state('');
+	let chatMessages = $state<ChatMessage[]>([]);
+	let chatMuted = $state(false);
+	let chatLocked = $state(false);
+	let blindSeconds = $state(0);
+	let blindTimer: ReturnType<typeof setInterval> | null = null;
+	let throws = $state<EmojiThrow[]>([]);
+	let throwSeq = 0;
 	let cheatReveal: number | null = $state(null);
 	let cheatNotice = $state('');
 	let hiddenOptions: number[] = $state([]);
@@ -76,6 +89,12 @@
 	// Sorting `players` in place inside markup mutates state during render;
 	// every view reads this derived copy instead.
 	let ranked = $derived([...players].sort((a, b) => b.score - a.score));
+	// Everyone still in the game except me: the cheater's victim pool.
+	let cheatTargets: CheatTarget[] = $derived(
+		players
+			.filter((player) => player.id && player.id !== myId && !player.eliminated)
+			.map((player) => ({ id: player.id as string, name: player.name }))
+	);
 	// The server sends authoritative totals in `teams` (two sides in team mode,
 	// one shared side in coop). The client only computes them before game_over.
 	let serverTeams: TeamScore[] = $state([]);
@@ -100,6 +119,7 @@
 		});
 		ws.on('room_joined', (data: any) => {
 			isHost = data.is_host;
+			myId = typeof data.sid === 'string' ? data.sid : '';
 			topic = data.topic || '';
 			mode = data.mode || 'classic';
 			modeTitle = data.mode_title || '';
@@ -112,6 +132,9 @@
 					team: p.team ?? null,
 					streak: p.streak ?? 0,
 					eliminated: p.eliminated || false,
+						id: p.id,
+												muted: p.muted || false,
+						hijacked: p.hijacked || false,
 					is_host: p.is_host || false,
 					is_ready: p.is_ready || false,
 					username: p.name ?? p.username,
@@ -126,6 +149,9 @@
 					lives: p.lives,
 					infinite_lives: p.infinite_lives,
 					eliminated: p.eliminated || false,
+						id: p.id,
+												muted: p.muted || false,
+						hijacked: p.hijacked || false,
 					is_host: p.is_host || false,
 					is_ready: p.is_ready || false,
 					username: p.name ?? p.username,
@@ -142,6 +168,9 @@
 					team: data.player.team ?? null,
 					streak: data.player.streak ?? 0,
 					eliminated: data.player.eliminated || false,
+						id: data.player.id,
+												muted: data.player.muted || false,
+						hijacked: data.player.hijacked || false,
 					is_host: data.player.is_host || false,
 					is_ready: data.player.is_ready || false,
 					username: data.player.username,
@@ -156,15 +185,9 @@
 		});
 		ws.on('cheat_state', (data: any) => {
 			const powers = data?.powers;
+			// The server sends the full budget; the panel hides what is at zero.
 			cheatBudget =
-				powers && typeof powers.peek === 'number'
-					? {
-						peek: powers.peek,
-						freeze: powers.freeze,
-						steal: powers.steal,
-						double: powers.double
-					}
-					: null;
+				powers && typeof powers.peek === 'number' ? (powers as CheatBudget) : null;
 		});
 		ws.on('cheat_reveal', (data: any) => {
 			cheatReveal = typeof data?.correct_index === 'number' ? data.correct_index : null;
@@ -180,6 +203,86 @@
 			if (data?.power === 'steal') {
 				cheatNotice = `Кража: ${data.points} очков у лидера`;
 			}
+			if (data?.power === 'hijack') {
+				cheatNotice = `Угон: аккаунт ${data.target} с ${data.points} очками теперь ваш`;
+			}
+			if (data?.power === 'rewrite') {
+				cheatNotice = 'Вопрос подменён';
+			}
+			if (data?.power === 'mute') {
+				cheatNotice = `${data.target} больше не может писать в чат`;
+			}
+			if (data?.power === 'jinx') {
+				cheatNotice = `${data.target} проклят: следующий ответ — 0 очков`;
+			}
+		});
+		ws.on('chat_history', (data: any) => {
+			chatMessages = Array.isArray(data?.messages) ? data.messages : [];
+		});
+		ws.on('chat_message', (data: any) => {
+			if (data && typeof data.seq === 'number') chatMessages = [...chatMessages, data];
+		});
+		ws.on('emoji', (data: any) => {
+			if (!data?.emoji) return;
+			throwSeq += 1;
+			const id = throwSeq;
+			throws = [
+				...throws,
+				{
+					id,
+					emoji: data.emoji,
+					from: data.from || '',
+					target: data.target ?? null,
+					left: 8 + Math.random() * 84
+				}
+			];
+			setTimeout(() => {
+				throws = throws.filter((item) => item.id !== id);
+			}, 3200);
+		});
+		ws.on('hijacked', (data: any) => {
+			eliminated = true;
+			error = `${data?.by ?? 'Читер'} угнал ваш аккаунт и забрал ${data?.points ?? 0} очков`;
+		});
+		ws.on('muted', (data: any) => {
+			chatMuted = true;
+			cheatNotice = `${data?.by ?? 'Читер'} заглушил ваш чат`;
+		});
+		ws.on('jinxed', (data: any) => {
+			cheatNotice = `${data?.by ?? 'Читер'} проклял вас: следующий ответ не принесёт очков`;
+		});
+		ws.on('blinded', (data: any) => {
+			// The server refuses the answer anyway; this only makes the wait
+			// visible and disables the buttons.
+			blindSeconds = typeof data?.seconds === 'number' ? data.seconds : 10;
+			cheatNotice = `${data?.by ?? 'Читер'} ослепил вас на ${blindSeconds} с`;
+			if (blindTimer) clearInterval(blindTimer);
+			blindTimer = setInterval(() => {
+				blindSeconds = Math.max(0, blindSeconds - 1);
+				if (blindSeconds === 0 && blindTimer) {
+					clearInterval(blindTimer);
+					blindTimer = null;
+				}
+			}, 1000);
+		});
+		ws.on('status', (data: any) => {
+			// Sent on join: a reload must not launder a mute, a curse or a blind.
+			if (typeof data?.muted === 'boolean') chatMuted = data.muted;
+			if (typeof data?.eliminated === 'boolean') eliminated = data.eliminated;
+			if (data?.jinxed) cheatNotice = 'На вас лежит проклятие: следующий ответ не принесёт очков';
+			if (typeof data?.blind_seconds === 'number' && data.blind_seconds > 0) {
+				blindSeconds = data.blind_seconds;
+			}
+		});
+		ws.on('chat_locked', (data: any) => {
+			chatLocked = Boolean(data?.locked);
+		});
+		ws.on('chat_cleared', () => {
+			chatMessages = [];
+		});
+		ws.on('kicked', (data: any) => {
+			roomMissing = true;
+			error = data?.message || 'Вас удалили из комнаты';
 		});
 		ws.on('announcement', (data: any) => {
 			if (data?.message) cheatNotice = data.message;
@@ -195,6 +298,8 @@
 		});
 		ws.on('game_preparing', () => {
 			gamePhase = 'preparing';
+			chatMessages = [];
+			chatMuted = false;
 			lastResult = null;
 			error = '';
 			eliminated = false;
@@ -263,12 +368,21 @@
 				roomMissing = true;
 				return;
 			}
+			if (typeof data?.code === 'string' && data.code.startsWith('cheat')) {
+				cheatNotice = data.message || 'Способность не сработала';
+				return;
+			}
+			if (data?.code === 'blinded') {
+				cheatNotice = data.message || 'Вас ослепили';
+				return;
+			}
 			error = data.message || 'Ошибка';
 		});
 	});
 
 	onDestroy(() => {
 		stopTimer();
+		if (blindTimer) clearInterval(blindTimer);
 	});
 
 	function startTimer() {
@@ -288,13 +402,24 @@
 
 	function submitAnswer(index: number) {
 		if (selectedAnswer !== null || gamePhase !== 'playing') return;
+		if (blindSeconds > 0) return;
 		selectedAnswer = index;
 		ws.send('submit_answer', { answer_index: index });
 	}
 
-	function useCheatPower(power: CheatPowerKind) {
+	function useCheatPower(power: CheatPowerKind, target: string | null = null, payload?: unknown) {
 		if (gamePhase !== 'playing' || !cheatBudget || cheatBudget[power] <= 0) return;
-		ws.send('cheat_power', { power });
+		if (TARGET_POWERS.includes(power) && !target) return;
+		ws.send('cheat_power', { power, target, payload });
+	}
+
+	function sendChat(text: string) {
+		ws.send('chat_send', { text });
+	}
+
+	function throwEmoji(emoji: string, target: string | null) {
+		if (!EMOJI_PALETTE.includes(emoji)) return;
+		ws.send('emoji', { emoji, target });
 	}
 
 	function usePowerUp(kind: PowerUpKind) {
@@ -446,34 +571,14 @@
 						</div>
 					{/if}
 
-					<!-- Cheater powers: the server hands the budget, the UI only shows it -->
 					{#if cheatBudget}
-						<div class="rounded-2xl border border-red-500/25 bg-red-500/[0.06] p-4">
-							<div class="flex items-center justify-between gap-2">
-								<p class="text-xs font-semibold uppercase tracking-widest text-red-300">Читерский набор</p>
-								{#if cheatNotice}
-									<p class="truncate text-xs text-red-200">{cheatNotice}</p>
-								{/if}
-							</div>
-							<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-								{#each Object.entries(CHEAT_META) as [power, meta] (power)}
-									{@const kind = power as CheatPowerKind}
-									{@const left = cheatBudget[kind]}
-									<button
-										onclick={() => useCheatPower(kind)}
-										disabled={left <= 0 || gamePhase !== 'playing'}
-										class="flex flex-col items-start gap-1 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-left text-red-200 transition hover:border-red-400/50 disabled:opacity-40"
-										title={meta.hint}
-									>
-										<span class="flex items-center gap-2 text-sm font-semibold">
-											<Icon name={meta.icon} class="h-4 w-4" />
-											{meta.label}
-										</span>
-										<span class="text-[11px] text-red-300/70">{meta.hint} · осталось {left}</span>
-									</button>
-								{/each}
-							</div>
-						</div>
+						<CheatPanel
+							budget={cheatBudget}
+							targets={cheatTargets}
+							notice={cheatNotice}
+							canUse={gamePhase === 'playing' && !eliminated}
+							onUse={useCheatPower}
+						/>
 					{/if}
 
 					<!-- Question -->
@@ -490,14 +595,21 @@
 						</div>
 					</div>
 
+					{#if blindSeconds > 0}
+						<div class="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+							<Icon name="blind" class="h-5 w-5 shrink-0" />
+							<span>Вас ослепили: отвечать можно через {blindSeconds} с</span>
+						</div>
+					{/if}
+
 					<!-- Options -->
-					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 {blindSeconds > 0 ? 'pointer-events-none blur-sm' : ''}">
 						{#each question.options as option, i}
 							{@const isSelected = selectedAnswer === i}
 							{@const isHidden = hiddenOptions.includes(i)}
 							<button
 								onclick={() => submitAnswer(i)}
-								disabled={selectedAnswer !== null || isHidden || eliminated}
+								disabled={selectedAnswer !== null || isHidden || eliminated || blindSeconds > 0}
 								class="group relative overflow-hidden rounded-xl border p-5 text-left transition-all {
 									isHidden
 										? 'border-white/5 bg-white/[0.01] opacity-30 line-through'
@@ -660,8 +772,8 @@
 			{/if}
 		</div>
 
-		<!-- Sidebar: Players -->
-		<div>
+		<!-- Sidebar: players, then chat -->
+		<div class="space-y-4">
 			<div class="sticky top-24 rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm">
 					{#if (mode === 'team' || isCoop) && teamScores.length > 0}
 						<div class="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
@@ -714,7 +826,18 @@
 					{/each}
 				</div>
 			</div>
+			<ChatPanel
+				messages={chatMessages}
+				muted={chatMuted}
+				locked={chatLocked}
+				canChat={gamePhase === 'playing' || gamePhase === 'waiting'}
+				targets={cheatTargets}
+				onSend={sendChat}
+				onEmoji={throwEmoji}
+			/>
 		</div>
 	</div>
 {/if}
+
+<EmojiStorm throws={throws} />
 </div>
