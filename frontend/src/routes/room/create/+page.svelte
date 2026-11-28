@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { loadRoomDefaults } from '$lib/settings';
 
 	let topic = $state('');
 	let difficulty = $state('medium');
@@ -18,6 +19,13 @@
 
 
 	onMount(() => {
+		const saved = loadRoomDefaults();
+		mode = saved.mode;
+		difficulty = saved.difficulty;
+		questionCount = saved.questions;
+		numOptions = saved.options;
+		timerSeconds = saved.timer;
+
 		const timer = setTimeout(() => (visible = true), 100);
 		return () => clearTimeout(timer);
 	});
@@ -32,14 +40,18 @@
 		creating = true;
 		error = '';
 		try {
-			const response = await api.createRoom({
+			const input: any = {
 				topic: topic.trim(),
 				mode,
 				difficulty,
 				question_count: questionCount,
 				num_options: numOptions,
 				timer_seconds: timerSeconds
-			});
+			};
+			if (aiProvider) {
+				input.ai_provider = aiProvider;
+			}
+			const response = await api.createRoom(input);
 			if (response.ok && response.room) {
 				goto(`/room/${response.room.code}`);
 			} else {
@@ -274,6 +286,67 @@
 				</div>
 			</div>
 		</div>
+
+		<!-- AI Provider -->
+		{#if availableProviders.length > 0}
+			<div class="relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 backdrop-blur-sm sm:p-6 transition-all duration-700 delay-400 {visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}">
+				<div class="absolute inset-0 bg-gradient-to-br from-indigo-500/3 to-transparent"></div>
+				<div class="relative z-10">
+					<h3 class="mb-4 flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-slate-400">
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+						</svg>
+						ИИ провайдер
+					</h3>
+					<div class="space-y-2">
+						<label class="group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all {
+							aiProvider === ''
+								? 'border-white/20 bg-white/[0.05]'
+								: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+						}">
+							<input type="radio" bind:group={aiProvider} value="" class="sr-only" />
+							<div class="flex h-10 w-10 items-center justify-center rounded-lg {aiProvider === '' ? 'bg-white/10' : 'bg-white/5'} transition-all">
+								<svg class="h-5 w-5 {aiProvider === '' ? 'text-white' : 'text-slate-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+								</svg>
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="font-medium text-white">Автоматический выбор</div>
+								<div class="text-xs text-slate-400">Система выберет лучший провайдер</div>
+							</div>
+							{#if aiProvider === ''}
+								<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+								</svg>
+							{/if}
+						</label>
+						{#each availableProviders as provider}
+							<label class="group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all {
+								aiProvider === provider
+									? 'border-white/20 bg-white/[0.05]'
+									: 'border-white/5 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+							}">
+								<input type="radio" bind:group={aiProvider} value={provider} class="sr-only" />
+								<div class="flex h-10 w-10 items-center justify-center rounded-lg {aiProvider === provider ? 'bg-white/10' : 'bg-white/5'} transition-all">
+									<svg class="h-5 w-5 {aiProvider === provider ? 'text-white' : 'text-slate-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+									</svg>
+								</div>
+								<div class="min-w-0 flex-1">
+									<div class="font-medium text-white">{provider}</div>
+									<div class="text-xs text-slate-400">Использовать этот провайдер</div>
+								</div>
+								{#if aiProvider === provider}
+									<svg class="h-5 w-5 flex-shrink-0 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+									</svg>
+								{/if}
+							</label>
+						{/each}
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Error -->
 		{#if error}
